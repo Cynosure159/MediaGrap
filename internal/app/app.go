@@ -14,6 +14,7 @@ import (
 	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/metadata"
 	"github.com/mediagrap/mediagrap/internal/platform/database"
+	"github.com/mediagrap/mediagrap/internal/settings"
 )
 
 type BuildInfo struct {
@@ -45,13 +46,23 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 	}
 
 	libraryService := library.NewService(db, config.MediaRoots)
-	outbound, err := metadata.NewOutboundClient(config.OutboundProxy)
+	settingsService := settings.NewService(db, settings.Defaults{TMDbAPIKey: config.TMDbAPIKey, TMDbLanguage: config.TMDbLanguage, OutboundProxy: config.OutboundProxy, MediaRoots: config.MediaRoots})
+	currentSettings, err := settingsService.Current(context.Background())
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	metadataService := metadata.NewService(db, metadata.NewTMDb(logger, outbound, config.TMDbAPIKey))
-	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService)
+	outbound, err := metadata.NewOutboundClient(currentSettings.OutboundProxy)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	metadataService := metadata.NewService(db, metadata.NewTMDb(logger, outbound, currentSettings.TMDbAPIKey))
+	if err := metadataService.ConfigureTMDb(currentSettings.TMDbAPIKey, currentSettings.TMDbLanguage, currentSettings.OutboundProxy); err != nil {
+		db.Close()
+		return nil, err
+	}
+	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService, settingsService)
 	return &Application{
 		config: config,
 		logger: logger,

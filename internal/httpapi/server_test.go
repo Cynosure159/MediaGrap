@@ -18,6 +18,7 @@ import (
 	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/metadata"
 	"github.com/mediagrap/mediagrap/internal/platform/database"
+	"github.com/mediagrap/mediagrap/internal/settings"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -68,7 +69,7 @@ func TestSaveMetadataWritesOneJSONDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, authService, library.NewService(db, []string{root}), metadata.NewService(db, nil))
+	server := httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, authService, library.NewService(db, []string{root}), metadata.NewService(db, nil), settings.NewService(db, settings.Defaults{MediaRoots: []string{root}}))
 	body := []byte(`{"title":"Example","genres":[]}`)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/media/"+strconv.FormatInt(itemID, 10)+"/metadata", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
@@ -91,7 +92,7 @@ func TestSaveMetadataWritesOneJSONDocument(t *testing.T) {
 }
 
 func testServer(db *sql.DB) http.Handler {
-	return httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, auth.NewService(db), library.NewService(db, []string{tTempRootPlaceholder}), metadata.NewService(db, metadata.NewTMDb(slog.Default(), http.DefaultClient, "")))
+	return httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, auth.NewService(db), library.NewService(db, []string{tTempRootPlaceholder}), metadata.NewService(db, metadata.NewTMDb(slog.Default(), http.DefaultClient, "")), settings.NewService(db, settings.Defaults{MediaRoots: []string{tTempRootPlaceholder}}))
 }
 
 const tTempRootPlaceholder = "/media"

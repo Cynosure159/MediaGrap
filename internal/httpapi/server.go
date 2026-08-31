@@ -13,6 +13,7 @@ import (
 	"github.com/mediagrap/mediagrap/internal/auth"
 	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/metadata"
+	"github.com/mediagrap/mediagrap/internal/settings"
 )
 
 //go:embed ui/fallback.html ui/dist/*
@@ -25,16 +26,17 @@ type BuildInfo struct {
 }
 
 type server struct {
-	logger   *slog.Logger
-	db       *sql.DB
-	build    BuildInfo
-	auth     *auth.Service
-	library  *library.Service
-	metadata *metadata.Service
+	logger          *slog.Logger
+	db              *sql.DB
+	build           BuildInfo
+	auth            *auth.Service
+	library         *library.Service
+	metadata        *metadata.Service
+	settingsService *settings.Service
 }
 
-func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *auth.Service, libraryService *library.Service, metadataService *metadata.Service) http.Handler {
-	application := &server{logger: logger, db: db, build: build, auth: authService, library: libraryService, metadata: metadataService}
+func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *auth.Service, libraryService *library.Service, metadataService *metadata.Service, settingsService *settings.Service) http.Handler {
+	application := &server{logger: logger, db: db, build: build, auth: authService, library: libraryService, metadata: metadataService, settingsService: settingsService}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", application.health)
 	mux.HandleFunc("GET /readyz", application.ready)
@@ -45,6 +47,8 @@ func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *au
 	mux.HandleFunc("POST /api/v1/session", application.login)
 	mux.HandleFunc("DELETE /api/v1/session", application.logout)
 	mux.HandleFunc("GET /api/v1/session", application.session)
+	mux.HandleFunc("GET /api/v1/settings", application.settings)
+	mux.HandleFunc("PUT /api/v1/settings", application.settings)
 	mux.HandleFunc("GET /api/v1/sources", application.sources)
 	mux.HandleFunc("POST /api/v1/sources", application.sources)
 	mux.HandleFunc("POST /api/v1/sources/", application.scanSource)

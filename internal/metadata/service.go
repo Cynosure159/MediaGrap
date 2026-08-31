@@ -38,6 +38,7 @@ type WritePlan struct {
 	State       string `json:"state"`
 	CreatedAt   string `json:"createdAt"`
 	Conflict    bool   `json:"conflict"`
+	WillReplace bool   `json:"willReplace"`
 }
 type Service struct {
 	db       *sql.DB
@@ -45,6 +46,19 @@ type Service struct {
 }
 
 func NewService(db *sql.DB, provider Provider) *Service { return &Service{db: db, provider: provider} }
+
+func (s *Service) ConfigureTMDb(apiKey, language, proxy string) error {
+	provider, ok := s.provider.(*TMDb)
+	if !ok {
+		return errors.New("TMDb provider is unavailable")
+	}
+	client, err := NewOutboundClient(proxy)
+	if err != nil {
+		return err
+	}
+	provider.Configure(client, apiKey, language)
+	return nil
+}
 
 func (s *Service) Search(ctx context.Context, query string, year *int) ([]Candidate, error) {
 	return s.provider.SearchMovies(ctx, strings.TrimSpace(query), year)
@@ -157,12 +171,15 @@ func (s *Service) Preview(ctx context.Context, record Record, mediaPath string, 
 	if err != nil {
 		return WritePlan{}, err
 	}
-	target := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo"
-	plan := WritePlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, TargetPath: target, Content: string(content), State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	target, willReplace, err := nfoTarget(mediaPath)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	plan := WritePlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, TargetPath: target, Content: string(content), State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), WillReplace: willReplace}
 	if _, err = s.db.ExecContext(ctx, `INSERT INTO write_plans(id,media_item_id,target_path,content,state) VALUES(?,?,?,?,?)`, plan.ID, plan.MediaItemID, plan.TargetPath, plan.Content, plan.State); err != nil {
 		return WritePlan{}, err
 	}
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.preview',?,?,?)`, plan.MediaItemID, plan.TargetPath, "NFO write plan created")
+	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.preview',?,?,?)`, plan.MediaItemID, plan.TargetPath, "NFO save plan created")
 	return plan, nil
 }
 func (s *Service) Plan(ctx context.Context, id string) (WritePlan, error) {
@@ -171,8 +188,9 @@ func (s *Service) Plan(ctx context.Context, id string) (WritePlan, error) {
 	if err != nil {
 		return WritePlan{}, errors.New("write plan not found")
 	}
-	_, err = os.Stat(plan.TargetPath)
-	plan.Conflict = err == nil
+	info, statErr := os.Lstat(plan.TargetPath)
+	plan.WillReplace = statErr == nil
+	plan.Conflict = statErr == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular())
 	return plan, nil
 }
 func (s *Service) Apply(ctx context.Context, id string, allowed func(string) bool) (WritePlan, error) {
@@ -188,7 +206,7 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 	}
 	if plan.Conflict {
 		_, _ = s.db.ExecContext(ctx, `UPDATE write_plans SET state='conflicted' WHERE id=?`, id)
-		return WritePlan{}, errors.New("target NFO already exists; MediaGrap will not overwrite it")
+		return WritePlan{}, errors.New("target NFO is not a regular file and cannot be replaced")
 	}
 	directory := filepath.Dir(plan.TargetPath)
 	temp, err := os.CreateTemp(directory, ".mediagrap-*.nfo")
@@ -213,6 +231,22 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 	if err != nil {
 		return WritePlan{}, err
 	}
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.apply',?,?,?)`, plan.MediaItemID, plan.TargetPath, "NFO created atomically")
+	detail := "NFO created atomically"
+	if plan.WillReplace {
+		detail = "Existing NFO replaced atomically"
+	}
+	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.apply',?,?,?)`, plan.MediaItemID, plan.TargetPath, detail)
 	return s.Plan(ctx, id)
+}
+
+func nfoTarget(mediaPath string) (string, bool, error) {
+	candidates := []string{strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo", filepath.Join(filepath.Dir(mediaPath), "movie.nfo")}
+	for _, candidate := range candidates {
+		if _, err := os.Lstat(candidate); err == nil {
+			return candidate, true, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false, fmt.Errorf("inspect NFO target: %w", err)
+		}
+	}
+	return candidates[0], false, nil
 }

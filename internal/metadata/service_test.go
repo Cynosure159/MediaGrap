@@ -10,7 +10,7 @@ import (
 	"github.com/mediagrap/mediagrap/internal/platform/database"
 )
 
-func TestPreviewAndApplyNeverOverwritesNFO(t *testing.T) {
+func TestPreviewAndApplyReplacesExistingNFO(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	video := filepath.Join(root, "Example.2024.mkv")
@@ -62,15 +62,54 @@ func TestPreviewAndApplyNeverOverwritesNFO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Apply(ctx, second.ID, func(string) bool { return true }); err == nil {
-		t.Fatal("existing NFO must cause a conflict")
+	if !second.WillReplace {
+		t.Fatal("existing NFO should be marked for replacement")
 	}
-	unchanged, err := os.ReadFile(strings.TrimSuffix(video, ".mkv") + ".nfo")
+	if _, err := service.Apply(ctx, second.ID, func(string) bool { return true }); err != nil {
+		t.Fatalf("replace existing NFO: %v", err)
+	}
+	replaced, err := os.ReadFile(strings.TrimSuffix(video, ".mkv") + ".nfo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(unchanged), "Changed") {
-		t.Fatal("existing NFO was overwritten")
+	if !strings.Contains(string(replaced), "Changed") {
+		t.Fatal("existing NFO was not replaced")
+	}
+}
+
+func TestPreviewUsesExistingKodiMovieNFOAsTarget(t *testing.T) {
+	root := t.TempDir()
+	video := filepath.Join(root, "Example.mkv")
+	if err := os.WriteFile(video, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "movie.nfo"), []byte("<movie><title>Old</title></movie>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.ExecContext(t.Context(), `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	result, err = db.ExecContext(t.Context(), `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, filepath.Base(video), "Example", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := result.LastInsertId()
+	plan, err := NewService(db, nil).Preview(t.Context(), Record{MediaItemID: itemID, Title: "New"}, video, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.TargetPath != filepath.Join(root, "movie.nfo") || !plan.WillReplace {
+		t.Fatalf("unexpected plan: %#v", plan)
 	}
 }
 

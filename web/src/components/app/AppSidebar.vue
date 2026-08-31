@@ -99,9 +99,8 @@ const emit = defineEmits<{
 @media (max-width: 700px) {
   .sidebar { position: fixed; z-index: 2; right: 0; bottom: 0; left: 0; min-width: 0; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); gap: 0; border-top: 1px solid var(--ink-700); }
   .brand-lockup, .sidebar-footnote, .navigation-detail { display: none; }
-  .navigation { grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
+  .navigation { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 0.3rem; }
   .navigation-item { min-height: 3.25rem; padding: 0.45rem; text-align: center; }
   .navigation-item--active { box-shadow: inset 0 -0.2rem 0 var(--amber-400); }
 }
 </style>
-

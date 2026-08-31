@@ -4,7 +4,9 @@ export interface MediaItem { id: number; sourceId: number; relativePath: string;
 export interface Job { id: number; state: string; progressCurrent: number; message: string; errorMessage: string }
 export interface Metadata { mediaItemId: number; provider: string; providerId: string; title: string; originalTitle: string; year: number | null; overview: string; runtimeMinutes: number | null; genres: string[]; posterUrl: string; backdropUrl: string; lockedFields: string[] }
 export interface Candidate { id: string; title: string; originalTitle: string; year: number | null; overview: string; posterUrl: string }
-export interface WritePlan { id: string; mediaItemId: number; targetPath: string; content: string; state: string; conflict: boolean }
+export interface WritePlan { id: string; mediaItemId: number; targetPath: string; content: string; state: string; conflict: boolean; willReplace: boolean }
+export interface Settings { tmdbApiKeyConfigured: boolean; outboundProxyConfigured: boolean; tmdbLanguage: string; mediaRoots: string[] }
+export interface SettingsUpdate { tmdbApiKey: string; clearTmdbApiKey: boolean; tmdbLanguage: string; outboundProxy: string; clearOutboundProxy: boolean }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { credentials: 'same-origin', ...options }); if (!response.ok) { const data = await response.json().catch(() => null) as { error?: { message?: string } } | null; throw new Error(data?.error?.message ?? 'Request failed') }; return response.status === 204 ? undefined as T : response.json() as Promise<T> }
 export const setupStatus = () => request<{ needsSetup: boolean }>('/api/v1/setup/status')
@@ -22,3 +24,5 @@ export const selectCandidate = (csrf: string, id: number, candidateId: string) =
 export const saveMetadata = (csrf: string, id: number, metadata: Metadata) => request<Metadata>(`/api/v1/media/${id}/metadata`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(metadata) })
 export const previewNfo = (csrf: string, id: number, metadata: Metadata) => request<WritePlan>(`/api/v1/media/${id}/write-plans`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(metadata) })
 export const applyNfo = (csrf: string, id: string) => request<WritePlan>(`/api/v1/write-plans/${id}/apply`, { method: 'POST', headers: { 'X-CSRF-Token': csrf } })
+export const settings = () => request<Settings>('/api/v1/settings')
+export const saveSettings = (csrf: string, update: SettingsUpdate) => request<Settings>('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(update) })

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,28 +35,40 @@ type Provider interface {
 	Movie(context.Context, string) (Details, error)
 }
 type TMDb struct {
-	client *http.Client
-	apiKey string
-	logger *slog.Logger
+	mu       sync.RWMutex
+	client   *http.Client
+	apiKey   string
+	language string
+	logger   *slog.Logger
 }
 
 func NewTMDb(logger *slog.Logger, client *http.Client, apiKey string) *TMDb {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &TMDb{client: client, apiKey: strings.TrimSpace(apiKey), logger: logger}
+	return &TMDb{client: client, apiKey: strings.TrimSpace(apiKey), language: "en-US", logger: logger}
 }
-func (t *TMDb) configured() error {
+func (t *TMDb) Configure(client *http.Client, apiKey, language string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.client = client
+	t.apiKey = strings.TrimSpace(apiKey)
+	t.language = language
+}
+func (t *TMDb) configured() (string, string, *http.Client, error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	if t.apiKey == "" {
-		return errors.New("TMDb is not configured; set MEDIAGRAP_TMDB_API_KEY")
+		return "", "", nil, errors.New("TMDb is not configured; add an API key in Settings")
 	}
-	return nil
+	return t.apiKey, t.language, t.client, nil
 }
 func (t *TMDb) SearchMovies(ctx context.Context, query string, year *int) ([]Candidate, error) {
-	if err := t.configured(); err != nil {
+	apiKey, language, _, err := t.configured()
+	if err != nil {
 		return nil, err
 	}
-	params := url.Values{"api_key": {t.apiKey}, "query": {query}, "language": {"en-US"}}
+	params := url.Values{"api_key": {apiKey}, "query": {query}, "language": {language}}
 	if year != nil {
 		params.Set("year", strconv.Itoa(*year))
 	}
@@ -72,14 +85,15 @@ func (t *TMDb) SearchMovies(ctx context.Context, query string, year *int) ([]Can
 	return candidates, nil
 }
 func (t *TMDb) Movie(ctx context.Context, id string) (Details, error) {
-	if err := t.configured(); err != nil {
+	apiKey, language, _, err := t.configured()
+	if err != nil {
 		return Details{}, err
 	}
 	if id == "" {
 		return Details{}, errors.New("TMDb movie id is required")
 	}
 	var result tmdbMovie
-	if err := t.get(ctx, "/movie/"+url.PathEscape(id), url.Values{"api_key": {t.apiKey}, "language": {"en-US"}}, &result); err != nil {
+	if err := t.get(ctx, "/movie/"+url.PathEscape(id), url.Values{"api_key": {apiKey}, "language": {language}}, &result); err != nil {
 		return Details{}, err
 	}
 	candidate := result.candidate()
@@ -95,7 +109,10 @@ func (t *TMDb) get(ctx context.Context, path string, params url.Values, target a
 	if err != nil {
 		return err
 	}
-	response, err := t.client.Do(req)
+	t.mu.RLock()
+	client := t.client
+	t.mu.RUnlock()
+	response, err := client.Do(req)
 	if err != nil {
 		t.logger.Warn("TMDb request failed", "endpoint", path, "duration", time.Since(startedAt), "failure", requestFailureKind(err))
 		return errors.New("TMDb request failed")
