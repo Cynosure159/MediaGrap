@@ -12,6 +12,7 @@ Phase 2 provides the first usable movie metadata workflow: locate a TMDb match, 
 - An explicit write-plan preview. Apply refuses an existing destination, validates the configured media-root boundary, writes a temporary file in the target directory, synchronizes it, and atomically renames it into place.
 - An audit record for preview and apply actions.
 - A responsive movie detail panel, TMDb match selector, editable draft, NFO preview dialog, and a persisted English/Chinese UI choice.
+- On desktop, the movie list and active metadata inspector are a fixed master/detail workspace. On mobile, selecting a movie opens the inspector as the single visible pane with an explicit return-to-list action.
 
 ## Configuration
 
