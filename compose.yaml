@@ -1,0 +1,23 @@
+services:
+  mediagrap:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    image: mediagrap:dev
+    container_name: mediagrap
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MEDIAGRAP_CONFIG_DIR: /config
+      MEDIAGRAP_CACHE_DIR: /cache
+      MEDIAGRAP_LOG_FORMAT: json
+    volumes:
+      - ./runtime/config:/config
+      - ./runtime/cache:/cache
+      # Add explicit media mounts before Phase 1 source management is enabled.
+      # - /srv/media/movies:/media/movies:ro
+    security_opt:
+      - no-new-privileges:true
+

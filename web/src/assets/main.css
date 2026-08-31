@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap');
+
+:root {
+  font-family: var(--font-body);
+  color: var(--ink-900);
+  background: var(--mist-100);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-data: 'DM Mono', ui-monospace, monospace;
+  --ink-900: #102b3e;
+  --ink-800: #173a50;
+  --ink-700: #26536a;
+  --ink-600: #456b7d;
+  --ink-500: #6a8794;
+  --water-800: #28546b;
+  --water-700: #34728a;
+  --water-600: #4c94ad;
+  --water-400: #82c7da;
+  --water-100: #d7ecf5;
+  --amber-400: #d6a75d;
+  --paper: #fbfcfa;
+  --mist-100: #edf2f0;
+  --mist-200: #dce6e2;
+  --mist-300: #c7d4cf;
+  --mist-400: #9eafaa;
+  --mist-500: #7d918a;
+}
+
+* { box-sizing: border-box; }
+body { min-width: 20rem; min-height: 100vh; margin: 0; }
+button, input, textarea, select { font: inherit; }
+button:focus-visible { outline: 3px solid var(--amber-400); outline-offset: 3px; }
+.application-shell { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 100vh; }
+.workspace { max-width: 88rem; width: 100%; margin: 0 auto; padding: clamp(1.4rem, 4vw, 4rem); }
+.workspace-header { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; margin-bottom: 2rem; }
+.eyebrow { margin: 0; color: var(--ink-600); font: 0.72rem var(--font-data); letter-spacing: 0.1em; text-transform: uppercase; }
+.page-title { margin: 0.4rem 0 0; font-family: var(--font-display); font-size: clamp(2.6rem, 6vw, 5.2rem); font-weight: 500; letter-spacing: -0.07em; line-height: 0.9; }
+.page-description { margin: 0.8rem 0 0; color: var(--ink-600); }
+.refresh-button { min-height: 2.7rem; padding: 0.6rem 0.9rem; border: 1px solid var(--ink-700); border-radius: 0.45rem; background: var(--ink-900); color: var(--mist-100); font-weight: 650; cursor: pointer; }.refresh-button:disabled { opacity: 0.6; cursor: wait; }
+@media (max-width: 700px) { .application-shell { display: block; padding-bottom: 4.8rem; }.workspace { padding: 1.25rem; }.workspace-header { align-items: start; flex-direction: column; margin-bottom: 1.5rem; }.refresh-button { width: 100%; } }
+

@@ -16,6 +16,8 @@ coverage.*
 web/node_modules/
 web/dist/
 web/.vite/
+internal/httpapi/ui/dist/*
+!internal/httpapi/ui/dist/.keep.html
 
 # Runtime data
 /data/
@@ -26,4 +28,3 @@ web/.vite/
 .idea/
 .vscode/
 *.swp
-

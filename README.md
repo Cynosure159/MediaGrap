@@ -129,6 +129,8 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [Docker and deployment design](docs/deployment-design.md)
 - [Delivery roadmap](docs/roadmap.md)
 - [MediaElch reference review](docs/mediaelch-reference.md)
+- [Phase 0 foundation](docs/phase-0-foundation.md)
+- [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch reference boundary
 
@@ -143,4 +145,3 @@ Detailed project documentation belongs under `docs/`. The repository entry point
 ## License
 
 The public project license has not yet been selected. License selection and dependency compliance review are required before publishing or incorporating third-party code.
-
