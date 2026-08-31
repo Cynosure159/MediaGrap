@@ -92,3 +92,18 @@ func TestReadExistingNFOReturnsDraftWithoutPersisting(t *testing.T) {
 		t.Fatalf("unexpected record: %#v", record)
 	}
 }
+
+func TestReadExistingNFOAlwaysReturnsArrayFields(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "Sparse.mkv")
+	if err := os.WriteFile(strings.TrimSuffix(media, ".mkv")+".nfo", []byte(`<movie><title>Sparse</title></movie>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := NewService(nil, nil).ReadExistingNFO(media, 1)
+	if err != nil || !found {
+		t.Fatalf("read NFO: found=%v err=%v", found, err)
+	}
+	if record.Genres == nil || record.LockedFields == nil {
+		t.Fatalf("array fields must not be nil: %#v", record)
+	}
+}

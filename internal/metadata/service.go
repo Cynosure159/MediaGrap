@@ -78,7 +78,7 @@ func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 	}
 	_ = json.Unmarshal([]byte(genres), &record.Genres)
 	_ = json.Unmarshal([]byte(locked), &record.LockedFields)
-	return record, nil
+	return normalized(record), nil
 }
 
 // ReadExistingNFO loads the sidecar paired with a media file without changing it.
@@ -109,7 +109,17 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool,
 	if movie.Title == "" {
 		return Record{}, false, errors.New("existing NFO has no movie title")
 	}
-	return Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, LockedFields: []string{}}, true, nil
+	return normalized(Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, LockedFields: []string{}}), true, nil
+}
+
+func normalized(record Record) Record {
+	if record.Genres == nil {
+		record.Genres = []string{}
+	}
+	if record.LockedFields == nil {
+		record.LockedFields = []string{}
+	}
+	return record
 }
 func (s *Service) Save(ctx context.Context, record Record) (Record, error) {
 	if strings.TrimSpace(record.Title) == "" {
