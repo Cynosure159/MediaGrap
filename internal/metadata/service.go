@@ -1,14 +1,21 @@
 package metadata
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"mime"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,12 +47,36 @@ type WritePlan struct {
 	Conflict    bool   `json:"conflict"`
 	WillReplace bool   `json:"willReplace"`
 }
+type ArtworkAsset struct {
+	Kind        string `json:"kind"`
+	SourceURL   string `json:"sourceUrl"`
+	TargetPath  string `json:"targetPath"`
+	Conflict    bool   `json:"conflict"`
+	WillReplace bool   `json:"willReplace"`
+}
+type ArtworkPlan struct {
+	ID          string         `json:"id"`
+	MediaItemID int64          `json:"mediaItemId"`
+	State       string         `json:"state"`
+	CreatedAt   string         `json:"createdAt"`
+	Assets      []ArtworkAsset `json:"assets"`
+}
 type Service struct {
-	db       *sql.DB
-	provider Provider
+	db            *sql.DB
+	provider      Provider
+	artworkMu     sync.RWMutex
+	artworkClient *http.Client
+	logger        *slog.Logger
 }
 
-func NewService(db *sql.DB, provider Provider) *Service { return &Service{db: db, provider: provider} }
+func NewService(db *sql.DB, provider Provider) *Service {
+	service := &Service{db: db, provider: provider, artworkClient: http.DefaultClient, logger: slog.Default()}
+	if tmdb, ok := provider.(*TMDb); ok {
+		service.artworkClient = tmdb.HTTPClient()
+		service.logger = tmdb.Logger()
+	}
+	return service
+}
 
 func (s *Service) ConfigureTMDb(apiKey, language, proxy string) error {
 	provider, ok := s.provider.(*TMDb)
@@ -57,6 +88,9 @@ func (s *Service) ConfigureTMDb(apiKey, language, proxy string) error {
 		return err
 	}
 	provider.Configure(client, apiKey, language)
+	s.artworkMu.Lock()
+	s.artworkClient = client
+	s.artworkMu.Unlock()
 	return nil
 }
 
@@ -237,6 +271,210 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 	}
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.apply',?,?,?)`, plan.MediaItemID, plan.TargetPath, detail)
 	return s.Plan(ctx, id)
+}
+
+const maxArtworkBytes int64 = 25 << 20
+
+// PreviewArtwork persists a reviewable plan for the selected TMDb poster and
+// fanart. It deliberately does not contact the network or write any file.
+func (s *Service) PreviewArtwork(ctx context.Context, record Record, mediaPath string, writable bool) (ArtworkPlan, error) {
+	if !writable {
+		return ArtworkPlan{}, errors.New("the media source is read-only")
+	}
+	for _, item := range []struct{ kind, source string }{{"poster", record.PosterURL}, {"fanart", record.BackdropURL}} {
+		if strings.TrimSpace(item.source) != "" {
+			if err := validateTMDbImageURL(item.source); err != nil {
+				return ArtworkPlan{}, fmt.Errorf("%s image: %w", item.kind, err)
+			}
+		}
+	}
+	record, err := s.Save(ctx, record)
+	if err != nil {
+		return ArtworkPlan{}, err
+	}
+	assets := make([]ArtworkAsset, 0, 2)
+	for _, item := range []struct{ kind, source, filename string }{
+		{"poster", record.PosterURL, "poster.jpg"},
+		{"fanart", record.BackdropURL, "fanart.jpg"},
+	} {
+		if strings.TrimSpace(item.source) == "" {
+			continue
+		}
+		target := filepath.Join(filepath.Dir(mediaPath), item.filename)
+		asset := ArtworkAsset{Kind: item.kind, SourceURL: item.source, TargetPath: target}
+		if info, statErr := os.Lstat(target); statErr == nil {
+			asset.WillReplace = true
+			asset.Conflict = info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return ArtworkPlan{}, fmt.Errorf("inspect %s target: %w", item.kind, statErr)
+		}
+		assets = append(assets, asset)
+	}
+	if len(assets) == 0 {
+		return ArtworkPlan{}, errors.New("select a TMDb poster or fanart before creating an artwork plan")
+	}
+	plan := ArtworkPlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), Assets: assets}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ArtworkPlan{}, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO artwork_plans(id,media_item_id,state) VALUES(?,?,?)`, plan.ID, plan.MediaItemID, plan.State); err != nil {
+		return ArtworkPlan{}, err
+	}
+	for _, asset := range assets {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO artwork_plan_assets(artwork_plan_id,kind,source_url,target_path) VALUES(?,?,?,?)`, plan.ID, asset.Kind, asset.SourceURL, asset.TargetPath); err != nil {
+			return ArtworkPlan{}, err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('artwork.preview',?,?,?)`, plan.MediaItemID, filepath.Dir(mediaPath), "Artwork download plan created"); err != nil {
+		return ArtworkPlan{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return ArtworkPlan{}, err
+	}
+	s.logger.Info("Artwork download plan created", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
+	return plan, nil
+}
+
+func (s *Service) ArtworkPlan(ctx context.Context, id string) (ArtworkPlan, error) {
+	var plan ArtworkPlan
+	err := s.db.QueryRowContext(ctx, `SELECT id,media_item_id,state,created_at FROM artwork_plans WHERE id=?`, id).Scan(&plan.ID, &plan.MediaItemID, &plan.State, &plan.CreatedAt)
+	if err != nil {
+		return ArtworkPlan{}, errors.New("artwork plan not found")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT kind,source_url,target_path FROM artwork_plan_assets WHERE artwork_plan_id=? ORDER BY id`, id)
+	if err != nil {
+		return ArtworkPlan{}, err
+	}
+	defer rows.Close()
+	plan.Assets = []ArtworkAsset{}
+	for rows.Next() {
+		var asset ArtworkAsset
+		if err := rows.Scan(&asset.Kind, &asset.SourceURL, &asset.TargetPath); err != nil {
+			return ArtworkPlan{}, err
+		}
+		if info, statErr := os.Lstat(asset.TargetPath); statErr == nil {
+			asset.WillReplace = true
+			asset.Conflict = info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()
+		}
+		plan.Assets = append(plan.Assets, asset)
+	}
+	return plan, rows.Err()
+}
+
+func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(string) bool) (ArtworkPlan, error) {
+	plan, err := s.ArtworkPlan(ctx, id)
+	if err != nil {
+		return ArtworkPlan{}, err
+	}
+	if plan.State != "previewed" {
+		return ArtworkPlan{}, errors.New("artwork plan is no longer pending")
+	}
+	for _, asset := range plan.Assets {
+		if !allowed(asset.TargetPath) {
+			return ArtworkPlan{}, errors.New("artwork target is outside configured media roots")
+		}
+		if asset.Conflict {
+			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='conflicted' WHERE id=?`, id)
+			return ArtworkPlan{}, fmt.Errorf("%s target is not a regular file and cannot be replaced", asset.Kind)
+		}
+		if err := validateTMDbImageURL(asset.SourceURL); err != nil {
+			return ArtworkPlan{}, fmt.Errorf("%s image: %w", asset.Kind, err)
+		}
+	}
+	s.logger.Info("Artwork download started", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
+	temps := make([]string, 0, len(plan.Assets))
+	defer func() {
+		for _, temp := range temps {
+			_ = os.Remove(temp)
+		}
+	}()
+	s.artworkMu.RLock()
+	client := s.artworkClient
+	s.artworkMu.RUnlock()
+	for _, asset := range plan.Assets {
+		temp, downloadErr := downloadArtwork(ctx, client, asset)
+		if downloadErr != nil {
+			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='failed' WHERE id=?`, id)
+			s.logger.Warn("Artwork download failed", "media_item_id", plan.MediaItemID, "asset_kind", asset.Kind, "error", downloadErr)
+			return ArtworkPlan{}, downloadErr
+		}
+		temps = append(temps, temp)
+	}
+	for index, asset := range plan.Assets {
+		if err := os.Rename(temps[index], asset.TargetPath); err != nil {
+			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='failed' WHERE id=?`, id)
+			return ArtworkPlan{}, fmt.Errorf("replace %s artwork: %w", asset.Kind, err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='applied',applied_at=datetime('now') WHERE id=?`, id); err != nil {
+		return ArtworkPlan{}, err
+	}
+	for _, asset := range plan.Assets {
+		detail := "Artwork created atomically"
+		if asset.WillReplace {
+			detail = "Existing artwork replaced atomically"
+		}
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('artwork.apply',?,?,?)`, plan.MediaItemID, asset.TargetPath, detail)
+	}
+	s.logger.Info("Artwork download completed", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
+	return s.ArtworkPlan(ctx, id)
+}
+
+func downloadArtwork(ctx context.Context, client *http.Client, asset ArtworkAsset) (string, error) {
+	if client == nil {
+		return "", errors.New("artwork client is unavailable")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.SourceURL, nil)
+	if err != nil {
+		return "", errors.New("create artwork request")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", errors.New("download artwork request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("artwork provider returned HTTP %d", response.StatusCode)
+	}
+	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || contentType != "image/jpeg" {
+		return "", errors.New("artwork provider did not return a JPEG image")
+	}
+	reader := bufio.NewReader(response.Body)
+	header, err := reader.Peek(3)
+	if err != nil || len(header) != 3 || header[0] != 0xff || header[1] != 0xd8 || header[2] != 0xff {
+		return "", errors.New("artwork provider returned an invalid JPEG image")
+	}
+	temp, err := os.CreateTemp(filepath.Dir(asset.TargetPath), ".mediagrap-*.jpg")
+	if err != nil {
+		return "", err
+	}
+	tempName := temp.Name()
+	written, copyErr := io.Copy(temp, io.LimitReader(reader, maxArtworkBytes+1))
+	if copyErr == nil && written > maxArtworkBytes {
+		copyErr = errors.New("artwork exceeds the 25 MiB safety limit")
+	}
+	if copyErr == nil {
+		copyErr = temp.Sync()
+	}
+	if closeErr := temp.Close(); copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
+		_ = os.Remove(tempName)
+		return "", fmt.Errorf("write artwork: %w", copyErr)
+	}
+	return tempName, nil
+}
+
+func validateTMDbImageURL(value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "image.tmdb.org" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || !strings.HasPrefix(parsed.EscapedPath(), "/t/p/") {
+		return errors.New("must be an HTTPS image.tmdb.org URL")
+	}
+	return nil
 }
 
 func nfoTarget(mediaPath string) (string, bool, error) {

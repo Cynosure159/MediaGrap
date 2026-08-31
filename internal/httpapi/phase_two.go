@@ -126,6 +126,23 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 201, plan)
 		return
+	case "artwork-plans":
+		if r.Method != http.MethodPost {
+			break
+		}
+		var body metadataRequest
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		body.MediaItemID = id
+		plan, err := s.metadata.PreviewArtwork(r.Context(), body.Record, location.AbsolutePath, location.Writable)
+		if err != nil {
+			s.logger.Warn("Artwork preview failed", "media_item_id", id, "error", err)
+			writeError(w, 400, "artwork_preview_failed", err.Error())
+			return
+		}
+		writeJSON(w, 201, plan)
+		return
 	default:
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
@@ -155,6 +172,37 @@ func (s *server) writePlan(w http.ResponseWriter, r *http.Request) {
 		plan, err := s.metadata.Apply(r.Context(), parts[0], s.library.Allowed)
 		if err != nil {
 			writeError(w, 409, "write_conflict", err.Error())
+			return
+		}
+		writeJSON(w, 200, plan)
+		return
+	}
+	writeError(w, 404, "not_found", "Endpoint not found")
+}
+
+func (s *server) artworkPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, r.Method == http.MethodPost); !ok {
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/artwork-plans/"), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		writeError(w, 404, "not_found", "Endpoint not found")
+		return
+	}
+	if r.Method == http.MethodGet && len(parts) == 1 {
+		plan, err := s.metadata.ArtworkPlan(r.Context(), parts[0])
+		if err != nil {
+			writeError(w, 404, "plan_not_found", err.Error())
+			return
+		}
+		writeJSON(w, 200, plan)
+		return
+	}
+	if r.Method == http.MethodPost && len(parts) == 2 && parts[1] == "apply" {
+		plan, err := s.metadata.ApplyArtwork(r.Context(), parts[0], s.library.Allowed)
+		if err != nil {
+			s.logger.Warn("Artwork apply failed", "plan_id", parts[0], "error", err)
+			writeError(w, 409, "artwork_write_failed", err.Error())
 			return
 		}
 		writeJSON(w, 200, plan)

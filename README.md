@@ -6,7 +6,7 @@ MediaGrap is a lightweight, self-hosted media metadata scraper and library manag
 
 The project aims to retain the essential workflows found in tools such as tinyMediaManager and MediaElch while reducing server-side resource usage and providing a better browser, mobile, and container experience.
 
-> Current status: Phase 2 movie scraping and safe NFO writing foundation is implemented, with a dedicated Settings page for TMDb, proxy, media paths, and interface language.
+> Current status: Phase 2 movie scraping, safe NFO writing, and previewed TMDb poster/fanart downloads are implemented, with a dedicated Settings page for TMDb, proxy, media paths, and interface language.
 
 ## Goals
 
@@ -95,7 +95,7 @@ Media libraries contain valuable user data, so safety takes priority over featur
 2. Writes and renames first produce an immutable change plan.
 3. Paths, permissions, source boundaries, and conflicts are revalidated before execution.
 4. NFO data is written to a temporary file in the target directory before atomic replacement.
-5. Existing destinations are not overwritten by default.
+5. Existing NFO and artwork files can only be replaced after their individual write preview is explicitly confirmed; symlinks and non-regular targets are blocked.
 6. Cross-filesystem moves use copy, verification, and only then source removal.
 7. Every mutation produces an audit event without exposing secrets.
 

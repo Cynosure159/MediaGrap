@@ -1,7 +1,10 @@
 package metadata
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +12,10 @@ import (
 
 	"github.com/mediagrap/mediagrap/internal/platform/database"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
 
 func TestPreviewAndApplyReplacesExistingNFO(t *testing.T) {
 	ctx := context.Background()
@@ -156,5 +163,66 @@ func TestReadExistingNFOFallsBackToKodiMovieNFO(t *testing.T) {
 	record, found, err := NewService(nil, nil).ReadExistingNFO(media, 1)
 	if err != nil || !found || record.Title != "Folder title" {
 		t.Fatalf("expected movie.nfo fallback, record=%#v found=%v err=%v", record, found, err)
+	}
+}
+
+func TestPreviewAndApplyArtworkWritesKodiSidecars(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	media := filepath.Join(root, "Example.mkv")
+	if err := os.WriteFile(media, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	result, err = db.ExecContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, filepath.Base(media), "Example", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := result.LastInsertId()
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host != "image.tmdb.org" {
+			t.Fatalf("unexpected artwork host: %s", request.URL.Host)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/jpeg"}}, Body: io.NopCloser(bytes.NewReader([]byte{0xff, 0xd8, 0xff, 'j', 'p', 'e', 'g'}))}, nil
+	})}
+	service := NewService(db, NewTMDb(nil, client, "key"))
+	plan, err := service.PreviewArtwork(ctx, Record{MediaItemID: itemID, Title: "Example", Provider: "tmdb", PosterURL: "https://image.tmdb.org/t/p/w500/poster.jpg", BackdropURL: "https://image.tmdb.org/t/p/w500/fanart.jpg"}, media, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Assets) != 2 || plan.Assets[0].TargetPath != filepath.Join(root, "poster.jpg") {
+		t.Fatalf("unexpected artwork plan: %#v", plan)
+	}
+	applied, err := service.ApplyArtwork(ctx, plan.ID, func(path string) bool { return strings.HasPrefix(path, root+string(filepath.Separator)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.State != "applied" {
+		t.Fatalf("expected applied artwork plan, got %s", applied.State)
+	}
+	for _, filename := range []string{"poster.jpg", "fanart.jpg"} {
+		contents, readErr := os.ReadFile(filepath.Join(root, filename))
+		if readErr != nil || !bytes.Equal(contents, []byte{0xff, 0xd8, 0xff, 'j', 'p', 'e', 'g'}) {
+			t.Fatalf("unexpected %s: %q, %v", filename, contents, readErr)
+		}
+	}
+}
+
+func TestPreviewArtworkRejectsNonTMDbURLs(t *testing.T) {
+	_, err := NewService(nil, nil).PreviewArtwork(context.Background(), Record{Title: "Example", PosterURL: "https://example.test/image.jpg"}, "/media/Example.mkv", true)
+	if err == nil || !strings.Contains(err.Error(), "image.tmdb.org") {
+		t.Fatalf("expected TMDb URL validation error, got %v", err)
 	}
 }

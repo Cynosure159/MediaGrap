@@ -55,6 +55,12 @@ func (t *TMDb) Configure(client *http.Client, apiKey, language string) {
 	t.apiKey = strings.TrimSpace(apiKey)
 	t.language = language
 }
+func (t *TMDb) HTTPClient() *http.Client {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.client
+}
+func (t *TMDb) Logger() *slog.Logger { return t.logger }
 func (t *TMDb) configured() (string, string, *http.Client, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -191,5 +197,11 @@ func NewOutboundClient(proxyValue string) (*http.Client, error) {
 	} else {
 		transport.Proxy = http.ProxyFromEnvironment
 	}
-	return &http.Client{Transport: transport, Timeout: 20 * time.Second}, nil
+	return &http.Client{
+		Transport: transport,
+		Timeout:   20 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}, nil
 }

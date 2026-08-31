@@ -57,6 +57,8 @@ func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *au
 	mux.HandleFunc("POST /api/v1/media/", application.mediaDetail)
 	mux.HandleFunc("GET /api/v1/write-plans/", application.writePlan)
 	mux.HandleFunc("POST /api/v1/write-plans/", application.writePlan)
+	mux.HandleFunc("GET /api/v1/artwork-plans/", application.artworkPlan)
+	mux.HandleFunc("POST /api/v1/artwork-plans/", application.artworkPlan)
 	mux.HandleFunc("GET /api/v1/jobs", application.jobs)
 	mux.Handle("/", application.frontend())
 	return application.withRequestLogging(mux)
