@@ -23,6 +23,7 @@ internal/httpapi/ui/dist/*
 /data/
 /config/
 /cache/
+/runtime/
 
 # Editors
 .idea/
