@@ -3,8 +3,9 @@ import type {
   Session,
   Source,
   MediaItem,
-  TVShow,
-  TVShowDetail,
+TVShow,
+TVShowDetail,
+TVMetadata,
   Job,
   Metadata,
   Candidate,
@@ -137,6 +138,22 @@ export const tvShows = (q = '') =>
 
 export const tvShowDetail = (id: number) =>
   request<TVShowDetail>(`/api/v1/tv/shows/${id}`)
+
+export const tvShowCandidates = (id: number, q = '') =>
+  request<{ items: Candidate[] }>(`/api/v1/tv/shows/${id}/candidates?q=${encodeURIComponent(q)}`)
+
+export const selectTVShowCandidate = (csrf: string, id: number, candidateId: string) =>
+  request<TVMetadata>(`/api/v1/tv/shows/${id}/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ candidateId }),
+  })
+
+export const previewTVNfoPlans = (csrf: string, id: number) =>
+  request<{ items: WritePlan[] }>(`/api/v1/tv/shows/${id}/nfo-plans`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
 
 // Jobs
 export const jobs = () =>

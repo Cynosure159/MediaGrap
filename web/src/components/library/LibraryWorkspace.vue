@@ -81,6 +81,7 @@ onMounted(async () => {
         />
         <TVShowInspector
           :show-id="selectedShowId"
+          :csrf-token="csrfToken"
           :labels="labels"
           @close="selectedShowId = null"
         />

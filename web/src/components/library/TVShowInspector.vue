@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
+import TVMatchPanel from './TVMatchPanel.vue'
+import NfoPreview from './NfoPreview.vue'
 
 const props = defineProps<{
   showId: number | null
+  csrfToken: string
   labels: Record<string, string>
 }>()
 
@@ -15,6 +18,10 @@ const detail = shallowRef<api.TVShowDetail | null>(null)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const selectedEpisodeId = shallowRef<number | null>(null)
+const showMatchPanel = shallowRef(false)
+const isApplying = shallowRef(false)
+const nfoPlans = shallowRef<api.WritePlan[]>([])
+const isWritingNfo = shallowRef(false)
 
 async function loadDetail(id: number) {
   isLoading.value = true
@@ -52,6 +59,68 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
   const e = String(ep.episodeStart).padStart(2, '0')
   return `S${s}E${e}`
 }
+
+const metadataByEpisode = computed(() => {
+  const entries = detail.value?.metadata.episodes ?? []
+  return new Map(entries.map(episode => [`${episode.seasonNumber}:${episode.episodeNumber}`, episode]))
+})
+
+function remoteEpisode(ep: api.TVEpisode) {
+  return metadataByEpisode.value.get(`${ep.seasonNumber}:${ep.episodeStart}`)
+}
+
+function episodeTitle(ep: api.TVEpisode): string {
+  return remoteEpisode(ep)?.title || ep.titleHint || ep.relativePath.split('/').pop() || ''
+}
+
+function nfoState(ep: api.TVEpisode): string {
+  return ep.sidecars.some(sidecar => sidecar.kind === 'nfo') ? props.labels.nfoReady : props.labels.nfoMissing
+}
+
+const currentNfoPlan = computed(() => nfoPlans.value[0] ?? null)
+
+async function selectCandidate(candidate: api.Candidate) {
+  if (!props.showId || isApplying.value) return
+  isApplying.value = true
+  error.value = null
+  try {
+    const metadata = await api.selectTVShowCandidate(props.csrfToken, props.showId, candidate.id)
+    if (detail.value) detail.value = { ...detail.value, metadata }
+    showMatchPanel.value = false
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
+  } finally {
+    isApplying.value = false
+  }
+}
+
+async function previewNfoPlans() {
+  if (!props.showId || isWritingNfo.value) return
+  isWritingNfo.value = true
+  error.value = null
+  try {
+    const result = await api.previewTVNfoPlans(props.csrfToken, props.showId)
+    nfoPlans.value = result.items
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : props.labels.errorPreviewNfo
+  } finally {
+    isWritingNfo.value = false
+  }
+}
+
+async function applyCurrentNfoPlan() {
+  if (!currentNfoPlan.value || isWritingNfo.value) return
+  isWritingNfo.value = true
+  error.value = null
+  try {
+    await api.applyNfo(props.csrfToken, currentNfoPlan.value.id)
+    nfoPlans.value = nfoPlans.value.slice(1)
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : props.labels.errorWriteNfo
+  } finally {
+    isWritingNfo.value = false
+  }
+}
 </script>
 
 <template>
@@ -69,11 +138,19 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
         </div>
 
         <div v-if="detail" class="top-row-actions">
-          <button class="btn btn-primary" type="button">
+          <button class="btn btn-primary" :disabled="isApplying" type="button" @click="showMatchPanel = true">
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
               <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
             </svg>
-            {{ labels.batchScrapeAll }}
+            {{ isApplying ? labels.applyingCandidate : labels.scrapeTvShow }}
+          </button>
+          <button
+            class="btn btn-ghost"
+            :disabled="!detail.metadata.provider || isWritingNfo"
+            type="button"
+            @click="previewNfoPlans"
+          >
+            {{ isWritingNfo ? labels.saving : labels.previewTvNfo }}
           </button>
         </div>
       </div>
@@ -110,11 +187,11 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
       <!-- Show Hero Header -->
       <div class="hero-banner">
         <div class="title-cluster">
-          <h1 class="main-title">{{ detail.show.titleHint }}</h1>
+          <h1 class="main-title">{{ detail.metadata.title || detail.show.titleHint }}</h1>
         </div>
 
         <div class="meta-strip">
-          <span class="meta-item font-code">{{ detail.show.yearHint ? `${detail.show.yearHint}` : labels.tvSeries }}</span>
+          <span class="meta-item font-code">{{ detail.metadata.year ?? detail.show.yearHint ?? labels.tvSeries }}</span>
           <span class="meta-dot"></span>
           <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
           <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
@@ -122,8 +199,8 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
           <span class="meta-item font-code">{{ detail.show.relativePath }}</span>
 
           <div class="rating-badge">
-            <span class="star-score">★ {{ labels.ratingUnavailable }}</span>
-            <span class="provider-tag">TMDb</span>
+            <span class="star-score">★ {{ detail.metadata.rating ?? labels.ratingUnavailable }}</span>
+            <span class="provider-tag">{{ detail.metadata.provider ? 'TMDb' : labels.metadataEmpty }}</span>
           </div>
         </div>
       </div>
@@ -140,7 +217,7 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
               <span class="season-badge">{{ labels.season }} {{ seasonNum }}</span>
               <span class="season-count">{{ episodes.length }} {{ labels.episodesCount }}</span>
             </div>
-            <span class="spec-pill font-code">{{ labels.scrapedStatusUnavailable }}</span>
+            <span class="spec-pill font-code">{{ detail.metadata.provider ? labels.metadataReady : labels.metadataEmpty }}</span>
           </header>
 
           <table class="episode-table">
@@ -162,14 +239,14 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
               >
                 <td class="col-code font-code">{{ formatEpisodeCode(ep) }}</td>
                 <td class="col-title">
-                  <div class="ep-title-main">{{ ep.titleHint || ep.relativePath.split('/').pop() }}</div>
+                  <div class="ep-title-main">{{ episodeTitle(ep) }}</div>
                   <div class="ep-path font-code">{{ ep.relativePath }}</div>
                 </td>
                 <td class="col-res">
-                  <span class="spec-badge">{{ labels.qualityUnavailable }}</span>
+                  <span class="spec-badge">{{ remoteEpisode(ep)?.runtimeMinutes ? `${remoteEpisode(ep)?.runtimeMinutes} ${labels.runtimeMinutes}` : labels.qualityUnavailable }}</span>
                 </td>
                 <td class="col-status">
-                  <span class="dot dot-off" :title="labels.nfoStatusUnavailable"></span>
+                  <span class="dot" :class="ep.sidecars.some(sidecar => sidecar.kind === 'nfo') ? 'dot-on' : 'dot-off'" :title="nfoState(ep)"></span>
                 </td>
               </tr>
             </tbody>
@@ -177,6 +254,21 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
         </section>
       </div>
     </div>
+    <TVMatchPanel
+      v-if="showMatchPanel && showId && detail"
+      :show-id="showId"
+      :title="detail.show.titleHint"
+      :labels="labels"
+      @close="showMatchPanel = false"
+      @select="selectCandidate"
+    />
+    <NfoPreview
+      :plan="currentNfoPlan"
+      :applying="isWritingNfo"
+      :labels="labels"
+      @apply="applyCurrentNfoPlan"
+      @close="nfoPlans = []"
+    />
   </main>
 </template>
 

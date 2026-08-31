@@ -68,6 +68,32 @@ type ArtworkPlan struct {
 	CreatedAt   string         `json:"createdAt"`
 	Assets      []ArtworkAsset `json:"assets"`
 }
+type TVRecord struct {
+	ShowID        int64              `json:"showId"`
+	Provider      string             `json:"provider"`
+	ProviderID    string             `json:"providerId"`
+	Title         string             `json:"title"`
+	OriginalTitle string             `json:"originalTitle"`
+	Year          *int               `json:"year"`
+	Overview      string             `json:"overview"`
+	Genres        []string           `json:"genres"`
+	PosterURL     string             `json:"posterUrl"`
+	BackdropURL   string             `json:"backdropUrl"`
+	Rating        *float64           `json:"rating"`
+	Votes         *int               `json:"votes"`
+	Status        string             `json:"status"`
+	Network       string             `json:"network"`
+	Cast          []Person           `json:"cast"`
+	Episodes      []TVEpisodeDetails `json:"episodes"`
+	UpdatedAt     string             `json:"updatedAt"`
+}
+type TVNFOInput struct {
+	MediaItemID   int64
+	Kind          string
+	TargetPath    string
+	SeasonNumber  int
+	EpisodeNumber int
+}
 type Service struct {
 	db            *sql.DB
 	provider      Provider
@@ -119,6 +145,208 @@ func (s *Service) Select(ctx context.Context, itemID int64, providerID string) (
 	}
 	s.logger.Info("TMDb movie selection completed", "media_item_id", itemID, "cast_count", len(saved.Cast), "director_count", len(saved.Directors), "has_rating", saved.Rating != nil)
 	return saved, nil
+}
+
+func (s *Service) SearchTV(ctx context.Context, query string, year *int) ([]Candidate, error) {
+	provider, ok := s.provider.(TVProvider)
+	if !ok {
+		return nil, errors.New("TV metadata provider is unavailable")
+	}
+	return provider.SearchTV(ctx, strings.TrimSpace(query), year)
+}
+
+func (s *Service) SelectTV(ctx context.Context, showID int64, providerID string, seasons []int) (TVRecord, error) {
+	provider, ok := s.provider.(TVProvider)
+	if !ok {
+		return TVRecord{}, errors.New("TV metadata provider is unavailable")
+	}
+	s.logger.Info("TMDb TV metadata replacement started", "show_id", showID, "provider_id", providerID, "season_count", len(seasons))
+	details, err := provider.TV(ctx, providerID)
+	if err != nil {
+		s.logger.Warn("TMDb TV metadata replacement failed", "show_id", showID, "provider_id", providerID, "error", err)
+		return TVRecord{}, err
+	}
+	episodes := make([]TVEpisodeDetails, 0)
+	for _, season := range seasons {
+		remote, fetchErr := provider.TVSeason(ctx, providerID, season)
+		if fetchErr != nil {
+			s.logger.Warn("TMDb TV season lookup failed", "show_id", showID, "season_number", season, "error", fetchErr)
+			return TVRecord{}, fetchErr
+		}
+		episodes = append(episodes, remote...)
+	}
+	record := TVRecord{ShowID: showID, Provider: "tmdb", ProviderID: details.ID, Title: details.Title, OriginalTitle: details.OriginalTitle, Year: details.Year, Overview: details.Overview, Genres: details.Genres, PosterURL: details.PosterURL, BackdropURL: details.BackdropURL, Rating: details.Rating, Votes: details.Votes, Status: details.Status, Network: details.Network, Cast: details.Cast, Episodes: episodes}
+	saved, err := s.SaveTV(ctx, record)
+	if err != nil {
+		s.logger.Warn("TMDb TV metadata replacement save failed", "show_id", showID, "error", err)
+		return TVRecord{}, err
+	}
+	s.logger.Info("TMDb TV metadata replacement completed", "show_id", showID, "episode_count", len(saved.Episodes), "cast_count", len(saved.Cast), "has_rating", saved.Rating != nil)
+	return saved, nil
+}
+
+func (s *Service) TVRecord(ctx context.Context, showID int64) (TVRecord, error) {
+	var record TVRecord
+	var year, votes sql.NullInt64
+	var rating sql.NullFloat64
+	var genres, cast string
+	err := s.db.QueryRowContext(ctx, `SELECT show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at FROM tv_metadata WHERE show_id=?`, showID).Scan(&record.ShowID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.Status, &record.Network, &cast, &record.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return normalizedTV(TVRecord{ShowID: showID}), nil
+	}
+	if err != nil {
+		return TVRecord{}, err
+	}
+	if year.Valid {
+		value := int(year.Int64)
+		record.Year = &value
+	}
+	if rating.Valid {
+		value := rating.Float64
+		record.Rating = &value
+	}
+	if votes.Valid {
+		value := int(votes.Int64)
+		record.Votes = &value
+	}
+	_ = json.Unmarshal([]byte(genres), &record.Genres)
+	_ = json.Unmarshal([]byte(cast), &record.Cast)
+	rows, err := s.db.QueryContext(ctx, `SELECT season_number,episode_number,title,overview,air_date,runtime_minutes,still_url FROM tv_episode_metadata WHERE show_id=? ORDER BY season_number,episode_number`, showID)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var episode TVEpisodeDetails
+		var runtime sql.NullInt64
+		if err := rows.Scan(&episode.SeasonNumber, &episode.EpisodeNumber, &episode.Title, &episode.Overview, &episode.AirDate, &runtime, &episode.StillURL); err != nil {
+			return TVRecord{}, err
+		}
+		if runtime.Valid {
+			value := int(runtime.Int64)
+			episode.RuntimeMinutes = &value
+		}
+		record.Episodes = append(record.Episodes, episode)
+	}
+	return normalizedTV(record), rows.Err()
+}
+
+func (s *Service) SaveTV(ctx context.Context, record TVRecord) (TVRecord, error) {
+	if record.ShowID < 1 || strings.TrimSpace(record.Title) == "" {
+		return TVRecord{}, errors.New("TV show title is required")
+	}
+	record = normalizedTV(record)
+	genres, _ := json.Marshal(record.Genres)
+	cast, _ := json.Marshal(record.Cast)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO tv_metadata(show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(show_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,status=excluded.status,network=excluded.network,cast_json=excluded.cast_json,updated_at=datetime('now')`, record.ShowID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.Status), strings.TrimSpace(record.Network), string(cast))
+	if err != nil {
+		return TVRecord{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM tv_episode_metadata WHERE show_id=?`, record.ShowID); err != nil {
+		return TVRecord{}, err
+	}
+	for _, episode := range record.Episodes {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO tv_episode_metadata(show_id,season_number,episode_number,title,overview,air_date,runtime_minutes,still_url) VALUES(?,?,?,?,?,?,?,?)`, record.ShowID, episode.SeasonNumber, episode.EpisodeNumber, strings.TrimSpace(episode.Title), strings.TrimSpace(episode.Overview), strings.TrimSpace(episode.AirDate), episode.RuntimeMinutes, episode.StillURL); err != nil {
+			return TVRecord{}, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return TVRecord{}, err
+	}
+	return s.TVRecord(ctx, record.ShowID)
+}
+
+func normalizedTV(record TVRecord) TVRecord {
+	if record.Genres == nil {
+		record.Genres = []string{}
+	}
+	if record.Cast == nil {
+		record.Cast = []Person{}
+	}
+	if record.Episodes == nil {
+		record.Episodes = []TVEpisodeDetails{}
+	}
+	return record
+}
+
+// PreviewTVNFO creates reviewable, independent write plans for a selected TV
+// show. It does not write any media-side file; callers must apply each plan.
+func (s *Service) PreviewTVNFO(ctx context.Context, record TVRecord, inputs []TVNFOInput, writable bool) ([]WritePlan, error) {
+	if !writable {
+		return nil, errors.New("the media source is read-only")
+	}
+	if strings.TrimSpace(record.Title) == "" {
+		return nil, errors.New("select TV metadata before creating NFO plans")
+	}
+	plans := make([]WritePlan, 0, len(inputs))
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, input := range inputs {
+		if input.MediaItemID < 1 || strings.TrimSpace(input.TargetPath) == "" {
+			return nil, errors.New("TV NFO target is invalid")
+		}
+		content, buildErr := tvNFOContent(record, input)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+		willReplace, inspectErr := inspectNFOReplacement(input.TargetPath)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		plan := WritePlan{ID: uuid.NewString(), MediaItemID: input.MediaItemID, TargetPath: input.TargetPath, Content: string(content), State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), WillReplace: willReplace}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO write_plans(id,media_item_id,target_path,content,state) VALUES(?,?,?,?,?)`, plan.ID, plan.MediaItemID, plan.TargetPath, plan.Content, plan.State); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('tv.nfo.preview',?,?,?)`, plan.MediaItemID, plan.TargetPath, "TV NFO save plan created"); err != nil {
+			return nil, err
+		}
+		plans = append(plans, plan)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.logger.Info("TV NFO plans created", "show_id", record.ShowID, "plan_count", len(plans))
+	return plans, nil
+}
+
+func tvNFOContent(record TVRecord, input TVNFOInput) ([]byte, error) {
+	switch input.Kind {
+	case "show":
+		return kodi.WriteTVShow(kodi.TVShow{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, Status: record.Status, Network: record.Network, Cast: kodiPeople(record.Cast)})
+	case "season":
+		return kodi.WriteSeason(fmt.Sprintf("Season %d", input.SeasonNumber), input.SeasonNumber)
+	case "episode":
+		for _, episode := range record.Episodes {
+			if episode.SeasonNumber == input.SeasonNumber && episode.EpisodeNumber == input.EpisodeNumber {
+				return kodi.WriteEpisode(kodi.Episode{Title: episode.Title, Plot: episode.Overview, Season: episode.SeasonNumber, Episode: episode.EpisodeNumber, AirDate: episode.AirDate, Runtime: episode.RuntimeMinutes, StillURL: episode.StillURL})
+			}
+		}
+		return nil, fmt.Errorf("remote metadata for S%02dE%02d is unavailable", input.SeasonNumber, input.EpisodeNumber)
+	default:
+		return nil, errors.New("unknown TV NFO kind")
+	}
+}
+
+func inspectNFOReplacement(target string) (bool, error) {
+	info, err := os.Lstat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect NFO target: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return true, errors.New("target NFO is not a regular file and cannot be replaced")
+	}
+	return true, nil
 }
 func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 	var record Record

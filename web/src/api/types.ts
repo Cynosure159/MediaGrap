@@ -55,6 +55,37 @@ export interface TVShowDetail {
   show: TVShow
   episodes: TVEpisode[]
   writable: boolean
+  metadata: TVMetadata
+}
+
+export interface TVMetadata {
+  showId: number
+  provider: string
+  providerId: string
+  title: string
+  originalTitle: string
+  year: number | null
+  overview: string
+  genres: string[]
+  posterUrl: string
+  backdropUrl: string
+  rating: number | null
+  votes: number | null
+  status: string
+  network: string
+  cast: CastMember[]
+  episodes: TVEpisodeMetadata[]
+  updatedAt?: string
+}
+
+export interface TVEpisodeMetadata {
+  seasonNumber: number
+  episodeNumber: number
+  title: string
+  overview: string
+  airDate: string
+  runtimeMinutes: number | null
+  stillUrl: string
 }
 
 export interface Job {

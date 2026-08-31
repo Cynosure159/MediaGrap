@@ -89,6 +89,9 @@ func NewServer(
 	// TV Shows & Episodes
 	mux.HandleFunc("GET /api/v1/tv/shows", application.listTVShows)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}", application.getTVShow)
+	mux.HandleFunc("GET /api/v1/tv/shows/{id}/candidates", application.getTVShowCandidates)
+	mux.HandleFunc("POST /api/v1/tv/shows/{id}/select", application.selectTVShowCandidate)
+	mux.HandleFunc("POST /api/v1/tv/shows/{id}/nfo-plans", application.previewTVNFOPlans)
 
 	// Plans (NFO & Artwork Safe Writes)
 	mux.HandleFunc("GET /api/v1/write-plans/{id}", application.getWritePlan)
