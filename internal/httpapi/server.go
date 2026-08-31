@@ -3,7 +3,6 @@ package httpapi
 import (
 	"database/sql"
 	"embed"
-	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -35,34 +34,74 @@ type server struct {
 	settingsService *settings.Service
 }
 
-func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *auth.Service, libraryService *library.Service, metadataService *metadata.Service, settingsService *settings.Service) http.Handler {
-	application := &server{logger: logger, db: db, build: build, auth: authService, library: libraryService, metadata: metadataService, settingsService: settingsService}
+func NewServer(
+	logger *slog.Logger,
+	db *sql.DB,
+	build BuildInfo,
+	authService *auth.Service,
+	libraryService *library.Service,
+	metadataService *metadata.Service,
+	settingsService *settings.Service,
+) http.Handler {
+	application := &server{
+		logger:          logger,
+		db:              db,
+		build:           build,
+		auth:            authService,
+		library:         libraryService,
+		metadata:        metadataService,
+		settingsService: settingsService,
+	}
+
 	mux := http.NewServeMux()
+
+	// Health & System
 	mux.HandleFunc("GET /healthz", application.health)
 	mux.HandleFunc("GET /readyz", application.ready)
 	mux.HandleFunc("GET /api/v1/system/info", application.systemInfo)
 	mux.HandleFunc("GET /api/v1/system/summary", application.systemSummary)
+
+	// Auth & Setup
 	mux.HandleFunc("GET /api/v1/setup/status", application.setupStatus)
 	mux.HandleFunc("POST /api/v1/setup", application.setup)
+	mux.HandleFunc("GET /api/v1/session", application.session)
 	mux.HandleFunc("POST /api/v1/session", application.login)
 	mux.HandleFunc("DELETE /api/v1/session", application.logout)
-	mux.HandleFunc("GET /api/v1/session", application.session)
-	mux.HandleFunc("GET /api/v1/settings", application.settings)
-	mux.HandleFunc("PUT /api/v1/settings", application.settings)
-	mux.HandleFunc("GET /api/v1/sources", application.sources)
-	mux.HandleFunc("POST /api/v1/sources", application.sources)
-	mux.HandleFunc("POST /api/v1/sources/", application.scanSource)
-	mux.HandleFunc("GET /api/v1/media", application.media)
-	mux.HandleFunc("GET /api/v1/tv/shows", application.tvShows)
-	mux.HandleFunc("GET /api/v1/tv/shows/", application.tvShow)
-	mux.HandleFunc("GET /api/v1/media/", application.mediaDetail)
-	mux.HandleFunc("POST /api/v1/media/", application.mediaDetail)
-	mux.HandleFunc("GET /api/v1/write-plans/", application.writePlan)
-	mux.HandleFunc("POST /api/v1/write-plans/", application.writePlan)
-	mux.HandleFunc("GET /api/v1/artwork-plans/", application.artworkPlan)
-	mux.HandleFunc("POST /api/v1/artwork-plans/", application.artworkPlan)
-	mux.HandleFunc("GET /api/v1/jobs", application.jobs)
+
+	// Settings
+	mux.HandleFunc("GET /api/v1/settings", application.getSettings)
+	mux.HandleFunc("PUT /api/v1/settings", application.updateSettings)
+
+	// Sources
+	mux.HandleFunc("GET /api/v1/sources", application.listSources)
+	mux.HandleFunc("POST /api/v1/sources", application.createSource)
+	mux.HandleFunc("POST /api/v1/sources/{id}/scans", application.scanSource)
+
+	// Media (Movies)
+	mux.HandleFunc("GET /api/v1/media", application.listMedia)
+	mux.HandleFunc("GET /api/v1/media/{id}", application.getMedia)
+	mux.HandleFunc("GET /api/v1/media/{id}/candidates", application.getMediaCandidates)
+	mux.HandleFunc("POST /api/v1/media/{id}/select", application.selectMediaCandidate)
+	mux.HandleFunc("POST /api/v1/media/{id}/metadata", application.saveMediaMetadata)
+	mux.HandleFunc("POST /api/v1/media/{id}/write-plans", application.previewMediaWritePlan)
+	mux.HandleFunc("POST /api/v1/media/{id}/artwork-plans", application.previewMediaArtworkPlan)
+
+	// TV Shows & Episodes
+	mux.HandleFunc("GET /api/v1/tv/shows", application.listTVShows)
+	mux.HandleFunc("GET /api/v1/tv/shows/{id}", application.getTVShow)
+
+	// Plans (NFO & Artwork Safe Writes)
+	mux.HandleFunc("GET /api/v1/write-plans/{id}", application.getWritePlan)
+	mux.HandleFunc("POST /api/v1/write-plans/{id}/apply", application.applyWritePlan)
+	mux.HandleFunc("GET /api/v1/artwork-plans/{id}", application.getArtworkPlan)
+	mux.HandleFunc("POST /api/v1/artwork-plans/{id}/apply", application.applyArtworkPlan)
+
+	// Jobs
+	mux.HandleFunc("GET /api/v1/jobs", application.listJobs)
+
+	// Frontend SPA
 	mux.Handle("/", application.frontend())
+
 	return application.withRequestLogging(mux)
 }
 
@@ -71,9 +110,7 @@ func (s *server) health(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *server) ready(writer http.ResponseWriter, request *http.Request) {
-	context, cancel := request.Context(), func() {}
-	defer cancel()
-	if err := s.db.PingContext(context); err != nil {
+	if err := s.db.PingContext(request.Context()); err != nil {
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
@@ -142,19 +179,4 @@ func (s *server) withRequestLogging(next http.Handler) http.Handler {
 		next.ServeHTTP(writer, request)
 		s.logger.Debug("HTTP request", "method", request.Method, "path", request.URL.Path, "duration", time.Since(startedAt))
 	})
-}
-
-func writeJSON(writer http.ResponseWriter, status int, value any) {
-	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-	writer.Header().Set("Cache-Control", "no-store")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(value)
-}
-
-func urlSegments(path, prefix string) []string {
-	trimmed := strings.Trim(strings.TrimPrefix(path, prefix), "/")
-	if trimmed == "" {
-		return nil
-	}
-	return strings.Split(trimmed, "/")
 }

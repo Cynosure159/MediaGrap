@@ -6,17 +6,20 @@ import (
 	"github.com/mediagrap/mediagrap/internal/settings"
 )
 
-func (s *server) settings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireSession(w, r, r.Method == http.MethodPut); !ok {
+func (s *server) getSettings(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
 		return
 	}
-	if r.Method == http.MethodGet {
-		view, err := s.settingsService.View(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load settings")
-			return
-		}
-		writeJSON(w, http.StatusOK, view)
+	view, err := s.settingsService.View(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *server) updateSettings(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
 		return
 	}
 	var update settings.Update
@@ -32,7 +35,11 @@ func (s *server) settings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
 		return
 	}
-	s.logger.Info("Application settings updated", "tmdb_api_key_configured", current.TMDbAPIKey != "", "tmdb_language", current.TMDbLanguage, "outbound_proxy_configured", current.OutboundProxy != "")
+	s.logger.Info("Application settings updated",
+		"tmdb_api_key_configured", current.TMDbAPIKey != "",
+		"tmdb_language", current.TMDbLanguage,
+		"outbound_proxy_configured", current.OutboundProxy != "",
+	)
 	view, err := s.settingsService.View(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load settings")

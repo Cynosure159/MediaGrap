@@ -1,3 +1,57 @@
 import { computed, shallowRef } from 'vue'
 import * as api from '@/api/library'
-export function useLibrary(csrfToken: () => string) { const sourceItems = shallowRef<api.Source[]>([]); const mediaItems = shallowRef<api.MediaItem[]>([]); const tvShowItems = shallowRef<api.TVShow[]>([]); const jobItems = shallowRef<api.Job[]>([]); const error = shallowRef<string | null>(null); const isLoading = shallowRef(false); const hasSources = computed(() => sourceItems.value.length > 0); async function refresh(query = '') { isLoading.value = true; error.value = null; try { const [sourceResult, mediaResult, tvResult, jobResult] = await Promise.all([api.sources(), api.media(query), api.tvShows(query), api.jobs()]); sourceItems.value = sourceResult.items; mediaItems.value = mediaResult.items; tvShowItems.value = tvResult.items; jobItems.value = jobResult.items } catch (caught) { error.value = caught instanceof Error ? caught.message : 'Unable to load the library' } finally { isLoading.value = false } } async function createSource(name: string, rootPath: string) { await api.addSource(csrfToken(), name, rootPath); await refresh() } async function scan(id: number) { await api.scanSource(csrfToken(), id); await refresh() } return { sourceItems, mediaItems, tvShowItems, jobItems, error, isLoading, hasSources, refresh, createSource, scan } }
+
+export function useLibrary(csrfToken: () => string) {
+  const sourceItems = shallowRef<api.Source[]>([])
+  const mediaItems = shallowRef<api.MediaItem[]>([])
+  const tvShowItems = shallowRef<api.TVShow[]>([])
+  const jobItems = shallowRef<api.Job[]>([])
+  const error = shallowRef<string | null>(null)
+  const isLoading = shallowRef(false)
+
+  const hasSources = computed(() => sourceItems.value.length > 0)
+
+  async function refresh(query = '') {
+    isLoading.value = true
+    error.value = null
+    try {
+      const [sourceResult, mediaResult, tvResult, jobResult] = await Promise.all([
+        api.sources(),
+        api.media(query),
+        api.tvShows(query),
+        api.jobs(),
+      ])
+      sourceItems.value = sourceResult.items
+      mediaItems.value = mediaResult.items
+      tvShowItems.value = tvResult.items
+      jobItems.value = jobResult.items
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : 'Unable to load the library'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function createSource(name: string, rootPath: string) {
+    await api.addSource(csrfToken(), name, rootPath)
+    await refresh()
+  }
+
+  async function scan(id: number) {
+    await api.scanSource(csrfToken(), id)
+    await refresh()
+  }
+
+  return {
+    sourceItems,
+    mediaItems,
+    tvShowItems,
+    jobItems,
+    error,
+    isLoading,
+    hasSources,
+    refresh,
+    createSource,
+    scan,
+  }
+}
