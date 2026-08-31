@@ -16,7 +16,7 @@ export const addSource = (csrf: string, name: string, rootPath: string) => reque
 export const scanSource = (csrf: string, id: number) => request<Job>(`/api/v1/sources/${id}/scans`, { method: 'POST', headers: { 'X-CSRF-Token': csrf } })
 export const media = (q = '') => request<{ items: MediaItem[]; total: number }>(`/api/v1/media?page=1&pageSize=50&q=${encodeURIComponent(q)}`)
 export const jobs = () => request<{ items: Job[] }>('/api/v1/jobs')
-export const mediaDetail = (id: number) => request<{ item: MediaItem; metadata: Metadata; writable: boolean }>(`/api/v1/media/${id}`)
+export const mediaDetail = (id: number) => request<{ item: MediaItem; metadata: Metadata; metadataOrigin: 'draft' | 'nfo' | 'empty'; writable: boolean }>(`/api/v1/media/${id}`)
 export const candidates = (id: number) => request<{ items: Candidate[] }>(`/api/v1/media/${id}/candidates`)
 export const selectCandidate = (csrf: string, id: number, candidateId: string) => request<Metadata>(`/api/v1/media/${id}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ candidateId }) })
 export const saveMetadata = (csrf: string, id: number, metadata: Metadata) => request<Metadata>(`/api/v1/media/${id}/metadata`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(metadata) })

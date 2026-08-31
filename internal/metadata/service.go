@@ -80,6 +80,37 @@ func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 	_ = json.Unmarshal([]byte(locked), &record.LockedFields)
 	return record, nil
 }
+
+// ReadExistingNFO loads the sidecar paired with a media file without changing it.
+// Symlink sidecars are rejected so an allowlisted media path cannot escape its source.
+func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool, error) {
+	path := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo"
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Record{}, false, nil
+	}
+	if err != nil {
+		return Record{}, false, fmt.Errorf("inspect existing NFO: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return Record{}, false, errors.New("existing NFO must be a regular file")
+	}
+	if info.Size() > 1<<20 {
+		return Record{}, false, errors.New("existing NFO exceeds the 1 MiB safety limit")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return Record{}, false, fmt.Errorf("read existing NFO: %w", err)
+	}
+	movie, err := kodi.ParseMovie(contents)
+	if err != nil {
+		return Record{}, false, fmt.Errorf("parse existing NFO: %w", err)
+	}
+	if movie.Title == "" {
+		return Record{}, false, errors.New("existing NFO has no movie title")
+	}
+	return Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, LockedFields: []string{}}, true, nil
+}
 func (s *Service) Save(ctx context.Context, record Record) (Record, error) {
 	if strings.TrimSpace(record.Title) == "" {
 		return Record{}, errors.New("title is required")

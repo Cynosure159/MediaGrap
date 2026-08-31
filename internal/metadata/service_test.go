@@ -73,3 +73,22 @@ func TestPreviewAndApplyNeverOverwritesNFO(t *testing.T) {
 		t.Fatal("existing NFO was overwritten")
 	}
 }
+
+func TestReadExistingNFOReturnsDraftWithoutPersisting(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "Existing.mkv")
+	if err := os.WriteFile(media, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nfo := strings.TrimSuffix(media, ".mkv") + ".nfo"
+	if err := os.WriteFile(nfo, []byte(`<?xml version="1.0"?><movie><title>Existing title</title><year>2002</year><uniqueid type="tmdb">42</uniqueid></movie>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := NewService(nil, nil).ReadExistingNFO(media, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || record.Title != "Existing title" || record.ProviderID != "42" || record.Year == nil || *record.Year != 2002 {
+		t.Fatalf("unexpected record: %#v", record)
+	}
+}

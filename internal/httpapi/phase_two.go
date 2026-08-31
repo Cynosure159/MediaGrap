@@ -38,7 +38,20 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 500, "internal_error", "Unable to load metadata")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"item": location.Item, "metadata": record, "writable": location.Writable})
+		origin := "draft"
+		if record.Title == "" {
+			record, _, err = s.metadata.ReadExistingNFO(location.AbsolutePath, id)
+			if err != nil {
+				writeError(w, 422, "invalid_nfo", err.Error())
+				return
+			}
+			if record.Title != "" {
+				origin = "nfo"
+			} else {
+				origin = "empty"
+			}
+		}
+		writeJSON(w, 200, map[string]any{"item": location.Item, "metadata": record, "metadataOrigin": origin, "writable": location.Writable})
 		return
 	}
 	if len(parts) != 2 {
