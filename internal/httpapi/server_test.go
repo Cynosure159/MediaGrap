@@ -91,7 +91,7 @@ func TestSaveMetadataWritesOneJSONDocument(t *testing.T) {
 }
 
 func testServer(db *sql.DB) http.Handler {
-	return httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, auth.NewService(db), library.NewService(db, []string{tTempRootPlaceholder}), metadata.NewService(db, metadata.NewTMDb(http.DefaultClient, "")))
+	return httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, auth.NewService(db), library.NewService(db, []string{tTempRootPlaceholder}), metadata.NewService(db, metadata.NewTMDb(slog.Default(), http.DefaultClient, "")))
 }
 
 const tTempRootPlaceholder = "/media"

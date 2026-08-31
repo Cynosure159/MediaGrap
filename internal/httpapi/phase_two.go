@@ -64,14 +64,19 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		year := location.Item.YearHint
+		origin := "explicit"
 		if query == "" {
-			query = location.Item.TitleHint
+			query, year, origin = s.library.MetadataSearchHint(location.Item)
 		}
-		candidates, err := s.metadata.Search(r.Context(), query, location.Item.YearHint)
+		s.logger.Info("TMDb movie search started", "media_item_id", id, "query_length", len([]rune(query)), "year", year, "query_origin", origin)
+		candidates, err := s.metadata.Search(r.Context(), query, year)
 		if err != nil {
+			s.logger.Warn("TMDb movie search failed", "media_item_id", id, "error", err)
 			writeError(w, 400, "provider_unavailable", err.Error())
 			return
 		}
+		s.logger.Info("TMDb movie search completed", "media_item_id", id, "candidate_count", len(candidates))
 		writeJSON(w, 200, map[string]any{"items": candidates})
 		return
 	case "select":

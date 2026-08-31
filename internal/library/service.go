@@ -210,6 +210,20 @@ func (s *Service) LocateMedia(ctx context.Context, id int64) (MediaLocation, err
 }
 
 func (s *Service) Allowed(path string) bool { return s.allowed(path) }
+
+// MetadataSearchHint prefers the movie directory name because it commonly
+// contains the release title while the filename often includes codec and group tags.
+// Files directly in a source root have no directory hint and use the file-derived one.
+func (s *Service) MetadataSearchHint(item MediaItem) (string, *int, string) {
+	directory := filepath.Dir(item.RelativePath)
+	if directory != "." {
+		if title, year := parseHint(filepath.Base(directory)); title != "" {
+			return title, year, "parent_directory"
+		}
+	}
+	return item.TitleHint, item.YearHint, "filename"
+}
+
 func scanItem(row interface{ Scan(...any) error }) (MediaItem, error) {
 	var item MediaItem
 	var year sql.NullInt64

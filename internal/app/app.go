@@ -50,7 +50,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 		db.Close()
 		return nil, err
 	}
-	metadataService := metadata.NewService(db, metadata.NewTMDb(outbound, config.TMDbAPIKey))
+	metadataService := metadata.NewService(db, metadata.NewTMDb(logger, outbound, config.TMDbAPIKey))
 	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService)
 	return &Application{
 		config: config,

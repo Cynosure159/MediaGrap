@@ -22,6 +22,7 @@ MediaGrap is a lightweight, self-hosted media metadata manager. The target produ
 - Scraper integrations must sit behind provider interfaces. Do not leak provider payloads into domain models.
 - Long-running work must use persisted jobs with cancellation, retry policy, progress, and structured logs.
 - Never log secrets, API keys, proxy credentials, authorization headers, or full cookies.
+- Add structured logs at diagnostic boundaries: external-provider request start/result/failure, persisted-job lifecycle transitions, and filesystem plan/apply outcomes. Logs must include safe correlation fields (for example media item ID, provider endpoint, HTTP status, duration, or result count) while excluding secrets and sensitive request URLs.
 
 ## Quality gates
 

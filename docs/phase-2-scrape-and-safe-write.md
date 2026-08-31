@@ -5,7 +5,9 @@ Phase 2 provides the first usable movie metadata workflow: locate a TMDb match, 
 ## Included behavior
 
 - TMDb movie search and details adapter behind a provider interface.
+- Default TMDb search terms prioritize the indexed video's parent directory name (for example, `奥本海默 (2023)` becomes `奥本海默` with year `2023`). This avoids sending codec, resolution, and release-group tags from filenames; files directly in a source root fall back to their file-derived title.
 - An outbound HTTP client that honors `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY`. `MEDIAGRAP_OUTBOUND_PROXY` explicitly overrides the proxy URL for MediaGrap requests. The present implementation supports HTTP/HTTPS proxy URLs; SOCKS support is intentionally deferred until it can share the same tested transport policy.
+- TMDb search and detail requests emit structured lifecycle logs. They record the safe request endpoint, status, duration, media-item ID, and candidate count; credentials, proxy values, and request URLs are never logged. Failures additionally distinguish timeout from other transport failures.
 - Metadata drafts persisted in SQLite, including source/provider identifiers, titles, year, plot, runtime, genres, and selected image URLs.
 - Deterministic Kodi movie NFO XML serialization and strict XML parsing.
 - When an indexed movie has no saved MediaGrap draft, its same-basename Kodi NFO is read on opening the detail view and used as the editable starting draft. If it is absent, the Kodi-standard directory-level `movie.nfo` is used as a fallback. The original NFO remains unchanged until an explicit write plan is applied.

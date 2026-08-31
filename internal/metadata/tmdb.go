@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,10 +36,14 @@ type Provider interface {
 type TMDb struct {
 	client *http.Client
 	apiKey string
+	logger *slog.Logger
 }
 
-func NewTMDb(client *http.Client, apiKey string) *TMDb {
-	return &TMDb{client: client, apiKey: strings.TrimSpace(apiKey)}
+func NewTMDb(logger *slog.Logger, client *http.Client, apiKey string) *TMDb {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &TMDb{client: client, apiKey: strings.TrimSpace(apiKey), logger: logger}
 }
 func (t *TMDb) configured() error {
 	if t.apiKey == "" {
@@ -85,19 +90,34 @@ func (t *TMDb) Movie(ctx context.Context, id string) (Details, error) {
 	return Details{Candidate: candidate, Runtime: optionalInt(result.Runtime), Genres: genres, BackdropURL: imageURL(result.BackdropPath)}, nil
 }
 func (t *TMDb) get(ctx context.Context, path string, params url.Values, target any) error {
+	startedAt := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.themoviedb.org/3"+path+"?"+params.Encode(), nil)
 	if err != nil {
 		return err
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("TMDb request: %w", err)
+		t.logger.Warn("TMDb request failed", "endpoint", path, "duration", time.Since(startedAt), "failure", requestFailureKind(err))
+		return errors.New("TMDb request failed")
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		t.logger.Warn("TMDb request returned an error", "endpoint", path, "status", response.StatusCode, "duration", time.Since(startedAt))
 		return fmt.Errorf("TMDb returned HTTP %d", response.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(target)
+	if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(target); err != nil {
+		t.logger.Warn("TMDb response could not be decoded", "endpoint", path, "status", response.StatusCode, "duration", time.Since(startedAt))
+		return errors.New("TMDb returned invalid JSON")
+	}
+	t.logger.Info("TMDb request completed", "endpoint", path, "status", response.StatusCode, "duration", time.Since(startedAt))
+	return nil
+}
+
+func requestFailureKind(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return "transport"
 }
 
 type tmdbMovie struct {
