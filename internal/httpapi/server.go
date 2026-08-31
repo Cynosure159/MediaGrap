@@ -12,6 +12,7 @@ import (
 
 	"github.com/mediagrap/mediagrap/internal/auth"
 	"github.com/mediagrap/mediagrap/internal/library"
+	"github.com/mediagrap/mediagrap/internal/metadata"
 )
 
 //go:embed ui/fallback.html ui/dist/*
@@ -24,15 +25,16 @@ type BuildInfo struct {
 }
 
 type server struct {
-	logger  *slog.Logger
-	db      *sql.DB
-	build   BuildInfo
-	auth    *auth.Service
-	library *library.Service
+	logger   *slog.Logger
+	db       *sql.DB
+	build    BuildInfo
+	auth     *auth.Service
+	library  *library.Service
+	metadata *metadata.Service
 }
 
-func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *auth.Service, libraryService *library.Service) http.Handler {
-	application := &server{logger: logger, db: db, build: build, auth: authService, library: libraryService}
+func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *auth.Service, libraryService *library.Service, metadataService *metadata.Service) http.Handler {
+	application := &server{logger: logger, db: db, build: build, auth: authService, library: libraryService, metadata: metadataService}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", application.health)
 	mux.HandleFunc("GET /readyz", application.ready)
@@ -47,6 +49,10 @@ func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *au
 	mux.HandleFunc("POST /api/v1/sources", application.sources)
 	mux.HandleFunc("POST /api/v1/sources/", application.scanSource)
 	mux.HandleFunc("GET /api/v1/media", application.media)
+	mux.HandleFunc("GET /api/v1/media/", application.mediaDetail)
+	mux.HandleFunc("POST /api/v1/media/", application.mediaDetail)
+	mux.HandleFunc("GET /api/v1/write-plans/", application.writePlan)
+	mux.HandleFunc("POST /api/v1/write-plans/", application.writePlan)
 	mux.HandleFunc("GET /api/v1/jobs", application.jobs)
 	mux.Handle("/", application.frontend())
 	return application.withRequestLogging(mux)

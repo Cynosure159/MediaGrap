@@ -6,7 +6,7 @@ MediaGrap is a lightweight, self-hosted media metadata scraper and library manag
 
 The project aims to retain the essential workflows found in tools such as tinyMediaManager and MediaElch while reducing server-side resource usage and providing a better browser, mobile, and container experience.
 
-> Current status: product and architecture planning. Application code has not yet been implemented.
+> Current status: Phase 2 movie scraping and safe NFO writing foundation is implemented.
 
 ## Goals
 
@@ -132,6 +132,7 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [MediaElch reference review](docs/mediaelch-reference.md)
 - [Phase 0 foundation](docs/phase-0-foundation.md)
 - [Phase 1 read-only discovery](docs/phase-1-discovery.md)
+- [Phase 2 scrape and safe write](docs/phase-2-scrape-and-safe-write.md)
 - [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch reference boundary

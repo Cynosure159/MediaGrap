@@ -6,7 +6,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 
 项目目标是在保留 tinyMediaManager、MediaElch 一类工具核心能力的同时，降低服务端常驻资源占用，并提供更适合浏览器、移动设备和容器环境的操作体验。
 
-> 当前状态：架构与产品规划阶段，业务代码尚未开始实现。
+> 当前状态：已完成 Phase 2 的电影刮削与安全 NFO 写入基础能力。
 
 ## 核心目标
 
@@ -132,6 +132,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - [MediaElch 参考分析](docs/mediaelch-reference.md)
 - [Phase 0 基础实现](docs/phase-0-foundation.md)
 - [Phase 1 只读媒体发现](docs/phase-1-discovery.md)
+- [Phase 2 刮削与安全写入](docs/phase-2-scrape-and-safe-write.md)
 - [ADR 0001：基础技术栈](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch 参考边界

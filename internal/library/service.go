@@ -36,6 +36,11 @@ type MediaItem struct {
 	ModifiedAt   string    `json:"modifiedAt"`
 	Sidecars     []Sidecar `json:"sidecars"`
 }
+type MediaLocation struct {
+	Item         MediaItem
+	AbsolutePath string
+	Writable     bool
+}
 type Sidecar struct {
 	RelativePath string `json:"relativePath"`
 	Kind         string `json:"kind"`
@@ -188,6 +193,23 @@ func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
 	item.Sidecars, _ = s.sidecars(ctx, item.ID)
 	return item, nil
 }
+func (s *Service) LocateMedia(ctx context.Context, id int64) (MediaLocation, error) {
+	item, err := s.Media(ctx, id)
+	if err != nil {
+		return MediaLocation{}, err
+	}
+	var root string
+	if err := s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, item.SourceID).Scan(&root); err != nil {
+		return MediaLocation{}, errors.New("media source not found")
+	}
+	path := filepath.Join(root, item.RelativePath)
+	if !s.allowed(path) {
+		return MediaLocation{}, errors.New("media path is outside configured roots")
+	}
+	return MediaLocation{Item: item, AbsolutePath: path, Writable: isWritable(root)}, nil
+}
+
+func (s *Service) Allowed(path string) bool { return s.allowed(path) }
 func scanItem(row interface{ Scan(...any) error }) (MediaItem, error) {
 	var item MediaItem
 	var year sql.NullInt64

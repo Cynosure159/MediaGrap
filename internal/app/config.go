@@ -17,12 +17,14 @@ const (
 )
 
 type Config struct {
-	ConfigDir  string
-	CacheDir   string
-	Listen     string
-	LogFormat  string
-	LogLevel   string
-	MediaRoots []string
+	ConfigDir     string
+	CacheDir      string
+	Listen        string
+	LogFormat     string
+	LogLevel      string
+	MediaRoots    []string
+	TMDbAPIKey    string
+	OutboundProxy string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -49,6 +51,8 @@ func LoadConfig(args []string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid log format %q", config.LogFormat)
 	}
 	config.MediaRoots = cleanMediaRoots(envOrDefault("MEDIAGRAP_MEDIA_ROOTS", "/media"))
+	config.TMDbAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_TMDB_API_KEY"))
+	config.OutboundProxy = strings.TrimSpace(os.Getenv("MEDIAGRAP_OUTBOUND_PROXY"))
 	if len(config.MediaRoots) == 0 {
 		return Config{}, errors.New("at least one media root is required")
 	}

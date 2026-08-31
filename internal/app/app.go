@@ -12,6 +12,7 @@ import (
 	"github.com/mediagrap/mediagrap/internal/auth"
 	"github.com/mediagrap/mediagrap/internal/httpapi"
 	"github.com/mediagrap/mediagrap/internal/library"
+	"github.com/mediagrap/mediagrap/internal/metadata"
 	"github.com/mediagrap/mediagrap/internal/platform/database"
 )
 
@@ -44,7 +45,13 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 	}
 
 	libraryService := library.NewService(db, config.MediaRoots)
-	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService)
+	outbound, err := metadata.NewOutboundClient(config.OutboundProxy)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	metadataService := metadata.NewService(db, metadata.NewTMDb(outbound, config.TMDbAPIKey))
+	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService)
 	return &Application{
 		config: config,
 		logger: logger,
