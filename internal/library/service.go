@@ -36,6 +36,8 @@ type MediaItem struct {
 	RelativePath string    `json:"relativePath"`
 	TitleHint    string    `json:"titleHint"`
 	YearHint     *int      `json:"yearHint"`
+	Title        string    `json:"title,omitempty"`
+	PosterURL    string    `json:"posterUrl,omitempty"`
 	FileSize     int64     `json:"fileSize"`
 	ModifiedAt   string    `json:"modifiedAt"`
 	Sidecars     []Sidecar `json:"sidecars"`
@@ -198,10 +200,10 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 	}
 	query = strings.TrimSpace(query)
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items m WHERE missing = 0 AND title_hint LIKE ? AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id)`, "%"+query+"%").Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id = m.id WHERE m.missing = 0 AND (m.title_hint LIKE ? OR mm.title LIKE ?) AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id)`, "%"+query+"%", "%"+query+"%").Scan(&total); err != nil {
 		return Page{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at FROM media_items m WHERE m.missing = 0 AND m.title_hint LIKE ? AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id) ORDER BY m.title_hint COLLATE NOCASE LIMIT ? OFFSET ?`, "%"+query+"%", pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id = m.id WHERE m.missing = 0 AND (m.title_hint LIKE ? OR mm.title LIKE ?) AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id) ORDER BY COALESCE(NULLIF(mm.title, ''), m.title_hint) COLLATE NOCASE LIMIT ? OFFSET ?`, "%"+query+"%", "%"+query+"%", pageSize, (page-1)*pageSize)
 	if err != nil {
 		return Page{}, err
 	}
@@ -280,7 +282,7 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 	return detail, rows.Err()
 }
 func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, source_id, relative_path, title_hint, year_hint, file_size, modified_at FROM media_items WHERE id=? AND missing=0`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id=m.id WHERE m.id=? AND m.missing=0`, id)
 	item, err := scanItem(row)
 	if err != nil {
 		return MediaItem{}, errors.New("media item not found")
@@ -322,12 +324,22 @@ func (s *Service) MetadataSearchHint(item MediaItem) (string, *int, string) {
 func scanItem(row interface{ Scan(...any) error }) (MediaItem, error) {
 	var item MediaItem
 	var year sql.NullInt64
-	err := row.Scan(&item.ID, &item.SourceID, &item.RelativePath, &item.TitleHint, &year, &item.FileSize, &item.ModifiedAt)
+	var title, posterURL sql.NullString
+	err := row.Scan(&item.ID, &item.SourceID, &item.RelativePath, &item.TitleHint, &year, &item.FileSize, &item.ModifiedAt, &title, &posterURL)
+	if err != nil {
+		return MediaItem{}, err
+	}
 	if year.Valid {
 		v := int(year.Int64)
 		item.YearHint = &v
 	}
-	return item, err
+	if title.Valid {
+		item.Title = title.String
+	}
+	if posterURL.Valid {
+		item.PosterURL = posterURL.String
+	}
+	return item, nil
 }
 func (s *Service) sidecars(ctx context.Context, id int64) ([]Sidecar, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT relative_path,kind FROM sidecar_assets WHERE media_item_id=? ORDER BY relative_path`, id)

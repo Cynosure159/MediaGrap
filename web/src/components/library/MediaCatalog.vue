@@ -47,7 +47,7 @@ function getResolution(item: MediaItem): string {
 </script>
 
 <template>
-  <aside class="catalog-panel" :aria-label="labels.movieList">
+  <aside class="catalog-panel" :aria-label="labels.movieList || 'Movie List'">
     <!-- Header with Search and Stats -->
     <div class="catalog-header">
       <!-- Search Input -->
@@ -60,7 +60,7 @@ function getResolution(item: MediaItem): string {
           v-model="query"
           type="text"
           class="search-input"
-          :placeholder="labels.search"
+          :placeholder="labels.searchPlaceholder || '搜索片名、年份、IMDb ID...'"
           @keydown.enter.prevent="submitSearch"
         />
       </div>
@@ -68,14 +68,14 @@ function getResolution(item: MediaItem): string {
       <!-- Count & Actions Bar -->
       <div class="catalog-toolbar">
         <div class="catalog-stats">
-          <span class="count-main">{{ items.length }} {{ labels.movies }}</span>
-          <span v-if="unscrapedCount > 0" class="count-unscraped">({{ unscrapedCount }} {{ labels.unscraped }})</span>
+          <span class="count-main">{{ items.length }} {{ labels.movies || '电影' }}</span>
+          <span v-if="unscrapedCount > 0" class="count-unscraped">({{ unscrapedCount }} {{ labels.unscraped || '未刮削' }})</span>
         </div>
         <div class="toolbar-actions">
           <button
             class="icon-action-btn"
             :class="{ active: filterMode !== 'all' }"
-            :title="labels.filterByStatus"
+            :title="labels.filterByStatus || 'Filter'"
             type="button"
             @click="filterMode = filterMode === 'all' ? 'unscraped' : 'all'"
           >
@@ -85,7 +85,7 @@ function getResolution(item: MediaItem): string {
           </button>
           <button
             class="icon-action-btn"
-            :title="labels.refresh"
+            :title="labels.refresh || 'Scan Library'"
             type="button"
             @click="submitSearch"
           >
@@ -101,7 +101,7 @@ function getResolution(item: MediaItem): string {
     <div v-if="activeJob" class="active-job-banner">
       <span class="job-spinner"></span>
       <div class="job-info">
-        <p class="job-title">{{ labels.activeJob }} #{{ activeJob.id }}: {{ activeJob.state }}</p>
+        <p class="job-title">{{ labels.activeJob || 'Task' }} #{{ activeJob.id }}: {{ activeJob.state }}</p>
         <p class="job-desc">{{ activeJob.message || labels.loading }}</p>
       </div>
     </div>
@@ -111,51 +111,58 @@ function getResolution(item: MediaItem): string {
       <div
         v-for="item in filteredItems"
         :key="item.id"
-        class="media-row"
+        class="media-row group"
         :class="{ 'media-row--active': selectedId === item.id }"
         @click="emit('select', item.id)"
       >
-        <!-- Poster Thumbnail -->
+        <!-- Poster Thumbnail with 4K badge -->
         <div class="thumb-box">
-          <div class="thumb-placeholder">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" opacity="0.3">
+          <img
+            v-if="item.posterUrl"
+            :src="item.posterUrl"
+            :alt="item.title || item.titleHint"
+            class="thumb-img"
+            loading="lazy"
+          />
+          <div v-else class="thumb-placeholder">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" opacity="0.35">
               <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
             </svg>
           </div>
           <!-- 4K / HD Spec Overlay -->
-          <span class="res-badge" :class="{ 'res-4k': getResolution(item) === '4K' }">
+          <span class="res-badge font-code" :class="{ 'res-4k': getResolution(item) === '4K' }">
             {{ getResolution(item) }}
           </span>
         </div>
 
         <!-- Movie Info -->
         <div class="row-info">
-          <div class="title-primary" :title="item.titleHint">
-            {{ item.titleHint }}
+          <div class="title-primary" :title="item.title || item.titleHint">
+            {{ item.title || item.titleHint }}
           </div>
-          <div class="title-sub" :title="item.relativePath">
+          <div v-if="!item.title" class="title-sub" :title="item.relativePath">
             {{ item.relativePath.split('/').pop() }}
           </div>
           <div class="row-meta">
-            <span class="year-txt">{{ item.yearHint ?? '—' }}</span>
+            <span class="year-txt font-code">{{ item.yearHint ?? '—' }}</span>
             <div class="status-dots">
               <!-- NFO Status Dot -->
               <span
                 class="dot"
                 :class="hasSidecar(item, 'nfo') ? 'dot-ok' : 'dot-warn'"
-                :title="hasSidecar(item, 'nfo') ? labels.nfoReady : labels.nfoMissing"
+                :title="hasSidecar(item, 'nfo') ? (labels.nfoReady || 'NFO Complete') : (labels.nfoMissing || 'NFO Missing')"
               ></span>
               <!-- Poster Status Dot -->
               <span
                 class="dot"
                 :class="hasSidecar(item, 'poster') || hasSidecar(item, 'jpg') || hasSidecar(item, 'png') ? 'dot-ok' : 'dot-warn'"
-                :title="hasSidecar(item, 'poster') ? labels.posterReady : labels.posterMissing"
+                :title="hasSidecar(item, 'poster') ? (labels.posterReady || 'Poster Complete') : (labels.posterMissing || 'Poster Missing')"
               ></span>
               <!-- Fanart Status Dot -->
               <span
                 class="dot"
                 :class="hasSidecar(item, 'fanart') ? 'dot-ok' : 'dot-off'"
-                :title="hasSidecar(item, 'fanart') ? labels.fanartReady : labels.fanartMissing"
+                :title="hasSidecar(item, 'fanart') ? (labels.fanartReady || 'Fanart Complete') : (labels.fanartMissing || 'Fanart Missing')"
               ></span>
             </div>
           </div>
@@ -164,7 +171,7 @@ function getResolution(item: MediaItem): string {
 
       <!-- Empty State -->
       <div v-if="filteredItems.length === 0" class="catalog-empty">
-        <p>{{ labels.noFilms }}</p>
+        <p>{{ labels.noFilms || 'No media items found.' }}</p>
       </div>
     </div>
   </aside>
@@ -184,9 +191,9 @@ function getResolution(item: MediaItem): string {
 }
 
 .catalog-header {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--outline-variant, #2e3447);
-  background: var(--surface-dim, #0c1324);
+  background: var(--surface-base, #0c1324);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -199,34 +206,35 @@ function getResolution(item: MediaItem): string {
 
 .search-icon {
   position: absolute;
-  left: 8px;
+  left: 9px;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   color: var(--on-surface-variant, #c7c4d7);
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
-  height: 30px;
+  height: 32px;
   background: var(--surface-container-low, #151b2d);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
   color: var(--on-surface, #dce1fb);
-  font-size: 12px;
-  padding: 0 8px 0 28px;
+  font-size: 13px;
+  padding: 0 10px 0 32px;
   transition: all 0.15s ease;
 }
 
 .search-input:focus {
   border-color: var(--primary, #c0c1ff);
   outline: none;
+  box-shadow: 0 0 0 1px var(--primary, #c0c1ff);
 }
 
 .search-input::placeholder {
-  color: rgba(199, 196, 215, 0.4);
+  color: rgba(199, 196, 215, 0.5);
 }
 
 .catalog-toolbar {
@@ -238,24 +246,24 @@ function getResolution(item: MediaItem): string {
 .catalog-stats {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 6px;
 }
 
 .count-main {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--on-surface, #dce1fb);
 }
 
 .count-unscraped {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--tertiary, #ffb95f);
   font-family: var(--font-data);
 }
 
 .toolbar-actions {
   display: flex;
-  gap: 2px;
+  gap: 4px;
 }
 
 .icon-action-btn {
@@ -287,15 +295,15 @@ function getResolution(item: MediaItem): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 12px;
   background: var(--surface-container-high, #23293c);
   border-bottom: 1px solid var(--outline-variant, #2e3447);
   font-size: 11px;
 }
 
 .job-spinner {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border: 2px solid var(--tertiary, #ffb95f);
   border-top-color: transparent;
   border-radius: 50%;
@@ -329,19 +337,20 @@ function getResolution(item: MediaItem): string {
 .catalog-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .media-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
+  gap: 10px;
+  padding: 8px;
   border-radius: var(--radius-sm, 0.25rem);
   border-left: 2px solid transparent;
+  background: transparent;
   cursor: pointer;
   transition: all 0.12s ease;
   user-select: none;
@@ -352,15 +361,15 @@ function getResolution(item: MediaItem): string {
 }
 
 .media-row--active {
-  background: var(--surface-container-highest, #2e3447);
-  border-left-color: var(--primary, #c0c1ff);
+  background: var(--surface-container-highest, #2e3447) !important;
+  border-left-color: var(--primary, #c0c1ff) !important;
 }
 
 .thumb-box {
   position: relative;
-  width: 36px;
-  height: 50px;
-  border-radius: 2px;
+  width: 40px;
+  height: 56px;
+  border-radius: var(--radius-sm, 0.25rem);
   overflow: hidden;
   background: var(--surface-container-lowest, #070d1f);
   border: 1px solid var(--outline-variant, #2e3447);
@@ -368,6 +377,13 @@ function getResolution(item: MediaItem): string {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .thumb-placeholder {
@@ -384,17 +400,19 @@ function getResolution(item: MediaItem): string {
   right: 0;
   background: var(--surface-bright, #33394c);
   color: var(--on-surface, #dce1fb);
-  font-family: var(--font-data);
-  font-size: 7px;
+  font-size: 8px;
   font-weight: 700;
-  padding: 1px 2px;
+  padding: 1px 3px;
   line-height: 1;
   border-top-left-radius: 2px;
+  border-left: 1px solid var(--outline-variant, #2e3447);
+  border-top: 1px solid var(--outline-variant, #2e3447);
 }
 
 .res-4k {
   background: var(--secondary-container, #00a572);
-  color: #fff;
+  color: #ffffff;
+  border: none;
 }
 
 .row-info {
@@ -402,17 +420,17 @@ function getResolution(item: MediaItem): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .title-primary {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--on-surface, #dce1fb);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .media-row--active .title-primary {
@@ -420,7 +438,7 @@ function getResolution(item: MediaItem): string {
 }
 
 .title-sub {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--on-surface-variant, #c7c4d7);
   opacity: 0.7;
   overflow: hidden;
@@ -436,25 +454,23 @@ function getResolution(item: MediaItem): string {
 }
 
 .year-txt {
-  font-family: var(--font-data);
-  font-size: 10px;
-  color: var(--outline, #908fa0);
+  font-size: 11px;
+  color: var(--on-surface-variant, #c7c4d7);
 }
 
 .status-dots {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .catalog-empty {
-  padding: 2rem 1rem;
+  padding: 3rem 1rem;
   text-align: center;
   color: var(--outline, #908fa0);
-  font-size: 12px;
+  font-size: 13px;
 }
 
-/* ── Mobile ───────────────────────────────────────────────── */
 @media (max-width: 700px) {
   .catalog-panel {
     width: 100%;

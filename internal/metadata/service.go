@@ -34,6 +34,13 @@ type Record struct {
 	Genres         []string `json:"genres"`
 	PosterURL      string   `json:"posterUrl"`
 	BackdropURL    string   `json:"backdropUrl"`
+	Rating         *float64 `json:"rating"`
+	Votes          *int     `json:"votes"`
+	ContentRating  string   `json:"contentRating"`
+	Directors      []string `json:"directors"`
+	Writers        []string `json:"writers"`
+	Studios        []string `json:"studios"`
+	Cast           []Person `json:"cast"`
 	LockedFields   []string `json:"lockedFields"`
 	UpdatedAt      string   `json:"updatedAt"`
 }
@@ -98,20 +105,30 @@ func (s *Service) Search(ctx context.Context, query string, year *int) ([]Candid
 	return s.provider.SearchMovies(ctx, strings.TrimSpace(query), year)
 }
 func (s *Service) Select(ctx context.Context, itemID int64, providerID string) (Record, error) {
+	s.logger.Info("TMDb movie selection started", "media_item_id", itemID, "provider_id", providerID)
 	details, err := s.provider.Movie(ctx, providerID)
 	if err != nil {
+		s.logger.Warn("TMDb movie selection failed", "media_item_id", itemID, "provider_id", providerID, "error", err)
 		return Record{}, err
 	}
-	record := Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: details.ID, Title: details.Title, OriginalTitle: details.OriginalTitle, Year: details.Year, Overview: details.Overview, RuntimeMinutes: details.Runtime, Genres: details.Genres, PosterURL: details.PosterURL, BackdropURL: details.BackdropURL}
-	return s.Save(ctx, record)
+	record := Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: details.ID, Title: details.Title, OriginalTitle: details.OriginalTitle, Year: details.Year, Overview: details.Overview, RuntimeMinutes: details.Runtime, Genres: details.Genres, PosterURL: details.PosterURL, BackdropURL: details.BackdropURL, Rating: details.Rating, Votes: details.Votes, ContentRating: details.ContentRating, Directors: details.Directors, Writers: details.Writers, Studios: details.Studios, Cast: details.Cast}
+	saved, err := s.Save(ctx, record)
+	if err != nil {
+		s.logger.Warn("TMDb movie metadata save failed", "media_item_id", itemID, "error", err)
+		return Record{}, err
+	}
+	s.logger.Info("TMDb movie selection completed", "media_item_id", itemID, "cast_count", len(saved.Cast), "director_count", len(saved.Directors), "has_rating", saved.Rating != nil)
+	return saved, nil
 }
 func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 	var record Record
 	var year, runtime sql.NullInt64
-	var genres, locked string
-	err := s.db.QueryRowContext(ctx, `SELECT media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,locked_fields_json,updated_at FROM media_metadata WHERE media_item_id=?`, itemID).Scan(&record.MediaItemID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &runtime, &genres, &record.PosterURL, &record.BackdropURL, &locked, &record.UpdatedAt)
+	var genres, directors, writers, studios, cast, locked string
+	var rating sql.NullFloat64
+	var votes sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at FROM media_metadata WHERE media_item_id=?`, itemID).Scan(&record.MediaItemID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &runtime, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.ContentRating, &directors, &writers, &studios, &cast, &locked, &record.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return Record{MediaItemID: itemID, Genres: []string{}, LockedFields: []string{}}, nil
+		return normalized(Record{MediaItemID: itemID, Genres: []string{}, LockedFields: []string{}}), nil
 	}
 	if err != nil {
 		return Record{}, err
@@ -124,7 +141,19 @@ func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 		value := int(runtime.Int64)
 		record.RuntimeMinutes = &value
 	}
+	if rating.Valid {
+		value := rating.Float64
+		record.Rating = &value
+	}
+	if votes.Valid {
+		value := int(votes.Int64)
+		record.Votes = &value
+	}
 	_ = json.Unmarshal([]byte(genres), &record.Genres)
+	_ = json.Unmarshal([]byte(directors), &record.Directors)
+	_ = json.Unmarshal([]byte(writers), &record.Writers)
+	_ = json.Unmarshal([]byte(studios), &record.Studios)
+	_ = json.Unmarshal([]byte(cast), &record.Cast)
 	_ = json.Unmarshal([]byte(locked), &record.LockedFields)
 	return normalized(record), nil
 }
@@ -169,7 +198,7 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool,
 	if movie.Title == "" {
 		return Record{}, false, errors.New("existing NFO has no movie title")
 	}
-	return normalized(Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, LockedFields: []string{}}), true, nil
+	return normalized(Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, Rating: movie.Rating, Votes: movie.Votes, ContentRating: movie.ContentRating, Directors: movie.Directors, Writers: movie.Writers, Studios: movie.Studios, Cast: metadataPeople(movie.Cast), LockedFields: []string{}}), true, nil
 }
 
 func normalized(record Record) Record {
@@ -179,15 +208,46 @@ func normalized(record Record) Record {
 	if record.LockedFields == nil {
 		record.LockedFields = []string{}
 	}
+	if record.Directors == nil {
+		record.Directors = []string{}
+	}
+	if record.Writers == nil {
+		record.Writers = []string{}
+	}
+	if record.Studios == nil {
+		record.Studios = []string{}
+	}
+	if record.Cast == nil {
+		record.Cast = []Person{}
+	}
 	return record
+}
+func kodiPeople(people []Person) []kodi.Person {
+	result := make([]kodi.Person, 0, len(people))
+	for _, person := range people {
+		result = append(result, kodi.Person{Name: person.Name, Role: person.Role, Thumb: person.ProfileURL})
+	}
+	return result
+}
+func metadataPeople(people []kodi.Person) []Person {
+	result := make([]Person, 0, len(people))
+	for _, person := range people {
+		result = append(result, Person{Name: person.Name, Role: person.Role, ProfileURL: person.Thumb})
+	}
+	return result
 }
 func (s *Service) Save(ctx context.Context, record Record) (Record, error) {
 	if strings.TrimSpace(record.Title) == "" {
 		return Record{}, errors.New("title is required")
 	}
+	record = normalized(record)
 	genres, _ := json.Marshal(record.Genres)
+	directors, _ := json.Marshal(record.Directors)
+	writers, _ := json.Marshal(record.Writers)
+	studios, _ := json.Marshal(record.Studios)
+	cast, _ := json.Marshal(record.Cast)
 	locked, _ := json.Marshal(record.LockedFields)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO media_metadata(media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,locked_fields_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(media_item_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,runtime_minutes=excluded.runtime_minutes,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,locked_fields_json=excluded.locked_fields_json,updated_at=datetime('now')`, record.MediaItemID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), record.RuntimeMinutes, string(genres), record.PosterURL, record.BackdropURL, string(locked))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO media_metadata(media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(media_item_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,runtime_minutes=excluded.runtime_minutes,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,content_rating=excluded.content_rating,directors_json=excluded.directors_json,writers_json=excluded.writers_json,studios_json=excluded.studios_json,cast_json=excluded.cast_json,locked_fields_json=excluded.locked_fields_json,updated_at=datetime('now')`, record.MediaItemID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), record.RuntimeMinutes, string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.ContentRating), string(directors), string(writers), string(studios), string(cast), string(locked))
 	if err != nil {
 		return Record{}, err
 	}
@@ -201,7 +261,7 @@ func (s *Service) Preview(ctx context.Context, record Record, mediaPath string, 
 	if err != nil {
 		return WritePlan{}, err
 	}
-	content, err := kodi.WriteMovie(kodi.Movie{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Runtime: record.RuntimeMinutes, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL})
+	content, err := kodi.WriteMovie(kodi.Movie{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Runtime: record.RuntimeMinutes, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, ContentRating: record.ContentRating, Directors: record.Directors, Writers: record.Writers, Studios: record.Studios, Cast: kodiPeople(record.Cast)})
 	if err != nil {
 		return WritePlan{}, err
 	}

@@ -25,9 +25,22 @@ type Candidate struct {
 }
 type Details struct {
 	Candidate
-	Runtime     *int     `json:"runtime"`
-	Genres      []string `json:"genres"`
-	BackdropURL string   `json:"backdropUrl"`
+	Runtime       *int     `json:"runtime"`
+	Genres        []string `json:"genres"`
+	BackdropURL   string   `json:"backdropUrl"`
+	Rating        *float64 `json:"rating"`
+	Votes         *int     `json:"votes"`
+	ContentRating string   `json:"contentRating"`
+	Directors     []string `json:"directors"`
+	Writers       []string `json:"writers"`
+	Studios       []string `json:"studios"`
+	Cast          []Person `json:"cast"`
+}
+
+type Person struct {
+	Name       string `json:"name"`
+	Role       string `json:"role"`
+	ProfileURL string `json:"profileUrl"`
 }
 
 type Provider interface {
@@ -99,7 +112,12 @@ func (t *TMDb) Movie(ctx context.Context, id string) (Details, error) {
 		return Details{}, errors.New("TMDb movie id is required")
 	}
 	var result tmdbMovie
-	if err := t.get(ctx, "/movie/"+url.PathEscape(id), url.Values{"api_key": {apiKey}, "language": {language}}, &result); err != nil {
+	params := url.Values{
+		"api_key":            {apiKey},
+		"language":           {language},
+		"append_to_response": {"credits,release_dates"},
+	}
+	if err := t.get(ctx, "/movie/"+url.PathEscape(id), params, &result); err != nil {
 		return Details{}, err
 	}
 	candidate := result.candidate()
@@ -107,7 +125,30 @@ func (t *TMDb) Movie(ctx context.Context, id string) (Details, error) {
 	for _, genre := range result.Genres {
 		genres = append(genres, genre.Name)
 	}
-	return Details{Candidate: candidate, Runtime: optionalInt(result.Runtime), Genres: genres, BackdropURL: imageURL(result.BackdropPath)}, nil
+	cast := make([]Person, 0, min(len(result.Credits.Cast), 20))
+	for index, person := range result.Credits.Cast {
+		if index == 20 {
+			break
+		}
+		if name := strings.TrimSpace(person.Name); name != "" {
+			cast = append(cast, Person{Name: name, Role: strings.TrimSpace(person.Character), ProfileURL: profileURL(person.ProfilePath)})
+		}
+	}
+	details := Details{
+		Candidate:     candidate,
+		Runtime:       optionalInt(result.Runtime),
+		Genres:        genres,
+		BackdropURL:   imageURL(result.BackdropPath),
+		Rating:        optionalFloat(result.VoteAverage),
+		Votes:         optionalInt(result.VoteCount),
+		ContentRating: certification(result.ReleaseDates.Results, language),
+		Directors:     crewNames(result.Credits.Crew, "director"),
+		Writers:       crewNames(result.Credits.Crew, "writer", "screenplay", "story"),
+		Studios:       companyNames(result.ProductionCompanies),
+		Cast:          cast,
+	}
+	t.logger.Info("TMDb movie details mapped", "movie_id", id, "cast_count", len(details.Cast), "director_count", len(details.Directors), "writer_count", len(details.Writers), "has_rating", details.Rating != nil)
+	return details, nil
 }
 func (t *TMDb) get(ctx context.Context, path string, params url.Values, target any) error {
 	startedAt := time.Now()
@@ -144,17 +185,41 @@ func requestFailureKind(err error) string {
 }
 
 type tmdbMovie struct {
-	ID            int    `json:"id"`
-	Title         string `json:"title"`
-	OriginalTitle string `json:"original_title"`
-	ReleaseDate   string `json:"release_date"`
-	Overview      string `json:"overview"`
-	PosterPath    string `json:"poster_path"`
-	BackdropPath  string `json:"backdrop_path"`
-	Runtime       int    `json:"runtime"`
+	ID            int     `json:"id"`
+	Title         string  `json:"title"`
+	OriginalTitle string  `json:"original_title"`
+	ReleaseDate   string  `json:"release_date"`
+	Overview      string  `json:"overview"`
+	PosterPath    string  `json:"poster_path"`
+	BackdropPath  string  `json:"backdrop_path"`
+	Runtime       int     `json:"runtime"`
+	VoteAverage   float64 `json:"vote_average"`
+	VoteCount     int     `json:"vote_count"`
 	Genres        []struct {
 		Name string `json:"name"`
 	} `json:"genres"`
+	ProductionCompanies []struct {
+		Name string `json:"name"`
+	} `json:"production_companies"`
+	Credits struct {
+		Cast []struct {
+			Name        string `json:"name"`
+			Character   string `json:"character"`
+			ProfilePath string `json:"profile_path"`
+		} `json:"cast"`
+		Crew []struct {
+			Name string `json:"name"`
+			Job  string `json:"job"`
+		} `json:"crew"`
+	} `json:"credits"`
+	ReleaseDates struct {
+		Results []struct {
+			Country string `json:"iso_3166_1"`
+			Dates   []struct {
+				Certification string `json:"certification"`
+			} `json:"release_dates"`
+		} `json:"results"`
+	} `json:"release_dates"`
 }
 
 func (m tmdbMovie) candidate() Candidate {
@@ -176,11 +241,84 @@ func imageURL(path string) string {
 	}
 	return "https://image.tmdb.org/t/p/w500" + path
 }
+func profileURL(path string) string {
+	if path == "" {
+		return ""
+	}
+	return "https://image.tmdb.org/t/p/w185" + path
+}
 func optionalInt(value int) *int {
 	if value <= 0 {
 		return nil
 	}
 	return &value
+}
+func optionalFloat(value float64) *float64 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+func crewNames(crew []struct {
+	Name string `json:"name"`
+	Job  string `json:"job"`
+}, jobs ...string) []string {
+	allowed := make(map[string]struct{}, len(jobs))
+	for _, job := range jobs {
+		allowed[job] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	names := make([]string, 0)
+	for _, person := range crew {
+		name := strings.TrimSpace(person.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := allowed[strings.ToLower(strings.TrimSpace(person.Job))]; !ok {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+func companyNames(companies []struct {
+	Name string `json:"name"`
+}) []string {
+	names := make([]string, 0, len(companies))
+	for _, company := range companies {
+		if name := strings.TrimSpace(company.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+func certification(results []struct {
+	Country string `json:"iso_3166_1"`
+	Dates   []struct {
+		Certification string `json:"certification"`
+	} `json:"release_dates"`
+}, language string) string {
+	preferredCountry := "US"
+	if parts := strings.Split(language, "-"); len(parts) == 2 && len(parts[1]) == 2 {
+		preferredCountry = strings.ToUpper(parts[1])
+	}
+	for _, desiredCountry := range []string{preferredCountry, "US"} {
+		for _, country := range results {
+			if country.Country != desiredCountry {
+				continue
+			}
+			for _, date := range country.Dates {
+				if value := strings.TrimSpace(date.Certification); value != "" {
+					return value
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func NewOutboundClient(proxyValue string) (*http.Client, error) {

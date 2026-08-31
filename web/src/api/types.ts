@@ -28,6 +28,8 @@ export interface MediaItem {
   relativePath: string
   titleHint: string
   yearHint: number | null
+  title?: string
+  posterUrl?: string
   fileSize: number
   modifiedAt: string
   sidecars: SidecarAsset[]
@@ -79,8 +81,21 @@ export interface Metadata {
   genres: string[]
   posterUrl: string
   backdropUrl: string
+  rating: number | null
+  votes: number | null
+  contentRating: string
+  directors: string[]
+  writers: string[]
+  studios: string[]
+  cast: CastMember[]
   lockedFields: string[]
   updatedAt?: string
+}
+
+export interface CastMember {
+  name: string
+  role: string
+  profileUrl: string
 }
 
 export interface Candidate {

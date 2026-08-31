@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
-import MatchCandidates from './MatchCandidates.vue'
+import ScraperModal from './ScraperModal.vue'
 import NfoPreview from './NfoPreview.vue'
 import InspectorToolbar, { type InspectorTab } from './inspector/InspectorToolbar.vue'
 import MovieOverviewTab, { type MovieDraft } from './inspector/MovieOverviewTab.vue'
@@ -28,14 +28,13 @@ const detail = shallowRef<{
   writable: boolean
 } | null>(null)
 
-const candidatesList = shallowRef<api.Candidate[]>([])
 const activeTab = shallowRef<InspectorTab>('overview')
-const showCandidates = shallowRef(false)
+const showScraperModal = shallowRef(false)
 const showNfoPreview = shallowRef(false)
 const writePlan = shallowRef<api.WritePlan | null>(null)
+const isEditing = shallowRef(false)
 const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
-const isScraping = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
 
@@ -54,12 +53,15 @@ const draft = reactive<MovieDraft>({
   rating: null,
   votes: null,
   contentRating: '',
+  cast: [],
 })
 
 const castList = computed<CastMember[]>(() =>
-  draft.director
-    ? [{ name: draft.director, role: props.labels.director || 'Director', avatar: draft.posterUrl, id: 'director' }]
-    : []
+  [
+    ...splitValues(draft.director).map((name, index) => ({ id: `director-${index}`, name, role: props.labels.director || 'Director' })),
+    ...splitValues(draft.writers).map((name, index) => ({ id: `writer-${index}`, name, role: props.labels.writer || 'Writer' })),
+    ...draft.cast.map((person, index) => ({ id: `cast-${index}-${person.name}`, name: person.name, role: person.role, avatar: person.profileUrl })),
+  ]
 )
 
 const nfoXmlContent = computed(() => {
@@ -89,6 +91,17 @@ function applyMetadataToDraft(meta: Partial<api.Metadata>, fallbackTitle = '', f
   draft.genres = [...(meta.genres || [])]
   draft.posterUrl = meta.posterUrl || ''
   draft.backdropUrl = meta.backdropUrl || ''
+  draft.rating = meta.rating ?? null
+  draft.votes = meta.votes ?? null
+  draft.contentRating = meta.contentRating || ''
+  draft.director = (meta.directors || []).join(', ')
+  draft.writers = (meta.writers || []).join(', ')
+  draft.studio = (meta.studios || []).join(', ')
+  draft.cast = [...(meta.cast || [])]
+}
+
+function splitValues(value: string): string[] {
+  return value.split(',').map(part => part.trim()).filter(Boolean)
 }
 
 function buildMetadataPayload(): api.Metadata {
@@ -104,6 +117,13 @@ function buildMetadataPayload(): api.Metadata {
     genres: draft.genres,
     posterUrl: draft.posterUrl,
     backdropUrl: draft.backdropUrl,
+    rating: draft.rating,
+    votes: draft.votes,
+    contentRating: draft.contentRating,
+    directors: splitValues(draft.director),
+    writers: splitValues(draft.writers),
+    studios: splitValues(draft.studio),
+    cast: draft.cast,
     lockedFields: [],
   }
 }
@@ -123,6 +143,7 @@ async function loadDetail(id: number) {
 }
 
 watch(() => props.itemId, id => {
+  isEditing.value = false
   if (id) {
     activeTab.value = 'overview'
     loadDetail(id)
@@ -131,18 +152,36 @@ watch(() => props.itemId, id => {
   }
 }, { immediate: true })
 
-async function triggerScrape() {
+function cancelEditing() {
+  if (detail.value) {
+    applyMetadataToDraft(detail.value.metadata, detail.value.item.titleHint, detail.value.item.yearHint)
+  }
+  isEditing.value = false
+}
+
+async function writeNfoToDisk(payload: api.Metadata) {
   if (!props.itemId) return
-  isScraping.value = true
+  const plan = await api.previewNfo(props.csrfToken, props.itemId, payload)
+  if (plan?.id) {
+    await api.applyNfo(props.csrfToken, plan.id)
+  }
+}
+
+async function handleSaveAndWrite() {
+  if (!props.itemId || !detail.value) return
+  isSaving.value = true
   error.value = null
   try {
-    const res = await api.candidates(props.itemId)
-    candidatesList.value = res.items
-    showCandidates.value = true
+    const payload = buildMetadataPayload()
+    await api.saveMetadata(props.csrfToken, props.itemId, payload)
+    await writeNfoToDisk(payload)
+    await loadDetail(props.itemId)
+    isEditing.value = false
+    emit('metadataSaved')
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : props.labels.errorSearchCandidates
+    error.value = caught instanceof Error ? caught.message : props.labels.errorSaveMetadata
   } finally {
-    isScraping.value = false
+    isSaving.value = false
   }
 }
 
@@ -150,25 +189,15 @@ async function handleCandidateSelect(candidate: api.Candidate) {
   if (!props.itemId) return
   try {
     const newMeta = await api.selectCandidate(props.csrfToken, props.itemId, candidate.id)
+    await writeNfoToDisk(newMeta)
     applyMetadataToDraft(newMeta)
-    showCandidates.value = false
+    await loadDetail(props.itemId)
+    isEditing.value = false
+    showScraperModal.value = false
     emit('metadataSaved')
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
-  }
-}
-
-async function saveMetadata() {
-  if (!props.itemId || !detail.value) return
-  isSaving.value = true
-  error.value = null
-  try {
-    await api.saveMetadata(props.csrfToken, props.itemId, buildMetadataPayload())
-    emit('metadataSaved')
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : props.labels.errorSaveMetadata
-  } finally {
-    isSaving.value = false
+    showScraperModal.value = false
   }
 }
 
@@ -188,6 +217,7 @@ async function handleApplyNfo() {
     await api.applyNfo(props.csrfToken, writePlan.value.id)
     showNfoPreview.value = false
     if (props.itemId) await loadDetail(props.itemId)
+    emit('metadataSaved')
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : props.labels.errorWriteNfo
   }
@@ -196,18 +226,21 @@ async function handleApplyNfo() {
 
 <template>
   <main class="inspector-workspace" :aria-label="labels.details">
-    <!-- Toolbar with Tabs & Quick Actions -->
+    <!-- Toolbar with Tabs, Edit/Save Toggle & Quick Actions -->
     <InspectorToolbar
       :active-tab="activeTab"
       :has-detail="detail !== null"
       :is-writable="detail?.writable ?? false"
+      :is-editing="isEditing"
       :is-saving="isSaving"
-      :is-scraping="isScraping"
+      :is-scraping="false"
       :is-locked="isLocked"
       :labels="labels"
       @select-tab="activeTab = $event"
-      @save-nfo="triggerNfoPreview"
-      @scrape="triggerScrape"
+      @toggle-edit="isEditing = !isEditing"
+      @cancel-edit="cancelEditing"
+      @save-edit="handleSaveAndWrite"
+      @scrape="showScraperModal = true"
       @toggle-lock="isLocked = !isLocked"
       @close="emit('close')"
     />
@@ -243,9 +276,8 @@ async function handleApplyNfo() {
         v-if="activeTab === 'overview'"
         :draft="draft"
         :item="detail.item"
-        :is-saving="isSaving"
+        :is-editing="isEditing"
         :labels="labels"
-        @save-draft="saveMetadata"
       />
 
       <MovieArtworkTab
@@ -275,14 +307,15 @@ async function handleApplyNfo() {
       />
     </div>
 
-    <!-- Match Candidates Modal -->
-    <MatchCandidates
-      v-if="showCandidates"
-      :candidates="candidatesList"
-      :busy="isScraping"
+    <!-- ── Scraper Modal (Modal Search & Direct Apply like MediaElch) ── -->
+    <ScraperModal
+      v-if="showScraperModal && itemId && detail"
+      :item-id="itemId"
+      :item-title="draft.title || detail.item.titleHint"
+      :item-year="draft.year || detail.item.yearHint"
       :labels="labels"
       @select="handleCandidateSelect"
-      @close="showCandidates = false"
+      @close="showScraperModal = false"
     />
 
     <!-- NFO Preview Modal -->

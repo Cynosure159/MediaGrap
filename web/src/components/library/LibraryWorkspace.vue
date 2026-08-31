@@ -31,10 +31,6 @@ async function search(value = '') {
 
 onMounted(async () => {
   await refresh()
-  // Auto-select first movie if available and none selected
-  if (mediaItems.value.length > 0 && selectedMovieId.value === null) {
-    selectedMovieId.value = mediaItems.value[0].id
-  }
 })
 </script>
 

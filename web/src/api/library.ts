@@ -72,8 +72,10 @@ export const mediaDetail = (id: number) =>
     writable: boolean
   }>(`/api/v1/media/${id}`)
 
-export const candidates = (id: number) =>
-  request<{ items: Candidate[] }>(`/api/v1/media/${id}/candidates`)
+export const candidates = (id: number, q = '') =>
+  request<{ items: Candidate[] }>(
+    q ? `/api/v1/media/${id}/candidates?q=${encodeURIComponent(q)}` : `/api/v1/media/${id}/candidates`
+  )
 
 export const selectCandidate = (csrf: string, id: number, candidateId: string) =>
   request<Metadata>(`/api/v1/media/${id}/select`, {

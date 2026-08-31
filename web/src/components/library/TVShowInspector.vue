@@ -56,27 +56,34 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
 
 <template>
   <main class="inspector-workspace" :aria-label="labels.tvShowDetails">
-    <!-- Top Action Bar -->
-    <header class="inspector-toolbar">
-      <nav class="workshop-tabs">
-        <button class="tab-btn tab-btn--active" type="button">{{ labels.episodesAndSeasons }}</button>
-        <button class="tab-btn" type="button">{{ labels.artworkTab }}</button>
-        <button class="tab-btn" type="button">{{ labels.castTab }}</button>
-      </nav>
+    <!-- ── Two-Tier Header: Action Toolbar + Tabs ── -->
+    <header class="inspector-header-container">
+      <div class="toolbar-top-row">
+        <div class="top-row-left">
+          <button class="mobile-back-btn" :title="labels.backToList || '返回列表'" type="button" @click="emit('close')">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+            </svg>
+            <span class="back-txt">{{ labels.backToList || '列表' }}</span>
+          </button>
+        </div>
 
-      <div v-if="detail" class="toolbar-actions">
-        <!-- Close Mobile Button -->
-        <button class="mobile-close-btn" :title="labels.backToList" type="button" @click="emit('close')">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-          </svg>
-        </button>
-        <button class="btn btn-primary" type="button">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-            <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-          </svg>
-          {{ labels.batchScrapeAll }}
-        </button>
+        <div v-if="detail" class="top-row-actions">
+          <button class="btn btn-primary" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+            </svg>
+            {{ labels.batchScrapeAll }}
+          </button>
+        </div>
+      </div>
+
+      <div class="toolbar-tabs-row">
+        <nav class="workshop-tabs">
+          <button class="tab-btn tab-btn--active" type="button">{{ labels.episodesAndSeasons }}</button>
+          <button class="tab-btn" type="button">{{ labels.artworkTab }}</button>
+          <button class="tab-btn" type="button">{{ labels.castTab }}</button>
+        </nav>
       </div>
     </header>
 
@@ -184,22 +191,54 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
   overflow: hidden;
 }
 
-.inspector-toolbar {
-  height: var(--toolbar-height, 40px);
-  padding: 0 var(--pane-padding, 12px);
+.inspector-header-container {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.toolbar-top-row {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
   background: var(--surface-dim, #0c1324);
   border-bottom: 1px solid var(--outline-variant, #2e3447);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-shrink: 0;
+  gap: 12px;
+}
+
+.top-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.toolbar-tabs-row {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--surface-base, #0c1324);
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  display: flex;
+  align-items: center;
 }
 
 .workshop-tabs {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
   height: 100%;
+  overflow-x: auto;
 }
 
 .tab-btn {
@@ -212,6 +251,14 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--primary-fixed, #e1e0ff);
 }
 
 .tab-btn--active {
@@ -220,23 +267,25 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
   font-weight: 700;
 }
 
-.toolbar-actions {
-  display: flex;
+.mobile-back-btn {
+  display: none;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-high, #23293c);
+  border: 1px solid var(--outline-variant, #2e3447);
+  color: var(--on-surface, #dce1fb);
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
 }
 
-.mobile-close-btn {
-  display: none;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  border: 1px solid var(--outline-variant);
-  color: var(--on-surface-variant);
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+.mobile-back-btn:hover {
+  background: var(--surface-container-highest, #2e3447);
+  color: var(--primary, #c0c1ff);
 }
 
 .inspector-error {
