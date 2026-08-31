@@ -1,0 +1,29 @@
+# Local state
+.DS_Store
+.env
+.env.*
+!.env.example
+status-cache.json
+
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Web
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Runtime data
+/data/
+/config/
+/cache/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
