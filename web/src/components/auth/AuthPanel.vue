@@ -1,0 +1,9 @@
+<script setup lang="ts">
+import { shallowRef } from 'vue'
+const props = defineProps<{ setup: boolean; error: string | null }>()
+const emit = defineEmits<{ submit: [username: string, password: string] }>()
+const username = shallowRef('admin'); const password = shallowRef('')
+function submit() { emit('submit', username.value, password.value) }
+</script>
+<template><main class="auth-panel"><section class="auth-card"><p class="eyebrow">MediaGrap · private library</p><h1>{{ props.setup ? 'Create the first administrator' : 'Welcome back' }}</h1><p>{{ props.setup ? 'This account controls media sources on this server.' : 'Sign in to review your library.' }}</p><form @submit.prevent="submit"><label>Username<input v-model="username" autocomplete="username" minlength="3" required /></label><label>Password<input v-model="password" type="password" :autocomplete="props.setup ? 'new-password' : 'current-password'" minlength="12" required /></label><p v-if="props.error" class="form-error">{{ props.error }}</p><button type="submit">{{ props.setup ? 'Create administrator' : 'Sign in' }}</button></form></section></main></template>
+<style scoped>.auth-panel{display:grid;min-height:100vh;place-items:center;padding:1.5rem;background:var(--ink-900)}.auth-card{width:min(100%,31rem);padding:clamp(1.5rem,6vw,3.5rem);border:1px solid var(--water-700);border-radius:1rem;background:var(--paper)}h1{margin:.5rem 0;font:500 clamp(2.4rem,7vw,4rem)/.95 var(--font-display);letter-spacing:-.06em}.auth-card p{color:var(--ink-600);line-height:1.6}form{display:grid;gap:1rem;margin-top:1.8rem}label{display:grid;gap:.4rem;font-size:.85rem;font-weight:700}input{min-height:2.9rem;padding:.6rem .75rem;border:1px solid var(--mist-300);border-radius:.45rem}button{min-height:2.9rem;border:0;border-radius:.45rem;background:var(--ink-900);color:white;font-weight:700;cursor:pointer}.form-error{margin:0;color:#9d3217}</style>

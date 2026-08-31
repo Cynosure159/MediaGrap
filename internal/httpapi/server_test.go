@@ -7,13 +7,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mediagrap/mediagrap/internal/auth"
 	"github.com/mediagrap/mediagrap/internal/httpapi"
+	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/platform/database"
 )
 
 func TestHealthEndpoint(t *testing.T) {
 	db := testDatabase(t)
-	server := httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test"})
+	server := testServer(db)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
@@ -24,7 +26,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestSystemInfoEndpoint(t *testing.T) {
 	db := testDatabase(t)
-	server := httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"})
+	server := testServer(db)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/system/info", nil))
 
@@ -35,6 +37,12 @@ func TestSystemInfoEndpoint(t *testing.T) {
 		t.Fatalf("unexpected content type %q", contentType)
 	}
 }
+
+func testServer(db *sql.DB) http.Handler {
+	return httpapi.NewServer(slog.Default(), db, httpapi.BuildInfo{Version: "test", Commit: "abc"}, auth.NewService(db), library.NewService(db, []string{tTempRootPlaceholder}))
+}
+
+const tTempRootPlaceholder = "/media"
 
 func testDatabase(t *testing.T) *sql.DB {
 	t.Helper()

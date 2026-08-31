@@ -130,6 +130,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - [开发路线图](docs/roadmap.md)
 - [MediaElch 参考分析](docs/mediaelch-reference.md)
 - [Phase 0 基础实现](docs/phase-0-foundation.md)
+- [Phase 1 只读媒体发现](docs/phase-1-discovery.md)
 - [ADR 0001：基础技术栈](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch 参考边界

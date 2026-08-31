@@ -17,11 +17,12 @@ const (
 )
 
 type Config struct {
-	ConfigDir string
-	CacheDir  string
-	Listen    string
-	LogFormat string
-	LogLevel  string
+	ConfigDir  string
+	CacheDir   string
+	Listen     string
+	LogFormat  string
+	LogLevel   string
+	MediaRoots []string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -47,8 +48,29 @@ func LoadConfig(args []string) (Config, error) {
 	if config.LogFormat != "json" && config.LogFormat != "text" {
 		return Config{}, fmt.Errorf("invalid log format %q", config.LogFormat)
 	}
+	config.MediaRoots = cleanMediaRoots(envOrDefault("MEDIAGRAP_MEDIA_ROOTS", "/media"))
+	if len(config.MediaRoots) == 0 {
+		return Config{}, errors.New("at least one media root is required")
+	}
 
 	return config, nil
+}
+
+func cleanMediaRoots(value string) []string {
+	seen := make(map[string]struct{})
+	roots := make([]string, 0)
+	for _, part := range strings.Split(value, ",") {
+		root := filepath.Clean(strings.TrimSpace(part))
+		if root == "." || root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, root)
+	}
+	return roots
 }
 
 func (c Config) DatabasePath() string {

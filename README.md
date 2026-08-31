@@ -130,6 +130,7 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [Delivery roadmap](docs/roadmap.md)
 - [MediaElch reference review](docs/mediaelch-reference.md)
 - [Phase 0 foundation](docs/phase-0-foundation.md)
+- [Phase 1 read-only discovery](docs/phase-1-discovery.md)
 - [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch reference boundary

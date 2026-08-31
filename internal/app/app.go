@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mediagrap/mediagrap/internal/auth"
 	"github.com/mediagrap/mediagrap/internal/httpapi"
+	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/platform/database"
 )
 
@@ -24,6 +26,7 @@ type Application struct {
 	logger *slog.Logger
 	db     *sql.DB
 	server *http.Server
+	worker *library.Service
 }
 
 func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, error) {
@@ -40,7 +43,8 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 		return nil, err
 	}
 
-	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build))
+	libraryService := library.NewService(db, config.MediaRoots)
+	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService)
 	return &Application{
 		config: config,
 		logger: logger,
@@ -53,10 +57,12 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 			WriteTimeout:      30 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
+		worker: libraryService,
 	}, nil
 }
 
 func (a *Application) Run(ctx context.Context) error {
+	go a.worker.RunWorker(ctx)
 	errorChannel := make(chan error, 1)
 	go func() {
 		a.logger.Info("HTTP server listening", "address", a.config.Listen)

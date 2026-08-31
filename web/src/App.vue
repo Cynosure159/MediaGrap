@@ -1,57 +1,14 @@
 <script setup lang="ts">
 import { onMounted, shallowRef } from 'vue'
-import AppSidebar, { type NavigationItem } from '@/components/app/AppSidebar.vue'
-import ActivityRail from '@/components/dashboard/ActivityRail.vue'
-import SystemPulse from '@/components/dashboard/SystemPulse.vue'
-import { useSystemSummary } from '@/composables/useSystemSummary'
-
-const navigation: NavigationItem[] = [
-  { id: 'overview', label: 'Overview', detail: 'Foundation status' },
-  { id: 'library', label: 'Library', detail: 'Coming in phase 1', disabled: true },
-  { id: 'jobs', label: 'Jobs', detail: 'Coming in phase 1', disabled: true },
-  { id: 'settings', label: 'Settings', detail: 'Coming in phase 1', disabled: true }
-]
-
-const activeSection = shallowRef('overview')
-const { summary, isLoading, error, connectionLabel, refresh } = useSystemSummary()
-
-function selectSection(id: string) {
-  activeSection.value = id
-}
-
-onMounted(refresh)
+import * as api from '@/api/library'
+import AuthPanel from '@/components/auth/AuthPanel.vue'
+import LibraryWorkspace from '@/components/library/LibraryWorkspace.vue'
+const mode = shallowRef<'loading' | 'setup' | 'login' | 'library'>('loading')
+const session = shallowRef<api.Session | null>(null)
+const error = shallowRef<string | null>(null)
+async function initialize() { try { const status = await api.setupStatus(); if (status.needsSetup) { mode.value = 'setup'; return }; session.value = await api.session(); mode.value = 'library' } catch { mode.value = 'login' } }
+async function authenticate(username: string, password: string) { error.value = null; try { session.value = mode.value === 'setup' ? await api.setup(username, password) : await api.signIn(username, password); mode.value = 'library' } catch (caught) { error.value = caught instanceof Error ? caught.message : 'Unable to sign in' } }
+onMounted(initialize)
 </script>
-
-<template>
-  <main class="application-shell">
-    <AppSidebar
-      :active-section="activeSection"
-      :items="navigation"
-      @select-section="selectSection"
-    />
-
-    <section class="workspace" aria-labelledby="page-title">
-      <header class="workspace-header">
-        <div>
-          <p class="eyebrow">Media library control room</p>
-          <h1 id="page-title" class="page-title">Foundation</h1>
-          <p class="page-description">The service is ready for its first media source.</p>
-        </div>
-        <button class="refresh-button" type="button" :disabled="isLoading" @click="refresh">
-          {{ isLoading ? 'Checking…' : 'Refresh status' }}
-        </button>
-      </header>
-
-      <SystemPulse
-        :summary="summary"
-        :is-loading="isLoading"
-        :error="error"
-        :connection-label="connectionLabel"
-        @refresh="refresh"
-      />
-
-      <ActivityRail :summary="summary" />
-    </section>
-  </main>
-</template>
-
+<template><div v-if="mode === 'loading'" class="loading-screen">Opening MediaGrap…</div><AuthPanel v-else-if="mode === 'setup' || mode === 'login'" :setup="mode === 'setup'" :error="error" @submit="authenticate" /><LibraryWorkspace v-else-if="session" :csrf-token="session.csrfToken" :username="session.user.username" /></template>
+<style scoped>.loading-screen{display:grid;min-height:100vh;place-items:center;background:var(--ink-900);color:var(--mist-100);font:1.2rem var(--font-display)}</style>
