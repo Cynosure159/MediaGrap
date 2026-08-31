@@ -107,3 +107,15 @@ func TestReadExistingNFOAlwaysReturnsArrayFields(t *testing.T) {
 		t.Fatalf("array fields must not be nil: %#v", record)
 	}
 }
+
+func TestReadExistingNFOFallsBackToKodiMovieNFO(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "Release.Name.2023.mkv")
+	if err := os.WriteFile(filepath.Join(root, "movie.nfo"), []byte(`<movie><title>Folder title</title></movie>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := NewService(nil, nil).ReadExistingNFO(media, 1)
+	if err != nil || !found || record.Title != "Folder title" {
+		t.Fatalf("expected movie.nfo fallback, record=%#v found=%v err=%v", record, found, err)
+	}
+}

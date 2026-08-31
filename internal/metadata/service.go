@@ -84,11 +84,23 @@ func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 // ReadExistingNFO loads the sidecar paired with a media file without changing it.
 // Symlink sidecars are rejected so an allowlisted media path cannot escape its source.
 func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool, error) {
-	path := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo"
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	paths := []string{
+		strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo",
+		filepath.Join(filepath.Dir(mediaPath), "movie.nfo"),
+	}
+	var path string
+	for _, candidate := range paths {
+		if _, err := os.Lstat(candidate); err == nil {
+			path = candidate
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return Record{}, false, fmt.Errorf("inspect existing NFO: %w", err)
+		}
+	}
+	if path == "" {
 		return Record{}, false, nil
 	}
+	info, err := os.Lstat(path)
 	if err != nil {
 		return Record{}, false, fmt.Errorf("inspect existing NFO: %w", err)
 	}
