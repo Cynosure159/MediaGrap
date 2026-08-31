@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +18,9 @@ import (
 var videoExtensions = map[string]bool{".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".webm": true}
 var sidecarExtensions = map[string]string{".nfo": "nfo", ".jpg": "image", ".jpeg": "image", ".png": "image", ".webp": "image"}
 var yearPattern = regexp.MustCompile(`(?i)[. _\-\[(](19\d{2}|20\d{2})[. _\-\])]`)
+var seasonDirectoryPattern = regexp.MustCompile(`(?i)^(?:season[ ._-]*)?s?(\d{1,2})$`)
+var episodePattern = regexp.MustCompile(`(?i)(?:^|[. _-])s(\d{1,2})e(\d{1,3})(?:e(\d{1,3}))?(?:$|[. _-])`)
+var episodeXPattern = regexp.MustCompile(`(?i)(?:^|[. _-])(\d{1,2})x(\d{1,3})(?:-(\d{1,3}))?(?:$|[. _-])`)
 
 type Source struct {
 	ID        int64  `json:"id"`
@@ -62,14 +66,43 @@ type Page struct {
 	Page     int         `json:"page"`
 	PageSize int         `json:"pageSize"`
 }
-
-type Service struct {
-	db    *sql.DB
-	roots []string
-	locks sync.Map
+type TVShow struct {
+	ID           int64  `json:"id"`
+	SourceID     int64  `json:"sourceId"`
+	RelativePath string `json:"relativePath"`
+	TitleHint    string `json:"titleHint"`
+	YearHint     *int   `json:"yearHint"`
+	EpisodeCount int    `json:"episodeCount"`
+	SeasonCount  int    `json:"seasonCount"`
+}
+type TVEpisode struct {
+	MediaItem
+	SeasonNumber int `json:"seasonNumber"`
+	EpisodeStart int `json:"episodeStart"`
+	EpisodeEnd   int `json:"episodeEnd"`
+}
+type TVShowDetail struct {
+	Show     TVShow      `json:"show"`
+	Episodes []TVEpisode `json:"episodes"`
+	Writable bool        `json:"writable"`
 }
 
-func NewService(db *sql.DB, roots []string) *Service { return &Service{db: db, roots: roots} }
+type Service struct {
+	db     *sql.DB
+	roots  []string
+	locks  sync.Map
+	logger *slog.Logger
+}
+
+func NewService(db *sql.DB, roots []string) *Service {
+	return &Service{db: db, roots: roots, logger: slog.Default()}
+}
+
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
+}
 
 func (s *Service) ListSources(ctx context.Context) ([]Source, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT s.id, s.name, s.root_path, s.enabled, COUNT(m.id) FROM sources s LEFT JOIN media_items m ON m.source_id = s.id AND m.missing = 0 GROUP BY s.id ORDER BY s.name COLLATE NOCASE`)
@@ -165,10 +198,10 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 	}
 	query = strings.TrimSpace(query)
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items WHERE missing = 0 AND title_hint LIKE ?`, "%"+query+"%").Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items m WHERE missing = 0 AND title_hint LIKE ? AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id)`, "%"+query+"%").Scan(&total); err != nil {
 		return Page{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, source_id, relative_path, title_hint, year_hint, file_size, modified_at FROM media_items WHERE missing = 0 AND title_hint LIKE ? ORDER BY title_hint COLLATE NOCASE LIMIT ? OFFSET ?`, "%"+query+"%", pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at FROM media_items m WHERE m.missing = 0 AND m.title_hint LIKE ? AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id) ORDER BY m.title_hint COLLATE NOCASE LIMIT ? OFFSET ?`, "%"+query+"%", pageSize, (page-1)*pageSize)
 	if err != nil {
 		return Page{}, err
 	}
@@ -183,6 +216,68 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		items = append(items, item)
 	}
 	return Page{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
+}
+
+func (s *Service) ListTVShows(ctx context.Context, query string) ([]TVShow, error) {
+	query = strings.TrimSpace(query)
+	rows, err := s.db.QueryContext(ctx, `SELECT sh.id, sh.source_id, sh.relative_path, sh.title_hint, sh.year_hint, COUNT(DISTINCT e.media_item_id), COUNT(DISTINCT e.season_number)
+		FROM tv_shows sh JOIN tv_episodes e ON e.show_id=sh.id JOIN media_items m ON m.id=e.media_item_id
+		WHERE m.missing=0 AND sh.title_hint LIKE ? GROUP BY sh.id ORDER BY sh.title_hint COLLATE NOCASE`, "%"+query+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	shows := []TVShow{}
+	for rows.Next() {
+		var show TVShow
+		var year sql.NullInt64
+		if err := rows.Scan(&show.ID, &show.SourceID, &show.RelativePath, &show.TitleHint, &year, &show.EpisodeCount, &show.SeasonCount); err != nil {
+			return nil, err
+		}
+		if year.Valid {
+			value := int(year.Int64)
+			show.YearHint = &value
+		}
+		shows = append(shows, show)
+	}
+	return shows, rows.Err()
+}
+
+func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
+	shows, err := s.ListTVShows(ctx, "")
+	if err != nil {
+		return TVShowDetail{}, err
+	}
+	var show *TVShow
+	for index := range shows {
+		if shows[index].ID == id {
+			show = &shows[index]
+			break
+		}
+	}
+	if show == nil {
+		return TVShowDetail{}, errors.New("TV show not found")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.source_id,m.relative_path,m.title_hint,m.year_hint,m.file_size,m.modified_at,e.season_number,e.episode_start,e.episode_end FROM tv_episodes e JOIN media_items m ON m.id=e.media_item_id WHERE e.show_id=? AND m.missing=0 ORDER BY e.season_number,e.episode_start,m.relative_path`, id)
+	if err != nil {
+		return TVShowDetail{}, err
+	}
+	defer rows.Close()
+	detail := TVShowDetail{Show: *show, Writable: s.sourceWritable(ctx, show.SourceID), Episodes: []TVEpisode{}}
+	for rows.Next() {
+		var episode TVEpisode
+		var year sql.NullInt64
+		if err := rows.Scan(&episode.ID, &episode.SourceID, &episode.RelativePath, &episode.TitleHint, &year, &episode.FileSize, &episode.ModifiedAt, &episode.SeasonNumber, &episode.EpisodeStart, &episode.EpisodeEnd); err != nil {
+			return TVShowDetail{}, err
+		}
+		if year.Valid {
+			value := int(year.Int64)
+			episode.YearHint = &value
+		}
+		episode.Sidecars, _ = s.sidecars(ctx, episode.ID)
+		detail.Episodes = append(detail.Episodes, episode)
+	}
+	return detail, rows.Err()
 }
 func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, source_id, relative_path, title_hint, year_hint, file_size, modified_at FROM media_items WHERE id=? AND missing=0`, id)
@@ -277,11 +372,14 @@ func (s *Service) runOne(ctx context.Context) {
 	if changed == 0 {
 		return
 	}
+	s.logger.Info("library scan started", "job_id", id, "source_id", sourceID)
 	if err := s.scan(ctx, id, sourceID); err != nil {
 		s.db.ExecContext(ctx, `UPDATE jobs SET state='failed',error_message=?,completed_at=datetime('now'),updated_at=datetime('now') WHERE id=?`, err.Error(), id)
+		s.logger.Error("library scan failed", "job_id", id, "source_id", sourceID, "error", err)
 		return
 	}
 	s.db.ExecContext(ctx, `UPDATE jobs SET state='succeeded',message='Scan complete',completed_at=datetime('now'),updated_at=datetime('now') WHERE id=?`, id)
+	s.logger.Info("library scan completed", "job_id", id, "source_id", sourceID)
 }
 func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 	var root string
@@ -296,7 +394,7 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 		return err
 	}
 	count := 0
-	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -327,12 +425,17 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 			return err
 		}
 		s.recordSidecars(ctx, itemID, root, relative)
+		s.recordTVEpisode(ctx, itemID, sourceID, relative)
 		count++
 		if count%25 == 0 {
 			s.db.ExecContext(ctx, `UPDATE jobs SET progress_current=?,message='Indexed media files',updated_at=datetime('now') WHERE id=?`, count, jobID)
 		}
 		return nil
 	})
+	if err == nil {
+		s.logger.Info("library scan indexed files", "job_id", jobID, "source_id", sourceID, "media_item_count", count)
+	}
+	return err
 }
 func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) {
 	directory := filepath.Dir(filepath.Join(root, relative))
@@ -350,6 +453,38 @@ func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relati
 			s.db.ExecContext(ctx, `INSERT OR IGNORE INTO sidecar_assets(media_item_id,relative_path,kind) VALUES(?,?,?)`, itemID, rel, kind)
 		}
 	}
+}
+
+func (s *Service) recordTVEpisode(ctx context.Context, itemID, sourceID int64, relative string) {
+	season, firstEpisode, lastEpisode, ok := parseEpisodeHint(filepath.Base(relative))
+	if !ok {
+		s.db.ExecContext(ctx, `DELETE FROM tv_episodes WHERE media_item_id=?`, itemID)
+		return
+	}
+	showPath, showTitle, showYear := tvShowHint(relative)
+	if showTitle == "" {
+		return
+	}
+	var showID int64
+	err := s.db.QueryRowContext(ctx, `INSERT INTO tv_shows(source_id,relative_path,title_hint,year_hint,updated_at) VALUES(?,?,?,?,datetime('now')) ON CONFLICT(source_id,relative_path) DO UPDATE SET title_hint=excluded.title_hint,year_hint=excluded.year_hint,updated_at=datetime('now') RETURNING id`, sourceID, showPath, showTitle, showYear).Scan(&showID)
+	if err != nil {
+		return
+	}
+	var seasonID int64
+	err = s.db.QueryRowContext(ctx, `INSERT INTO tv_seasons(show_id,season_number) VALUES(?,?) ON CONFLICT(show_id,season_number) DO UPDATE SET season_number=excluded.season_number RETURNING id`, showID, season).Scan(&seasonID)
+	if err != nil {
+		return
+	}
+	title := episodeTitleHint(filepath.Base(relative))
+	s.db.ExecContext(ctx, `INSERT INTO tv_episodes(media_item_id,show_id,season_id,season_number,episode_start,episode_end,title_hint) VALUES(?,?,?,?,?,?,?) ON CONFLICT(media_item_id) DO UPDATE SET show_id=excluded.show_id,season_id=excluded.season_id,season_number=excluded.season_number,episode_start=excluded.episode_start,episode_end=excluded.episode_end,title_hint=excluded.title_hint`, itemID, showID, seasonID, season, firstEpisode, lastEpisode, title)
+}
+
+func (s *Service) sourceWritable(ctx context.Context, sourceID int64) bool {
+	var root string
+	if s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, sourceID).Scan(&root) != nil {
+		return false
+	}
+	return isWritable(root)
 }
 func (s *Service) allowed(path string) bool {
 	for _, root := range s.roots {
@@ -373,6 +508,58 @@ func parseHint(filename string) (string, *int) {
 	title := strings.NewReplacer(".", " ", "_", " ", "-", " ").Replace(name)
 	title = strings.Join(strings.Fields(title), " ")
 	return title, year
+}
+
+func parseEpisodeHint(filename string) (season, firstEpisode, lastEpisode int, ok bool) {
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	match := episodePattern.FindStringSubmatch(name)
+	if len(match) == 0 {
+		match = episodeXPattern.FindStringSubmatch(name)
+	}
+	if len(match) == 0 {
+		return 0, 0, 0, false
+	}
+	fmt.Sscanf(match[1], "%d", &season)
+	fmt.Sscanf(match[2], "%d", &firstEpisode)
+	lastEpisode = firstEpisode
+	if len(match) > 3 && match[3] != "" {
+		fmt.Sscanf(match[3], "%d", &lastEpisode)
+	}
+	return season, firstEpisode, lastEpisode, season >= 0 && firstEpisode >= 0 && lastEpisode >= firstEpisode
+}
+
+func tvShowHint(relative string) (string, string, *int) {
+	directory := filepath.Dir(relative)
+	showDirectory := directory
+	if seasonDirectoryPattern.MatchString(filepath.Base(directory)) {
+		showDirectory = filepath.Dir(directory)
+	}
+	if showDirectory != "." {
+		title, year := parseHint(filepath.Base(showDirectory))
+		return showDirectory, title, year
+	}
+	filename := filepath.Base(relative)
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	match := episodePattern.FindStringIndex(name)
+	if match == nil {
+		match = episodeXPattern.FindStringIndex(name)
+	}
+	if match == nil {
+		return ".", "", nil
+	}
+	title, year := parseHint(name[:match[0]])
+	return ".", title, year
+}
+
+func episodeTitleHint(filename string) string {
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	if match := episodePattern.FindStringIndex(name); match != nil {
+		return strings.Trim(strings.NewReplacer(".", " ", "_", " ", "-", " ").Replace(name[match[1]:]), " ")
+	}
+	if match := episodeXPattern.FindStringIndex(name); match != nil {
+		return strings.Trim(strings.NewReplacer(".", " ", "_", " ", "-", " ").Replace(name[match[1]:]), " ")
+	}
+	return ""
 }
 func isWritable(path string) bool {
 	info, err := os.Stat(path)

@@ -46,6 +46,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 	}
 
 	libraryService := library.NewService(db, config.MediaRoots)
+	libraryService.SetLogger(logger)
 	settingsService := settings.NewService(db, settings.Defaults{TMDbAPIKey: config.TMDbAPIKey, TMDbLanguage: config.TMDbLanguage, OutboundProxy: config.OutboundProxy, MediaRoots: config.MediaRoots})
 	currentSettings, err := settingsService.Current(context.Background())
 	if err != nil {

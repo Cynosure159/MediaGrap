@@ -129,6 +129,34 @@ func (s *server) media(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, result)
 }
+func (s *server) tvShows(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	items, err := s.library.ListTVShows(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, 500, "internal_error", "Unable to list TV shows")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
+}
+func (s *server) tvShow(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	idText := strings.TrimPrefix(r.URL.Path, "/api/v1/tv/shows/")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, 400, "invalid_show", "Invalid TV show id")
+		return
+	}
+	result, err := s.library.TVShow(r.Context(), id)
+	if err != nil {
+		writeError(w, 404, "show_not_found", "TV show not found")
+		return
+	}
+	writeJSON(w, 200, result)
+}
 func (s *server) jobs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
 		return

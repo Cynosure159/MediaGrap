@@ -53,6 +53,8 @@ func NewServer(logger *slog.Logger, db *sql.DB, build BuildInfo, authService *au
 	mux.HandleFunc("POST /api/v1/sources", application.sources)
 	mux.HandleFunc("POST /api/v1/sources/", application.scanSource)
 	mux.HandleFunc("GET /api/v1/media", application.media)
+	mux.HandleFunc("GET /api/v1/tv/shows", application.tvShows)
+	mux.HandleFunc("GET /api/v1/tv/shows/", application.tvShow)
 	mux.HandleFunc("GET /api/v1/media/", application.mediaDetail)
 	mux.HandleFunc("POST /api/v1/media/", application.mediaDetail)
 	mux.HandleFunc("GET /api/v1/write-plans/", application.writePlan)
