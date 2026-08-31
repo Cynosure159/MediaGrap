@@ -1,113 +1,125 @@
-# Delivery roadmap
+# MediaGrap 项目路线图
 
-The plan favors a complete, safe vertical slice over implementing every media type at once. Each phase ends with runnable software and updated documentation.
+本文以当前代码、已导出的 UX 原型和文件安全原则为准。原型展示的是目标交互，不代表其中的所有按钮、统计数字或状态已经实现；逐项盘点见 [UX 原型功能盘点](ux-feature-backlog.md)。
 
-## Phase 0 — foundation and risk spikes
+## 当前基线（2026-08-31）
 
-Deliverables:
+| 范围 | 状态 | 已交付能力 |
+| --- | --- | --- |
+| Phase 0 | 已完成 | Go + Vue PWA 基础、SQLite、嵌入式前端、结构化日志、Docker 非 root 运行和健康检查。 |
+| Phase 1 | 已完成 | 媒体源、电影扫描、已有 NFO/同名 sidecar 发现、电影库浏览、中文/英文切换和基础设置。 |
+| Phase 2 | 已完成首个可用切片 | TMDb 电影搜索与元数据草稿编辑、Kodi 电影 NFO 读取/预览/安全覆盖、预览确认后的 TMDb 海报和背景图下载、HTTP/HTTPS 出站代理。 |
+| Phase 3 | 进行中 | 电视剧集命名识别、剧/季/集派生模型，以及独立电视剧库视图；尚未有电视剧刮削或 TV NFO 写入。 |
+| UX 重构 | 进行中 | 新的 MediaGrap Core 设计约束、品牌资产与 10 个原型已加入工作树；具体 UI 与行为仍需按下列阶段接入。 |
 
-- Go module, Vue/TypeScript PWA workspace, local development commands, lint/test/build gates.
-- Configuration loader, structured logging, embedded frontend proof, SQLite migrations, health endpoints.
-- Container running as non-root on amd64 and arm64.
-- Spikes for large-directory walking, SQLite job leasing, NFO round trip, atomic writes on common local/NAS filesystems, and PWA update behavior.
-- Architecture decision records for concrete libraries and public license.
+## 实施顺序与依赖
 
-Exit criteria:
+    电视剧可用闭环
+      -> 电影工作台补全（字段、NFO、图片、人员、技术信息）
+      -> 任务、审计与批量操作
+      -> 安全整理文件
+      -> 自动化与外部集成
+      -> 扩展媒体类型与部署形态
 
-- One command runs development mode and Compose runs a production build.
-- CI can format, lint, test, build, and assemble an image reproducibly.
-- Risk-spike results are measured and recorded under `docs/`.
+每个阶段都必须同时完成 API/数据迁移、桌面与移动端交互、中文/英文文案、必要节点日志、自动化测试和对应的 docs 文档。涉及文件写入、下载、重命名或删除时，必须保留预览、确认、重新校验和审计。
 
-## Phase 1 — movie discovery
+## Phase 3 — 电视剧可用闭环
 
-Deliverables:
+### 3A：TV 匹配与草稿
 
-- First-run admin setup, login/logout, secure sessions, and settings shell.
-- Source management with container-path allowlisting and permission checks.
-- Durable job engine and SSE progress feed.
-- Incremental movie scan, filename hints, existing NFO/artwork discovery, library list/detail UI.
-- Mobile navigation, list virtualization, loading/error/empty states, theme tokens, PWA manifest.
-- Chinese/English locale bundles, user locale preference, browser-locale fallback, and locale-aware dates/numbers.
+- 将现有 TMDb 客户端扩展为 TV 搜索、剧集详情、季与单集详情，遵循设置中的元数据语言与代理。
+- 为剧、季、集引入候选匹配、明确选择和手动查询；不自动以搜索结果覆盖本地数据。
+- 展示季手风琴、单集表格和右侧单集检查器；状态必须来自真实索引/NFO/草稿数据，不能使用原型中的静态百分比。
+- 支持多集文件、特殊集（Season 0）和常见命名异常；建立混合命名 fixture。
 
-Exit criteria:
+验收：可从一个已扫描的剧集选择 TMDb 候选，查看剧/季/集的本地与远端数据草稿，但不产生文件改动。
 
-- A large fixture library can be scanned with bounded memory, cancelled, and resumed/restarted safely.
-- Read-only libraries are fully browsable while write actions remain disabled.
+### 3B：TV 安全写入与批量范围
 
-## Phase 2 — movie scrape and safe write (MVP)
+- Kodi tvshow.nfo、season.nfo、episodedetails 的读写、预览和兼容性测试。
+- 剧集海报、背景、季海报和单集截图的候选与安全下载。
+- 单集、单季、整剧三个明确批量范围；持久化父子任务、进度、取消、失败后仅重试失败项。
+- 缺集报告：基于已匹配的官方季/集清单，清楚区分“文件未发现”“尚未匹配”“特殊集”。
 
-Deliverables:
+验收：对一部电视剧执行可审查的批量计划；中断后可恢复任务状态，且失败项可单独重试。
 
-- Shared outbound HTTP client with proxy, no-proxy, rate limiting, retry, caching, and redaction.
-- TMDb search/details/images adapter and Fanart.tv artwork adapter.
-- Candidate selection, metadata draft comparison, manual editing, locked fields, artwork picker.
-- Kodi movie NFO parser/writer and deterministic fixture tests.
-- Change-set preview/apply, conflict checks, safe sidecar writes, audit history.
-- Thumbnail service and bounded artwork download jobs.
+## Phase 4 — 电影工作台与元数据工坊
 
-Exit criteria:
+本阶段将现有电影垂直切片补齐为 UX 原型中的多工坊工作台。它不改变“先预览、后写入”的安全模型。
 
-- The end-to-end MVP acceptance criteria in `product-scope.md` pass on amd64 and arm64.
-- Restart/failure tests show no truncated NFO and no silent overwrite of user edits.
+### 4A：匹配、概览与字段级合并
 
-## Phase 3 — TV shows
+- 搜索结果候选卡片、手动查询、匹配置信息和无结果/网络失败的可见诊断。
+- 本地/远端字段 Diff，逐字段勾选合并、手动编辑、字段锁定和冲突提示。
+- 概览卡片的真实标题、原名、评分、发行信息、类型、剧情和 NFO/图片完整度；库内筛选“未刮削、缺 NFO、缺海报、缺背景图”等状态。
+- 明确的草稿保存与安全写入边界，避免“保存”同时隐式改变元数据和文件。
 
-Deliverables:
+### 4B：NFO Raw 与校验
 
-- Show/season/episode model and filename parser.
-- TV discovery, matching, episode details, season/episode artwork, and missing-episode report.
-- TV/show/episode Kodi NFO round trips and batch scope controls.
+- 原始 Kodi XML 的受控编辑器：格式化、撤销至已读取版本、复制、显式保存预览。
+- XML 语法、UTF-8、必填 ID、艺术图映射和演员字段的实时校验；错误定位到行/字段。
+- Kodi 格式先行。Plex/Jellyfin 选项仅在具备独立兼容实现与测试后开放，不能作为占位选择器。
 
-Exit criteria:
+### 4C：艺术图与演职员
 
-- Mixed naming fixtures and multi-episode files behave predictably.
-- Batch scraping reports partial failures and can retry only failed children.
+- 艺术图工坊：Poster、Fanart、Logo、Clearart、Disc、Banner、Thumb 的本地状态、候选画廊、尺寸/来源、下载替换预览。
+- 上传、本地选择、裁切/变换仅在实现安全的格式、尺寸、目标路径与回滚策略后加入。
+- 演职员模型：导演、编剧、演员、角色/职务、顺序和 TMDb ID；支持增删改排序及头像候选/下载。
+- 所有图片和人像请求进入受限下载队列，遵守代理、限速、重试、SSRF 防护和缓存策略。
 
-## Phase 4 — organization and integration
+### 4D：媒体信息与文件审计
 
-Deliverables:
+- 可选 ffprobe 集成，提取并展示真实的视频、音频、HDR、字幕、分辨率和文件大小信息。
+- 文件树、sidecar 关联、缺失/不可写/软链接告警及“在服务器打开目录”能力边界说明。
+- 不提供浏览器直接执行宿主机命令；“打开目录”仅可在未来具备受控服务器集成时实现。
 
-- Rename template parser with placeholder validation and conditional segments.
-- Dry run, collision/case-fold detection, grouped sidecar moves, cross-filesystem safeguards.
-- Duplicate and missing-data filters, CSV export, scheduled scans, webhooks, Kodi JSON-RPC sync.
+验收：电影工作台的 Overview、Artwork、Cast、NFO Raw、Media Info、File Audit 六个页签均展示真实数据，并保持移动端钻取布局。
 
-Exit criteria:
+## Phase 5 — 作业、审计与安全整理
 
-- Property/fuzz tests cover path sanitization and template parsing.
-- Fault-injection tests cover partial file operations and document recovery behavior.
+### 5A：作业与运维可见性
 
-## Phase 5 — broader media and ecosystem
+- 作业中心：扫描、搜索、下载、写入、批处理的队列、进度、取消、重试、历史和 SSE 断线重连。
+- 审计/备份中心：每次写入的计划、结果、备份位置与可恢复范围；不承诺无法在 NAS 故障下保证的全局回滚。
+- 系统状态：版本、数据库迁移、挂载可写性、缓存使用、Provider 健康和安全脱敏后的连接测试结果。
+- 设置补全：来源策略（全量/增量/定时）、TMDb/Fanart.tv 凭证、元数据语言与回退语言、HTTP/HTTPS/SOCKS5/NO_PROXY、代理测速、主题和界面语言。
 
-Deliverables considered in priority order:
+### 5B：文件重命名与移动
 
-- Concert NFO and scraping.
-- Music artist/album sidecar support without ID3 mutation.
-- Additional providers based on stable official APIs and user demand.
-- Multiple users/roles, API tokens, PostgreSQL, external worker mode, HTML exports.
+- 命名模板（例如 title/year/season/episode），占位符校验、条件片段、字符清理和跨平台大小写冲突检测。
+- 伴随文件树与分组操作；先生成 Dry Run，显示旧路径、新路径、冲突和可恢复性。
+- 执行时逐项重新验证来源边界、可写性与冲突；跨文件系统采用复制、验证、再删除源文件。
+- 支持停止、部分失败报告和重新扫描，不支持隐式覆盖或未经确认的删除。
 
-## Cross-cutting work in every phase
+验收：对包含 NFO、图片和字幕的电影/电视剧执行重命名 Dry Run；无冲突才允许一次确认执行，并完整记录审计。
 
-- Threat-model update and dependency review.
-- Accessibility, responsive layout, keyboard/touch interaction, and browser testing.
-- Metrics for duration, queue depth, provider failures, cache behavior, and filesystem errors.
-- Migration, backup/restore, proxy, and failure-mode documentation.
-- Performance baselines using reproducible fixture libraries.
+## Phase 6 — 自动化与库集成
 
-## Testing strategy
+- 缺失元数据/艺术图/ID 筛选、重复项识别和 CSV 导出。
+- 按来源配置计划扫描；完成、失败与需要人工决策的 Webhook 通知。
+- Kodi JSON-RPC 同步，先提供连接测试与显式同步范围，再支持自动触发。
+- 备份/恢复、升级迁移、性能指标与可观测性文档。
 
-- **Unit**: filename parsing, normalization, merge policy, templates, path validation, provider mapping.
-- **Golden/fixture**: NFO parse/write compatibility and stable JSON/API shapes.
-- **Integration**: SQLite migrations/jobs, filesystem mutation, proxy routing, provider mock servers.
-- **End-to-end**: first-run setup through scrape/save on desktop and mobile viewport.
-- **Fault injection**: cancellation, restart, disk-full, permission changes, timeouts, rate limits, and naming collisions.
-- **Fuzz/property**: XML input, filenames, path containment, template syntax, and provider payload boundaries.
+## Phase 7 — 扩展与生态
 
-## Immediate next implementation slice
+按真实需求和可用的官方 API 排序：
 
-After this design is accepted:
+- 演唱会 NFO 与刮削。
+- 音乐艺人/专辑 sidecar（不修改 ID3）。
+- 其他元数据/艺术图 Provider。
+- 多用户/角色、API Token、PostgreSQL 与外部 Worker。
+- HTML 导出主题。
 
-1. Scaffold Go and Vue workspaces plus reproducible task commands.
-2. Implement configuration, logging, SQLite migration, health endpoints, and embedded placeholder UI.
-3. Add Dockerfile/Compose and verify non-root amd64/arm64 builds.
-4. Implement durable jobs and a simulated scan progress UI.
-5. Implement source safety checks and the first read-only movie scan.
+## UX 实施准则
+
+- 桌面端始终采用 64px 导航栏、320px 媒体目录栏和弹性检查器；移动端在 700px 及以下改为底部四键导航和详情钻取。
+- 原型中的图片、数字、连接状态、评分、百分比和“健康”标识必须由实际 API 数据驱动。
+- 不可用的未来能力不显示为可点击动作；可保留为带说明的禁用项，但不得伪装成成功状态。
+- 主题、语言、无障碍键盘操作、触控目标、加载/空/错误状态和 PWA 更新流程属于每个阶段的交付范围。
+
+## 验证策略
+
+- 单元与 fixture：命名解析、NFO、字段合并、模板、路径校验、Provider 映射。
+- 集成：SQLite 迁移、任务恢复、代理路由、Provider mock、文件写入和下载。
+- 端到端：桌面与 360px 移动视口中的扫描、匹配、预览、确认和失败提示。
+- 故障注入：权限变化、断网、超时、限流、磁盘不足、重启、命名冲突与部分文件操作。

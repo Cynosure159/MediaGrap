@@ -26,7 +26,7 @@ const activities = computed(() => [
     <ol class="activity-list">
       <li v-for="activity in activities" :key="activity.label" class="activity-item">
         <span class="activity-marker" :class="`activity-marker--${activity.tone}`" aria-hidden="true"></span>
-        <div>
+        <div class="activity-content">
           <p class="activity-label">{{ activity.label }}</p>
           <p class="activity-detail">{{ activity.detail }}</p>
         </div>
@@ -37,9 +37,119 @@ const activities = computed(() => [
 </template>
 
 <style scoped>
-.activity-rail { margin-top: 1.5rem; padding: clamp(1.2rem, 2vw, 1.8rem); border: 1px solid var(--mist-300); border-radius: 1rem; background: var(--paper); }
-.activity-header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }.activity-title { margin: 0.25rem 0 0; font-family: var(--font-display); font-size: 1.7rem; letter-spacing: -0.04em; }.phase-tag { padding: 0.35rem 0.55rem; border: 1px solid var(--mist-300); border-radius: 999px; color: var(--ink-600); font: 0.7rem var(--font-data); letter-spacing: 0.08em; text-transform: uppercase; }
-.activity-list { display: grid; gap: 0.2rem; margin: 1.5rem 0 0; padding: 0; list-style: none; }.activity-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.8rem; align-items: center; padding: 0.85rem 0; border-top: 1px solid var(--mist-200); }.activity-marker { width: 0.55rem; height: 0.55rem; border-radius: 50%; }.activity-marker--complete { background: var(--water-600); box-shadow: 0 0 0 0.25rem var(--water-100); }.activity-marker--waiting { border: 1px solid var(--mist-400); }.activity-label, .activity-detail, .activity-value { margin: 0; }.activity-label { font-weight: 650; }.activity-detail { margin-top: 0.18rem; color: var(--ink-500); font-size: 0.88rem; }.activity-value { color: var(--ink-600); font: 0.75rem var(--font-data); text-align: right; }
-@media (max-width: 580px) { .activity-item { grid-template-columns: auto minmax(0, 1fr); }.activity-value { grid-column: 2; text-align: left; }.activity-detail { max-width: 24rem; } }
-</style>
+.activity-rail {
+  margin-top: 1.5rem;
+  padding: clamp(1.2rem, 2vw, 1.8rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+}
 
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font: 500 0.65rem/1.4 var(--font-data);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.activity-title {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.phase-tag {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  font: 500 0.6875rem/1.2 var(--font-data);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activity-list {
+  display: grid;
+  gap: 0;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.activity-marker {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.activity-marker--complete {
+  background: var(--success-bright);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.activity-marker--waiting {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+}
+
+.activity-content {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.activity-label {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.activity-detail {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.activity-value {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 580px) {
+  .activity-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .activity-value {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+</style>

@@ -1,52 +1,466 @@
 <script setup lang="ts">
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { Job, MediaItem } from '@/api/library'
 
-const props = defineProps<{ items: MediaItem[]; selectedId: number | null; activeJob: Job | undefined; labels: Record<string, string> }>()
-const emit = defineEmits<{ search: [query: string]; select: [id: number] }>()
+const props = defineProps<{
+  items: MediaItem[]
+  selectedId: number | null
+  activeJob: Job | undefined
+  labels: Record<string, string>
+}>()
+
+const emit = defineEmits<{
+  search: [query: string]
+  select: [id: number]
+  scan: []
+}>()
+
 const query = shallowRef('')
-function submitSearch() { emit('search', query.value) }
+const filterMode = shallowRef<'all' | 'unscraped' | 'nfo_missing'>('all')
+
+function submitSearch() {
+  emit('search', query.value)
+}
+
+function hasSidecar(item: MediaItem, kind: string): boolean {
+  return item.sidecars.some(s => s.kind === kind || s.relativePath.toLowerCase().includes(kind))
+}
+
+const filteredItems = computed(() => {
+  if (filterMode.value === 'unscraped' || filterMode.value === 'nfo_missing') {
+    return props.items.filter(item => !hasSidecar(item, 'nfo'))
+  }
+  return props.items
+})
+
+const unscrapedCount = computed(() => {
+  return props.items.filter(item => !hasSidecar(item, 'nfo')).length
+})
+
+function getResolution(item: MediaItem): string {
+  const path = item.relativePath.toLowerCase()
+  if (path.includes('2160p') || path.includes('4k') || path.includes('uhd')) return '4K'
+  if (path.includes('1080p') || path.includes('fhd')) return '1080p'
+  if (path.includes('720p')) return '720p'
+  return 'HD'
+}
 </script>
 
 <template>
-  <section class="media-catalog" aria-label="Movie list">
-    <header class="catalog-header">
-      <div>
-        <p class="eyebrow">{{ labels.indexed }}</p>
-        <strong class="catalog-count">{{ props.items.length }}</strong>
+  <aside class="catalog-panel" :aria-label="labels.movieList">
+    <!-- Header with Search and Stats -->
+    <div class="catalog-header">
+      <!-- Search Input -->
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input
+          v-model="query"
+          type="text"
+          class="search-input"
+          :placeholder="labels.search"
+          @keydown.enter.prevent="submitSearch"
+        />
       </div>
-      <form class="catalog-search" @submit.prevent="submitSearch">
-        <input v-model="query" type="search" placeholder="Search" aria-label="Search library" />
-        <button type="submit">{{ labels.search }}</button>
-      </form>
-    </header>
-    <p v-if="props.activeJob" class="job-note">{{ props.activeJob.message }} · {{ props.activeJob.progressCurrent }}</p>
-    <ol v-if="props.items.length" class="movie-list">
-      <li v-for="item in props.items" :key="item.id">
-        <button type="button" :class="{ selected: item.id === props.selectedId }" @click="emit('select', item.id)">
-          <span class="film-mark">{{ item.titleHint.slice(0, 1) }}</span>
-          <span class="movie-copy"><strong>{{ item.titleHint }}</strong><small>{{ item.relativePath }}</small></span>
-          <span class="movie-year">{{ item.yearHint ?? '—' }}</span>
-        </button>
-      </li>
-    </ol>
-    <p v-else class="empty-state">{{ labels.noFilms }}</p>
-  </section>
+
+      <!-- Count & Actions Bar -->
+      <div class="catalog-toolbar">
+        <div class="catalog-stats">
+          <span class="count-main">{{ items.length }} {{ labels.movies }}</span>
+          <span v-if="unscrapedCount > 0" class="count-unscraped">({{ unscrapedCount }} {{ labels.unscraped }})</span>
+        </div>
+        <div class="toolbar-actions">
+          <button
+            class="icon-action-btn"
+            :class="{ active: filterMode !== 'all' }"
+            :title="labels.filterByStatus"
+            type="button"
+            @click="filterMode = filterMode === 'all' ? 'unscraped' : 'all'"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
+            </svg>
+          </button>
+          <button
+            class="icon-action-btn"
+            :title="labels.refresh"
+            type="button"
+            @click="submitSearch"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Job Banner -->
+    <div v-if="activeJob" class="active-job-banner">
+      <span class="job-spinner"></span>
+      <div class="job-info">
+        <p class="job-title">{{ labels.activeJob }} #{{ activeJob.id }}: {{ activeJob.state }}</p>
+        <p class="job-desc">{{ activeJob.message || labels.loading }}</p>
+      </div>
+    </div>
+
+    <!-- Movie Items List -->
+    <div class="catalog-list">
+      <div
+        v-for="item in filteredItems"
+        :key="item.id"
+        class="media-row"
+        :class="{ 'media-row--active': selectedId === item.id }"
+        @click="emit('select', item.id)"
+      >
+        <!-- Poster Thumbnail -->
+        <div class="thumb-box">
+          <div class="thumb-placeholder">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" opacity="0.3">
+              <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+            </svg>
+          </div>
+          <!-- 4K / HD Spec Overlay -->
+          <span class="res-badge" :class="{ 'res-4k': getResolution(item) === '4K' }">
+            {{ getResolution(item) }}
+          </span>
+        </div>
+
+        <!-- Movie Info -->
+        <div class="row-info">
+          <div class="title-primary" :title="item.titleHint">
+            {{ item.titleHint }}
+          </div>
+          <div class="title-sub" :title="item.relativePath">
+            {{ item.relativePath.split('/').pop() }}
+          </div>
+          <div class="row-meta">
+            <span class="year-txt">{{ item.yearHint ?? '—' }}</span>
+            <div class="status-dots">
+              <!-- NFO Status Dot -->
+              <span
+                class="dot"
+                :class="hasSidecar(item, 'nfo') ? 'dot-ok' : 'dot-warn'"
+                :title="hasSidecar(item, 'nfo') ? labels.nfoReady : labels.nfoMissing"
+              ></span>
+              <!-- Poster Status Dot -->
+              <span
+                class="dot"
+                :class="hasSidecar(item, 'poster') || hasSidecar(item, 'jpg') || hasSidecar(item, 'png') ? 'dot-ok' : 'dot-warn'"
+                :title="hasSidecar(item, 'poster') ? labels.posterReady : labels.posterMissing"
+              ></span>
+              <!-- Fanart Status Dot -->
+              <span
+                class="dot"
+                :class="hasSidecar(item, 'fanart') ? 'dot-ok' : 'dot-off'"
+                :title="hasSidecar(item, 'fanart') ? labels.fanartReady : labels.fanartMissing"
+              ></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-if="filteredItems.length === 0" class="catalog-empty">
+        <p>{{ labels.noFilms }}</p>
+      </div>
+    </div>
+  </aside>
 </template>
 
 <style scoped>
-.media-catalog { min-width: 0; border: 1px solid var(--mist-300); border-radius: .9rem; background: var(--paper); }
-.catalog-header { display: grid; gap: .9rem; padding: 1.1rem; border-bottom: 1px solid var(--mist-200); }
-.catalog-count { display: block; margin-top: .15rem; color: var(--ink-800); font: 500 2rem/1 var(--font-display); }
-.catalog-search { display: flex; gap: .4rem; }
-.catalog-search input { min-width: 0; width: 100%; min-height: 2.45rem; padding: .45rem .6rem; border: 1px solid var(--mist-300); border-radius: .4rem; }
-.catalog-search button { min-height: 2.45rem; padding: .45rem .6rem; border: 1px solid var(--ink-700); border-radius: .4rem; background: var(--ink-900); color: white; font-weight: 700; cursor: pointer; }
-.job-note { margin: .7rem 1rem; padding: .55rem .65rem; border-radius: .4rem; background: var(--water-100); color: var(--ink-800); font-size: .8rem; }
-.movie-list { max-height: calc(100vh - 23rem); margin: 0; padding: .35rem; overflow: auto; list-style: none; }
-.movie-list button { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) auto; width: 100%; gap: .7rem; align-items: center; padding: .65rem; border: 0; border-radius: .55rem; background: transparent; color: var(--ink-900); text-align: left; cursor: pointer; }
-.movie-list button:hover { background: var(--mist-100); }.movie-list button.selected { background: var(--ink-900); color: var(--paper); }.movie-list button.selected small { color: var(--water-100); }
-.film-mark { display: grid; width: 2.2rem; height: 2.2rem; place-items: center; border-radius: .4rem; background: var(--water-100); color: var(--ink-900); font: 1rem var(--font-display); }.selected .film-mark { background: var(--amber-400); }
-.movie-copy { min-width: 0; }.movie-copy strong, .movie-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.movie-copy small { margin-top: .2rem; color: var(--ink-600); font-size: .72rem; }.movie-year { font: .76rem var(--font-data); }
-.empty-state { padding: 2rem 1rem; color: var(--ink-600); }.media-catalog:focus-within { border-color: var(--water-600); }
-@media (max-width: 760px) { .movie-list { max-height: none; }.catalog-header { grid-template-columns: 1fr; } }
+.catalog-panel {
+  width: var(--catalog-width, 320px);
+  min-width: var(--catalog-width, 320px);
+  height: 100vh;
+  background: var(--surface-container, #191f31);
+  border-right: 1px solid var(--outline-variant, #2e3447);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+.catalog-header {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  background: var(--surface-dim, #0c1324);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-box {
+  position: relative;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--on-surface-variant, #c7c4d7);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  height: 30px;
+  background: var(--surface-container-low, #151b2d);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  color: var(--on-surface, #dce1fb);
+  font-size: 12px;
+  padding: 0 8px 0 28px;
+  transition: all 0.15s ease;
+}
+
+.search-input:focus {
+  border-color: var(--primary, #c0c1ff);
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: rgba(199, 196, 215, 0.4);
+}
+
+.catalog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.catalog-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.count-main {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface, #dce1fb);
+}
+
+.count-unscraped {
+  font-size: 10px;
+  color: var(--tertiary, #ffb95f);
+  font-family: var(--font-data);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-action-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--on-surface-variant, #c7c4d7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-action-btn:hover {
+  background: var(--surface-container-high, #23293c);
+  color: var(--on-surface, #dce1fb);
+}
+
+.icon-action-btn.active {
+  background: var(--surface-container-high, #23293c);
+  color: var(--primary, #c0c1ff);
+  border-color: var(--primary, #c0c1ff);
+}
+
+.active-job-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-container-high, #23293c);
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  font-size: 11px;
+}
+
+.job-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--tertiary, #ffb95f);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.job-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.job-title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--tertiary, #ffb95f);
+}
+
+.job-desc {
+  margin: 0;
+  color: var(--on-surface-variant, #c7c4d7);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.media-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius-sm, 0.25rem);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.media-row:hover {
+  background: var(--surface-container-high, #23293c);
+}
+
+.media-row--active {
+  background: var(--surface-container-highest, #2e3447);
+  border-left-color: var(--primary, #c0c1ff);
+}
+
+.thumb-box {
+  position: relative;
+  width: 36px;
+  height: 50px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--surface-container-lowest, #070d1f);
+  border: 1px solid var(--outline-variant, #2e3447);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.res-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: var(--surface-bright, #33394c);
+  color: var(--on-surface, #dce1fb);
+  font-family: var(--font-data);
+  font-size: 7px;
+  font-weight: 700;
+  padding: 1px 2px;
+  line-height: 1;
+  border-top-left-radius: 2px;
+}
+
+.res-4k {
+  background: var(--secondary-container, #00a572);
+  color: #fff;
+}
+
+.row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title-primary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface, #dce1fb);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.media-row--active .title-primary {
+  color: var(--primary, #c0c1ff);
+}
+
+.title-sub {
+  font-size: 10px;
+  color: var(--on-surface-variant, #c7c4d7);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.year-txt {
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--outline, #908fa0);
+}
+
+.status-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.catalog-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--outline, #908fa0);
+  font-size: 12px;
+}
+
+/* ── Mobile ───────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .catalog-panel {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    border-right: none;
+  }
+}
 </style>

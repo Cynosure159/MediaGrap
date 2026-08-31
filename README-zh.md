@@ -129,6 +129,8 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - [技术选型与决策](docs/technology-decisions.md)
 - [Docker 与部署设计](docs/deployment-design.md)
 - [开发路线图](docs/roadmap.md)
+- [UX 原型功能盘点](docs/ux-feature-backlog.md)
+- [UI/UX 设计约束与原型索引](docs/ui-ux-design.md)
 - [MediaElch 参考分析](docs/mediaelch-reference.md)
 - [Phase 0 基础实现](docs/phase-0-foundation.md)
 - [Phase 1 只读媒体发现](docs/phase-1-discovery.md)

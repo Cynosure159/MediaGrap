@@ -150,3 +150,11 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(value)
 }
+
+func urlSegments(path, prefix string) []string {
+	trimmed := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}

@@ -17,8 +17,8 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, r.Method == http.MethodPost); !ok {
 		return
 	}
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/media/"), "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
+	parts := urlSegments(r.URL.Path, "/api/v1/media")
+	if len(parts) == 0 {
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
 	}
@@ -154,8 +154,8 @@ func (s *server) writePlan(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, r.Method == http.MethodPost); !ok {
 		return
 	}
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/write-plans/"), "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
+	parts := urlSegments(r.URL.Path, "/api/v1/write-plans")
+	if len(parts) == 0 {
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
 	}
@@ -184,8 +184,8 @@ func (s *server) artworkPlan(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, r.Method == http.MethodPost); !ok {
 		return
 	}
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/artwork-plans/"), "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
+	parts := urlSegments(r.URL.Path, "/api/v1/artwork-plans")
+	if len(parts) == 0 {
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
 	}

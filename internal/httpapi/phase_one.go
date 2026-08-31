@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mediagrap/mediagrap/internal/auth"
@@ -99,7 +98,7 @@ func (s *server) scanSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/sources/"), "/")
+	parts := urlSegments(r.URL.Path, "/api/v1/sources")
 	if len(parts) != 2 || parts[1] != "scans" {
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
@@ -144,8 +143,12 @@ func (s *server) tvShow(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
 		return
 	}
-	idText := strings.TrimPrefix(r.URL.Path, "/api/v1/tv/shows/")
-	id, err := strconv.ParseInt(idText, 10, 64)
+	parts := urlSegments(r.URL.Path, "/api/v1/tv/shows")
+	if len(parts) != 1 {
+		writeError(w, 400, "invalid_show", "Invalid TV show id")
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id < 1 {
 		writeError(w, 400, "invalid_show", "Invalid TV show id")
 		return

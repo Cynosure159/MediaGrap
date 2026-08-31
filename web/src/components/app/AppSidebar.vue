@@ -2,105 +2,286 @@
 export interface NavigationItem {
   id: string
   label: string
-  detail: string
+  icon: 'movie' | 'tv' | 'sources' | 'jobs' | 'settings'
+  spinning?: boolean
   disabled?: boolean
 }
 
 defineProps<{
   items: NavigationItem[]
   activeSection: string
+  username?: string
+  labels: Record<string, string>
 }>()
 
 const emit = defineEmits<{
   selectSection: [id: string]
+  toggleLocale: []
 }>()
 </script>
 
 <template>
-  <aside class="sidebar">
-    <div class="brand-lockup">
-      <div class="brand-mark" aria-hidden="true"><span></span></div>
-      <div>
-        <p class="brand-name">MediaGrap</p>
-        <p class="brand-subtitle">Self-hosted metadata</p>
-      </div>
+  <nav class="nav-rail" :aria-label="labels.mainNavigation">
+    <!-- Top Logo -->
+    <div class="rail-logo-box">
+      <img src="/assets/logo-icon.png" alt="MediaGrap" class="rail-logo-img" />
+      <span class="rail-pulse-dot" :title="labels.serverConnected"></span>
     </div>
 
-    <nav class="navigation" aria-label="Application navigation">
+    <!-- Main Navigation Icons -->
+    <div class="rail-nav-items">
       <button
         v-for="item in items"
         :key="item.id"
-        class="navigation-item"
-        :class="{ 'navigation-item--active': activeSection === item.id }"
+        class="rail-btn"
+        :class="{ 'rail-btn--active': activeSection === item.id }"
         :disabled="item.disabled"
+        :title="item.label"
         type="button"
         @click="emit('selectSection', item.id)"
       >
-        <span class="navigation-label">{{ item.label }}</span>
-        <span class="navigation-detail">{{ item.detail }}</span>
-      </button>
-    </nav>
+        <!-- Movies Icon -->
+        <svg v-if="item.icon === 'movie'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+        </svg>
 
-    <p class="sidebar-footnote">v0.1 · phase 0</p>
-  </aside>
+        <!-- TV Shows Icon -->
+        <svg v-else-if="item.icon === 'tv'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+        </svg>
+
+        <!-- Sources / Folders Icon -->
+        <svg v-else-if="item.icon === 'sources'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
+        </svg>
+
+        <!-- Background Jobs Icon -->
+        <svg v-else-if="item.icon === 'jobs'" class="rail-svg" :class="{ 'spin-slow': item.spinning }" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+        </svg>
+
+        <!-- Settings Icon -->
+        <svg v-else-if="item.icon === 'settings'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+        </svg>
+
+        <span class="rail-btn-label">{{ item.label }}</span>
+
+      </button>
+    </div>
+
+    <!-- Bottom Actions -->
+    <div class="rail-bottom-actions">
+      <!-- Language Switch -->
+      <button class="rail-btn-sm" :title="labels.switchLanguage" type="button" @click="emit('toggleLocale')">
+        <span class="lang-txt">{{ labels.language }}</span>
+      </button>
+
+      <!-- Admin Avatar -->
+      <div class="rail-avatar" :title="username || labels.admin">
+        <span class="avatar-letter">{{ (username || labels.admin).charAt(0).toUpperCase() }}</span>
+      </div>
+    </div>
+  </nav>
 </template>
 
 <style scoped>
-.sidebar {
+.nav-rail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-width, 64px);
+  height: 100vh;
+  background: var(--surface-container-lowest, #070d1f);
+  border-right: 1px solid var(--outline-variant, #2e3447);
   display: flex;
   flex-direction: column;
-  gap: 3rem;
-  min-width: 15rem;
-  padding: 2rem 1.5rem;
-  background: var(--ink-900);
-  color: var(--mist-100);
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 0;
+  z-index: 50;
 }
 
-.brand-lockup {
+.rail-logo-box {
+  position: relative;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
 }
 
-.brand-mark {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border: 1px solid var(--water-400);
-  border-radius: 0.7rem;
+.rail-logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
-.brand-mark span {
-  width: 1.1rem;
-  height: 0.75rem;
-  border: 2px solid var(--mist-100);
-  border-left-width: 0.45rem;
-  border-right-width: 0.45rem;
+.rail-pulse-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--secondary, #4edea3);
+  box-shadow: 0 0 0 2px var(--surface-container-lowest, #070d1f);
 }
 
-.brand-name,
-.brand-subtitle,
-.sidebar-footnote {
-  margin: 0;
+.rail-nav-items {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  flex: 1;
 }
 
-.brand-name { font-family: var(--font-display); font-size: 1.25rem; letter-spacing: -0.04em; }
-.brand-subtitle, .sidebar-footnote { color: var(--mist-400); font: 0.72rem/1.4 var(--font-data); letter-spacing: 0.08em; text-transform: uppercase; }
-.navigation { display: grid; gap: 0.45rem; }
-.navigation-item { display: grid; gap: 0.16rem; padding: 0.85rem; border: 1px solid transparent; border-radius: 0.65rem; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.navigation-item:hover:not(:disabled), .navigation-item:focus-visible { background: var(--ink-800); border-color: var(--ink-700); outline: none; }
-.navigation-item--active { background: var(--ink-800); border-color: var(--water-700); box-shadow: inset 0.2rem 0 0 var(--amber-400); }
-.navigation-item:disabled { color: var(--mist-500); cursor: not-allowed; }
-.navigation-label { font-weight: 650; }
-.navigation-detail { color: var(--mist-400); font-size: 0.78rem; }
-.sidebar-footnote { margin-top: auto; }
+.rail-btn {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: var(--radius-lg, 0.5rem);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--on-surface-variant, #c7c4d7);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
 
+.rail-btn:hover:not(:disabled) {
+  background: var(--surface-container-high, #23293c);
+  color: var(--on-surface, #dce1fb);
+}
+
+.rail-btn--active {
+  background: var(--surface-container-low, #151b2d);
+  color: var(--primary, #c0c1ff);
+  border-left: 2px solid var(--primary, #c0c1ff);
+}
+
+.rail-svg {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-btn-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  max-width: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--primary, #c0c1ff);
+  color: var(--on-primary, #1000a9);
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 9999px;
+  line-height: 14px;
+  border: 1px solid var(--surface-container-lowest, #070d1f);
+}
+
+.rail-bottom-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.rail-btn-sm {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: transparent;
+  border: 1px solid var(--outline-variant, #2e3447);
+  color: var(--on-surface-variant, #c7c4d7);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.rail-btn-sm:hover {
+  background: var(--surface-container-high, #23293c);
+  color: var(--on-surface, #dce1fb);
+}
+
+.lang-txt {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rail-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-container-high, #23293c);
+  border: 1px solid var(--outline-variant, #2e3447);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary, #c0c1ff);
+}
+
+/* ── Mobile Layout ────────────────────────────────────────── */
 @media (max-width: 700px) {
-  .sidebar { position: fixed; z-index: 2; right: 0; bottom: 0; left: 0; min-width: 0; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); gap: 0; border-top: 1px solid var(--ink-700); }
-  .brand-lockup, .sidebar-footnote, .navigation-detail { display: none; }
-  .navigation { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 0.3rem; }
-  .navigation-item { min-height: 3.25rem; padding: 0.45rem; text-align: center; }
-  .navigation-item--active { box-shadow: inset 0 -0.2rem 0 var(--amber-400); }
+  .nav-rail {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--outline-variant, #2e3447);
+  }
+
+  .rail-logo-box,
+  .rail-bottom-actions {
+    display: none;
+  }
+
+  .rail-nav-items {
+    flex-direction: row;
+    justify-content: space-around;
+    width: 100%;
+  }
+
+  .rail-btn {
+    width: auto;
+    min-width: 52px;
+    height: 44px;
+  }
+
+  .rail-btn--active {
+    border-left: none;
+    border-bottom: 2px solid var(--primary, #c0c1ff);
+  }
 }
 </style>

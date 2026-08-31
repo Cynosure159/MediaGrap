@@ -12,8 +12,8 @@ export default defineConfig({
         name: 'MediaGrap',
         short_name: 'MediaGrap',
         description: 'Self-hosted media metadata manager',
-        theme_color: '#102b3e',
-        background_color: '#102b3e',
+        theme_color: '#0c1324',
+        background_color: '#0c1324',
         display: 'standalone',
         start_url: '/',
         icons: [

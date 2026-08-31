@@ -22,9 +22,127 @@ onMounted(initialize)
 </script>
 
 <template>
-  <main class="settings-page"><header class="settings-header"><p class="eyebrow">MediaGrap · control room</p><h1>{{ labels.settings }}</h1><p>{{ labels.settingsIntro }}</p></header><p v-if="error" class="settings-error">{{ error }}</p><div v-if="isLoading" class="settings-loading">{{ labels.loading }}</div><div v-else class="settings-stack"><SettingsProviderForm v-model:model="providerForm" :settings="settings" :labels="labels" :saving="isSaving" @save="save" /><SettingsSources v-model:source-name="sourceName" v-model:source-path="sourcePath" :sources="sourceItems" :media-roots="settings?.mediaRoots ?? []" :labels="labels" @add="addSource" @scan="scan" /><SettingsInterfaceForm :locale="locale" :labels="labels" @change-locale="emit('changeLocale', $event)" /></div></main>
+  <main class="settings-page">
+    <header class="settings-header">
+      <div class="settings-header__info">
+        <p class="eyebrow">{{ labels.settingsEyebrow }}</p>
+        <h1 class="settings-title">{{ labels.settings }}</h1>
+        <p class="settings-intro">{{ labels.settingsIntro }}</p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm locale-toggle"
+        @click="emit('changeLocale', locale === 'en' ? 'zh-CN' : 'en')"
+      >
+        {{ labels.language }}
+      </button>
+    </header>
+
+    <div v-if="error" class="settings-error" role="alert">
+      <span class="status-dot status-dot--error"></span>
+      <span>{{ error }}</span>
+    </div>
+
+    <div v-if="isLoading" class="settings-loading">
+      <span>{{ labels.loading }}</span>
+    </div>
+
+    <div v-else class="settings-stack">
+      <SettingsProviderForm
+        v-model:model="providerForm"
+        :settings="settings"
+        :labels="labels"
+        :saving="isSaving"
+        @save="save"
+      />
+      <SettingsSources
+        v-model:source-name="sourceName"
+        v-model:source-path="sourcePath"
+        :sources="sourceItems"
+        :media-roots="settings?.mediaRoots ?? []"
+        :labels="labels"
+        @add="addSource"
+        @scan="scan"
+      />
+      <SettingsInterfaceForm
+        :locale="locale"
+        :labels="labels"
+        @change-locale="emit('changeLocale', $event)"
+      />
+    </div>
+  </main>
 </template>
 
 <style scoped>
-.settings-page{max-width:68rem;margin:auto;padding:clamp(1.25rem,3vw,3rem)}.settings-header{padding-bottom:1.6rem;border-bottom:1px solid var(--mist-300)}.settings-header h1{margin:.35rem 0;font:500 clamp(2.5rem,6vw,5rem)/.9 var(--font-display);letter-spacing:-.07em}.settings-header p{color:var(--ink-600)}.settings-stack{display:grid;gap:1rem;margin-top:1.3rem}.settings-error{padding:.7rem;border-radius:.4rem;background:var(--water-100);color:var(--ink-800)}.settings-loading{padding:2rem;color:var(--ink-600)}
+.settings-page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 2.5vw, 2rem);
+  background: var(--surface-base);
+  min-height: 100%;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-header__info {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.settings-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.settings-intro {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.locale-toggle {
+  flex-shrink: 0;
+}
+
+.settings-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  border: 1px solid var(--error-container);
+  color: var(--error);
+  font-size: 0.8125rem;
+}
+
+.settings-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
 </style>

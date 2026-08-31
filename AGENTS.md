@@ -12,6 +12,21 @@ MediaGrap is a lightweight, self-hosted media metadata manager. The target produ
 - Preserve unrelated user changes and never rewrite media files without an explicit, previewable operation.
 - Prefer small, reviewable commits and conventional commit messages.
 
+## UI/UX & Design System Constraints (Mandatory)
+
+All frontend feature development, page layouts, component design, and responsive behaviors MUST strictly follow the exported Stitch design prototypes and design tokens:
+- **Local Prototypes Reference**: `docs/stitch-prototypes/` (Contains HTML and PNG screenshots for all 10 desktop & mobile screens).
+- **Design Specification Document**: `docs/ui-ux-design.md`.
+- **Layout Architecture**: 
+  - Desktop: 3-column high-density split pane (64px fixed left Nav Rail + 320px Media Catalog List + Flex-1 Inspector Workspace).
+  - Inspector Toolbar: 40px top bar with 5 standard workshop tabs (`Overview`, `Artwork`, `Cast`, `NFO Raw`, `File Audit`) and quick action buttons (`Save & Write NFO`, `Scrape`).
+  - Mobile: Native bottom 4-tab bar, sticky top workshop tabs, and floating bottom action bar.
+- **Brand & Visuals**:
+  - Use the icon-only geometric mark (`web/public/assets/logo-icon.png`) for in-app headers and rails.
+  - Deep dark slate theme (`#0c1324` base, `#191f31` cards, `#23293c` elevated) with tonal layering elevation.
+  - Typography: `Inter` for UI text, `JetBrains Mono` for tech specs, resolution pills, NFO XML, and filesystem paths.
+  - Reusable CSS utilities: `.btn-*`, `.spec-pill`, `.spec-badge`, `.dot-*`, `.card`, `.tab-*` defined in `web/src/assets/main.css`.
+
 ## Architecture constraints
 
 - Backend: Go, organized as a modular monolith with explicit domain and adapter boundaries.

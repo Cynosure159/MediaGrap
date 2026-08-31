@@ -129,6 +129,8 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [Technology decisions](docs/technology-decisions.md)
 - [Docker and deployment design](docs/deployment-design.md)
 - [Delivery roadmap](docs/roadmap.md)
+- [UX prototype feature inventory](docs/ux-feature-backlog.md)
+- [UI/UX design constraints and prototype index](docs/ui-ux-design.md)
 - [MediaElch reference review](docs/mediaelch-reference.md)
 - [Phase 0 foundation](docs/phase-0-foundation.md)
 - [Phase 1 read-only discovery](docs/phase-1-discovery.md)

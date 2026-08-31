@@ -1,0 +1,75 @@
+{
+  "projectId": "8752252538336937573",
+  "screens": [
+    {
+      "filename": "dashboard",
+      "title": "MediaGrap Dashboard (Desktop)",
+      "id": "bf67ee3690294b1fb711a75b20a6f64c",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzlhNDdkYmJlYzIyNjQ0ZGQ4ZGI2MDRhNTkxZTdkYTU3EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1VXbbP4h9E-AIrZtEJ-ELsH6DM5_lYiLhztVMOTS1eTsX6UcfZT9GboJRf1ASQ2X1vqCt4-PZCIaWXc1gS5BUIWqQ9g905W0SZZLSMCd3lfK1oYVyv343kLdK1zdiPCsk-CJrzSFUNGkNEReCZAc_24sYu9UVHGWBWBMs2atzir9H8ZELsJMMW9vxQaBTDedWxTp-f_hHbYWebjrw7basL74SN-hMVMV0VcM0lEdPIikVwpj-WTtYQmOsk"
+    },
+    {
+      "filename": "artwork-workshop",
+      "title": "Artwork & Fanart Workshop (Desktop)",
+      "id": "13ba3438685d4f1490f473aee511dc04",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzYzNDI2NzUyMGM1MjQ4MjI4MjA4YjBmYzdiMzc4ZmJiEgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1UJ4dbR8eDq2og0kz_90B0tO3TM4LSBPilSuRcRZ1r2SyCv1ITSN8q_KqVHfr2GF1F5Rxd_ePYR6A0r3av9Gc-cINJJoZqu4vR4N0HHgujjnYvkmBMP1NA_AykMLOYfji3zRMqV086Apji6sSIUcvWnOe4vltUjZdBKP19fW0SLA1AkpxzxkEH6K6fPN_yeVuQwYmepDXTQbGEJWdv3nUc92JzQSNorTO_v9tcAVn88sBAsYs74UBflIjw"
+    },
+    {
+      "filename": "nfo-editor",
+      "title": "NFO Raw XML Editor Workshop (Desktop)",
+      "id": "49b7b39326794b13b6ee1bb399363f0a",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzRiOTQxOGY0ODJlMDQ3Y2NhYzc0ZWM1YzM5ZDg3Nzk0EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1UGSQycKx9bZ3Ih-GJqYZC0UXJyWY0tnxcnzcD7jlPaXiQile1gcaXxy3mp2OkP27fwS2SimQRdiHRD8H77dpFudgXNSE2-3D0aPazn0bNyMP9PWkdhle2LlGCjipSZQlmRZiVbgQm7WMpcM8neNA_WFJMJkGkBhy0HUFFjIu-esAKkkZVugzQoHomSOHdGtkvYiUELh5vyInCS57FFzON1D0ST3lfCb-vsE56fgvL9h6ZWEs1QyMNgl-Q"
+    },
+    {
+      "filename": "cast-workshop",
+      "title": "Cast & Crew Workshop (Desktop)",
+      "id": "9b527f26c5e14b0296999bae49116d22",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzZhNjg1ZGZmOGRiMTQyNDY4ODQyZDk1N2Q0ZGEzZjE4EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1UmoI9CaT4AO5JbkjtCElU-VbG3ade8Fm8QTfLrO7hMnWbReTSAHuBAyx5IEdX3VEHxF-k6vHYCjR-qjNZgKkhY7Pms8mZkDtgNfxRumLjlZ7Ar3uRLC67RxgwxAD89SsJ0bXNcGLd48lqr3jqfZ-y-fhsjlPChFA8M_cK3TpZkiSY4jPf6Gd3neFBemT74DEv-X5jSMi8xMRdRu05QaAFppiMpBibv4Q0DrpEU13cpo-LmVfEfouBRt0Y"
+    },
+    {
+      "filename": "files-rename-planner",
+      "title": "Files & Safe Rename Planner Workshop (Desktop)",
+      "id": "37455c241f6646c38268dad47a6517b5",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzdmY2IyNmNjNjRmMTQ1YTE4Yzc1YTczYzNlYzUxNDQ4EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1XcOQu9NbrGMy09QYZIfryDv9ZIcit5qIUiVosTohikDnTl06eBa0ilM5dYKEz-msNan1M2EyxyqaOmi1YIDD8HIW-HDd0umSgnI4RH0UPzER2oSxZ534_rxX1OAnnZvCJtsXDdj4w-vlrPqpoooa16HAovrSB5Yyaqm7chR5V3Rnnv7Wadv2MznXRJIOOXZdSropjoEBesHsP7-nhRUjJgAkZrydZWZzEVJUS6UL99AJ9yjX3r9AoAcZw"
+    },
+    {
+      "filename": "tv-shows-workspace",
+      "title": "TV Shows & Multi-Tier Hierarchy Workspace (Desktop)",
+      "id": "26090964cbdb4cce8d8b851bd44e9bc7",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sX2M1MWFiOTEyMTliMzQ2MTQ5NzY2NDBjNzNmOTM4ZWU3EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1WITIIuqC_ldz2l7aAL3_ZKoHIj0yeP-HD5TGQv_rAcPOg8MzmkuHiYNY5myR_CZkx0PnvyJnRlQZvZmyIBeArYVnwgDHTKJoMvPOU6w6xJh1-rS6BMJ0XpPMAnAsV56E9bRmWo2kjSw1byrTv8N_qGZ2E_r0xADLl6f7R4g_AwPbkq8tO52fPGYJ_E7Mo09FRivdLDXVO7OazIw_I5C0BucnWeB3GGklkoXEJE2umuYppeCafJU7lpzgg"
+    },
+    {
+      "filename": "settings-console",
+      "title": "Settings Center & Configuration Console (Desktop)",
+      "id": "bd0c15068e254068b843c359689b040b",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sX2NmMWEwZmExNmJjOTRmOWE4YmEyNThkZjc3NzYyMTY1EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1VOLmcibYeLTdh-yfal2siXyExgoIf6PPc6pCCGKQ56eOKIunmXvkA2smmkuNdmGb2qMqwrUidE5N-FOqgJ9Y3Gw7SHfo9DxjplChBpzUcKIsrwIFlel4zfJIIADr3KUI-w2Wzp_wLLBb0M6aRHKrvF0L4o_H5hRF9YbwN0qCf3O0gHjxXuqxHgQWIv5gZV9TKGZkYm7udactHWr-Kdg-pzi5Iy0X5GkKSLhCrWM_Gz9mOG2LCqouvRDLY"
+    },
+    {
+      "filename": "scraper-diff-preview",
+      "title": "Scraper Match & Safe Write Preview (Desktop)",
+      "id": "634a1f49e8c44bcdb7d33011972c3535",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzdiMzQ0MThkNWM5MjRjODQ5MmIyZjdkNzNhYTMxYjQ4EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1XRXCkCuoLU2w_aawGD_3sePIq1F_QpGsYtbkofHSHnJGIPcKC5M_xUAh61NGweHItptgtrH8LB_DZk_V9obALj0CpnVmDw3l2PvgQrgw3pW1vA4V6DkeGIQ4eXBNlhXqK7N2matYfSNYo7pzIyEVuVWtXTlNXerExfzGb81-xJ-s4dFtUwH4_g7cYiPQAk3NZNX-88-nCa4NfnxIlk8iZEWeq7lqz-Si5mAgKKu_uVA4-3xuTb-q6OJHI"
+    },
+    {
+      "filename": "mobile-detail-hub",
+      "title": "Mobile Movie Detail & Multi-Workshop Hub",
+      "id": "88a053df69e74643b9b5f63a6f62fe9d",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sX2Q1ZjA2YTYxZDhiZDQ0NmQ5NjM3MzYwM2VmM2MzYTBhEgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1XRB8dS4OOApjKXfHwTaOF47lsBwpUwSXgUzQBtSzSrvvCCzUMEV6zwGqySPJdU-2uLvK0hNRTB0c0V4Nftb5l8EVVSxz4-aXcXxF7y9Ecb7Ysbwms1KSRHUlkMnBxZDVm0Ofzr8imxsAN4XLyiTEyvJWvwmqcvGbKY6BO8Q8oY5MgrKTuEW4VOkCsZolzytcVphXf5gEXJUSRxUd3AA9eJdJrm5-nDp52XAAZLsUHJ_lkxS7laA2nt64o"
+    },
+    {
+      "filename": "mobile-library",
+      "title": "MediaGrap Mobile PWA Library",
+      "id": "fa13a66707cc49aba1e5cce75f1e249b",
+      "html_url": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzJjMWQ2ZWM0OTY0ZDQzYTRiZDM3OGQ4OTEyYzY0MzA5EgsSBxClreP31gcYAZIBIwoKcHJvamVjdF9pZBIVQhM4NzUyMjUyNTM4MzM2OTM3NTcz&filename=&opi=96797242",
+      "shot_url": "https://lh3.googleusercontent.com/aida/AEtjO1U7PermvL_GZe4P8KPPf8AZhK5LFYRYdtctNQEcBYIVyC6l2UDSW74mWmwyxz7_oNdAJNI6izzdxJkv5xQzA9l_45kGC6-YWIBLQ4IIBsQQWuGC4dczcrOlz-nMLxUCXpJDnve_4gVuKgIkZrsA7PZrNTCc7dxbZJhwcpp_ZotN1xOnIouyYQEm9Wel327nQkB5cdKzMddZ0vj4ljK5O5R_vaCdUYpXaUmXu7BBV3NdicTUnfFtRSDVWi4"
+    }
+  ]
+}

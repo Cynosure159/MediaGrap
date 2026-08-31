@@ -12,7 +12,7 @@ const hasConflict = computed(() => props.plan?.assets.some((asset) => asset.conf
     <section class="dialog" role="dialog" aria-modal="true" :aria-label="labels.artworkPreview">
       <header class="dialog-header">
         <div>
-          <p class="eyebrow">TMDb artwork</p>
+          <p class="eyebrow">{{ labels.artworkEyebrow }}</p>
           <strong>{{ labels.artworkPreview }}</strong>
         </div>
         <button type="button" @click="emit('close')">×</button>
