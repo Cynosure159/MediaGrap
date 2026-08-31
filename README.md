@@ -13,6 +13,7 @@ The project aims to retain the essential workflows found in tools such as tinyMe
 - Use Go for a resource-efficient backend with strong filesystem and concurrency performance.
 - Provide a clean, responsive Vue 3 Web UI.
 - Support mobile browsers and PWA installation.
+- Provide a Simplified Chinese / English interface switch with persisted language preference.
 - Use a single Docker container as the standard deployment model.
 - Support linux/amd64 and linux/arm64.
 - Support HTTP, HTTPS, and SOCKS5 proxies with `NO_PROXY` rules.

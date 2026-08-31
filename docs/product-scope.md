@@ -13,6 +13,7 @@ The product manages metadata beside the media library; it is not a streaming ser
 - Make every destructive or structural file operation previewable and auditable.
 - Use standards-compatible NFO and artwork layouts, starting with current Kodi conventions.
 - Work well on desktop browsers and mobile screens; support PWA installation and reconnect gracefully.
+- Provide a Chinese/English interface switch, with language preference persisted per user and a safe default before sign-in.
 - Allow global and per-provider HTTP/HTTPS/SOCKS5 proxies without exposing credentials.
 - Make providers replaceable and failures isolated.
 - Remain useful without continuous internet access after metadata and artwork are cached.
@@ -56,6 +57,7 @@ The product manages metadata beside the media library; it is not a streaming ser
 - Persistent background jobs with progress, cancel, retry, and restart recovery.
 - File-operation dry run, conflict reporting, safe write, backup policy, and audit log.
 - Responsive Web UI, dark/light themes, keyboard-friendly desktop use, installable PWA.
+- Simplified Chinese and English UI, including setup, validation, job states, empty/error states, and file-operation warnings.
 - Docker image for linux/amd64 and linux/arm64; health check and Compose example.
 - HTTP, HTTPS, and SOCKS5 proxy configuration with no-proxy rules.
 
@@ -103,4 +105,3 @@ The product manages metadata beside the media library; it is not a streaming ser
 - Invalid paths, symlink escapes, naming collisions, provider timeouts, rate limits, partial downloads, and insufficient permissions produce actionable errors.
 - Proxy connectivity can be tested before saving and secrets are redacted from logs/API responses.
 - PWA install metadata, responsive navigation, offline application shell, update prompt, and reconnect state are verified.
-

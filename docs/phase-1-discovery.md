@@ -21,3 +21,6 @@ Browser mutations require an authenticated session cookie and `X-CSRF-Token`; fi
 
 The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. It never changes media files.
 
+## Deferred UI localization requirement
+
+The product now requires Simplified Chinese and English UI switching. The next UI iteration must use locale message keys rather than in-component user-facing text, select browser language before sign-in, persist a signed-in user's preference, and localize validation, task, safety, and error states as well as navigation labels. Provider metadata remains in its source language unless a later scraping setting requests a specific metadata locale.

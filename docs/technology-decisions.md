@@ -41,6 +41,8 @@ The initial application is one deployable process but is divided into domain mod
 - Serve thumbnails sized for the viewport; never send original artwork into a library grid.
 - Cache only the application shell and safe static assets in the service worker. Do not pretend metadata edits are offline-safe.
 - Show connection, job, conflict, dirty-edit, and application-update states explicitly.
+- Use message keys and locale bundles from the first interactive feature; do not embed user-facing copy directly in components or API error codes.
+- Persist the selected UI locale per user, use the browser locale only as a first-run fallback, and format dates/numbers with `Intl`.
 - Meet WCAG 2.2 AA contrast/focus/touch-target expectations where practical.
 
 ## Explicitly deferred decisions
@@ -48,4 +50,3 @@ The initial application is one deployable process but is divided into domain mod
 - Exact router, SQL helper/code generator, component library, query library, and migration tool will be selected during the foundation spike using small proof-of-concept benchmarks.
 - OpenAPI generation direction will be chosen after the first three endpoints establish request/response patterns.
 - The final public license and name require owner approval before publishing.
-

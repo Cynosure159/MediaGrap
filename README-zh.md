@@ -13,6 +13,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - 使用 Go 实现低资源占用、高并发的后端服务。
 - 提供简洁、响应式的 Vue 3 Web UI。
 - 支持移动端浏览器和 PWA 安装。
+- 支持简体中文与英文界面切换，并持久化用户语言偏好。
 - 使用单个 Docker 容器完成标准部署。
 - 支持 linux/amd64 与 linux/arm64。
 - 支持 HTTP、HTTPS、SOCKS5 代理及 `NO_PROXY` 规则。

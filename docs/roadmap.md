@@ -27,6 +27,7 @@ Deliverables:
 - Durable job engine and SSE progress feed.
 - Incremental movie scan, filename hints, existing NFO/artwork discovery, library list/detail UI.
 - Mobile navigation, list virtualization, loading/error/empty states, theme tokens, PWA manifest.
+- Chinese/English locale bundles, user locale preference, browser-locale fallback, and locale-aware dates/numbers.
 
 Exit criteria:
 
@@ -110,4 +111,3 @@ After this design is accepted:
 3. Add Dockerfile/Compose and verify non-root amd64/arm64 builds.
 4. Implement durable jobs and a simulated scan progress UI.
 5. Implement source safety checks and the first read-only movie scan.
-
