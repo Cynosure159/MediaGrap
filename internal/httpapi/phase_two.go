@@ -73,6 +73,7 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]any{"items": candidates})
+		return
 	case "select":
 		if r.Method != http.MethodPost {
 			break
@@ -87,6 +88,7 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, record)
+		return
 	case "metadata":
 		if r.Method != http.MethodPost {
 			break
@@ -102,6 +104,7 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, record)
+		return
 	case "write-plans":
 		if r.Method != http.MethodPost {
 			break
@@ -117,6 +120,7 @@ func (s *server) mediaDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 201, plan)
+		return
 	default:
 		writeError(w, 404, "not_found", "Endpoint not found")
 		return
