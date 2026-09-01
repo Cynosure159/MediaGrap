@@ -92,6 +92,7 @@ type TVArtwork struct {
 
 type Service struct {
 	db               *sql.DB
+	repo             Repository
 	roots            []string
 	locks            sync.Map
 	logger           *slog.Logger
@@ -103,7 +104,7 @@ type Service struct {
 
 func NewService(db *sql.DB, roots []string) *Service {
 	logger := slog.Default()
-	s := &Service{db: db, roots: roots, logger: logger, jobs: jobs.NewService(db, logger)}
+	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger)}
 	s.registerScanJobHandler()
 	return s
 }

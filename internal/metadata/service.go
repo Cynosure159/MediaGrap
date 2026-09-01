@@ -3,7 +3,6 @@ package metadata
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mediagrap/mediagrap/internal/artwork"
 	"github.com/mediagrap/mediagrap/internal/files"
-	"github.com/mediagrap/mediagrap/internal/kodi"
+	"github.com/mediagrap/mediagrap/internal/nfo"
 )
 
 type Record struct {
@@ -94,6 +93,7 @@ type TVNFOInput struct {
 }
 type Service struct {
 	db            *sql.DB
+	repo          Repository
 	provider      Provider
 	artworkMu     sync.RWMutex
 	artworkClient *http.Client
@@ -101,7 +101,7 @@ type Service struct {
 }
 
 func NewService(db *sql.DB, provider Provider) *Service {
-	service := &Service{db: db, provider: provider, artworkClient: http.DefaultClient, logger: slog.Default()}
+	service := &Service{db: db, repo: NewRepository(db), provider: provider, artworkClient: http.DefaultClient, logger: slog.Default()}
 	if tmdb, ok := provider.(*TMDb); ok {
 		service.artworkClient = tmdb.HTTPClient()
 		service.logger = tmdb.Logger()
@@ -317,49 +317,7 @@ func mergeTVEpisodes(existing, replacement []TVEpisodeDetails, remove func(TVEpi
 }
 
 func (s *Service) TVRecord(ctx context.Context, showID int64) (TVRecord, error) {
-	var record TVRecord
-	var year, votes sql.NullInt64
-	var rating sql.NullFloat64
-	var genres, cast string
-	err := s.db.QueryRowContext(ctx, `SELECT show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at FROM tv_metadata WHERE show_id=?`, showID).Scan(&record.ShowID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.Status, &record.Network, &cast, &record.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return normalizedTV(TVRecord{ShowID: showID}), nil
-	}
-	if err != nil {
-		return TVRecord{}, err
-	}
-	if year.Valid {
-		value := int(year.Int64)
-		record.Year = &value
-	}
-	if rating.Valid {
-		value := rating.Float64
-		record.Rating = &value
-	}
-	if votes.Valid {
-		value := int(votes.Int64)
-		record.Votes = &value
-	}
-	_ = json.Unmarshal([]byte(genres), &record.Genres)
-	_ = json.Unmarshal([]byte(cast), &record.Cast)
-	rows, err := s.db.QueryContext(ctx, `SELECT season_number,episode_number,title,overview,air_date,runtime_minutes,still_url FROM tv_episode_metadata WHERE show_id=? ORDER BY season_number,episode_number`, showID)
-	if err != nil {
-		return TVRecord{}, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var episode TVEpisodeDetails
-		var runtime sql.NullInt64
-		if err := rows.Scan(&episode.SeasonNumber, &episode.EpisodeNumber, &episode.Title, &episode.Overview, &episode.AirDate, &runtime, &episode.StillURL); err != nil {
-			return TVRecord{}, err
-		}
-		if runtime.Valid {
-			value := int(runtime.Int64)
-			episode.RuntimeMinutes = &value
-		}
-		record.Episodes = append(record.Episodes, episode)
-	}
-	return normalizedTV(record), rows.Err()
+	return s.repo.GetTVRecord(ctx, showID)
 }
 
 // ReadExistingTVNFO reads existing Kodi show and episode NFOs without
@@ -377,7 +335,7 @@ func (s *Service) ReadExistingTVNFO(showID int64, inputs []TVNFOInput) (TVRecord
 		}
 		switch input.Kind {
 		case "show":
-			show, err := kodi.ParseTVShow(contents)
+			show, err := nfo.ParseTVShow(contents)
 			if err != nil {
 				return TVRecord{}, false, fmt.Errorf("parse existing TV show NFO: %w", err)
 			}
@@ -389,7 +347,7 @@ func (s *Service) ReadExistingTVNFO(showID int64, inputs []TVNFOInput) (TVRecord
 			record.Rating, record.Votes, record.Status, record.Network, record.Cast = show.Rating, show.Votes, show.Status, show.Network, metadataPeople(show.Cast)
 			found = true
 		case "episode":
-			episode, err := kodi.ParseEpisode(contents)
+			episode, err := nfo.ParseEpisode(contents)
 			if err != nil {
 				return TVRecord{}, false, fmt.Errorf("parse existing episode NFO: %w", err)
 			}
@@ -425,27 +383,7 @@ func (s *Service) SaveTV(ctx context.Context, record TVRecord) (TVRecord, error)
 	if record.ShowID < 1 || strings.TrimSpace(record.Title) == "" {
 		return TVRecord{}, errors.New("TV show title is required")
 	}
-	record = normalizedTV(record)
-	genres, _ := json.Marshal(record.Genres)
-	cast, _ := json.Marshal(record.Cast)
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return TVRecord{}, err
-	}
-	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO tv_metadata(show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(show_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,status=excluded.status,network=excluded.network,cast_json=excluded.cast_json,updated_at=datetime('now')`, record.ShowID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.Status), strings.TrimSpace(record.Network), string(cast))
-	if err != nil {
-		return TVRecord{}, err
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM tv_episode_metadata WHERE show_id=?`, record.ShowID); err != nil {
-		return TVRecord{}, err
-	}
-	for _, episode := range record.Episodes {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO tv_episode_metadata(show_id,season_number,episode_number,title,overview,air_date,runtime_minutes,still_url) VALUES(?,?,?,?,?,?,?,?)`, record.ShowID, episode.SeasonNumber, episode.EpisodeNumber, strings.TrimSpace(episode.Title), strings.TrimSpace(episode.Overview), strings.TrimSpace(episode.AirDate), episode.RuntimeMinutes, episode.StillURL); err != nil {
-			return TVRecord{}, err
-		}
-	}
-	if err = tx.Commit(); err != nil {
+	if err := s.repo.SaveTVRecord(ctx, record); err != nil {
 		return TVRecord{}, err
 	}
 	return s.TVRecord(ctx, record.ShowID)
@@ -510,13 +448,13 @@ func (s *Service) PreviewTVNFO(ctx context.Context, record TVRecord, inputs []TV
 func tvNFOContent(record TVRecord, input TVNFOInput) ([]byte, error) {
 	switch input.Kind {
 	case "show":
-		return kodi.WriteTVShow(kodi.TVShow{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, Status: record.Status, Network: record.Network, Cast: kodiPeople(record.Cast)})
+		return nfo.WriteTVShow(nfo.TVShow{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, Status: record.Status, Network: record.Network, Cast: kodiPeople(record.Cast)})
 	case "season":
-		return kodi.WriteSeason(fmt.Sprintf("Season %d", input.SeasonNumber), input.SeasonNumber)
+		return nfo.WriteSeason(fmt.Sprintf("Season %d", input.SeasonNumber), input.SeasonNumber)
 	case "episode":
 		for _, episode := range record.Episodes {
 			if episode.SeasonNumber == input.SeasonNumber && episode.EpisodeNumber == input.EpisodeNumber {
-				return kodi.WriteEpisode(kodi.Episode{Title: episode.Title, Plot: episode.Overview, Season: episode.SeasonNumber, Episode: episode.EpisodeNumber, AirDate: episode.AirDate, Runtime: episode.RuntimeMinutes, StillURL: episode.StillURL})
+				return nfo.WriteEpisode(nfo.Episode{Title: episode.Title, Plot: episode.Overview, Season: episode.SeasonNumber, Episode: episode.EpisodeNumber, AirDate: episode.AirDate, Runtime: episode.RuntimeMinutes, StillURL: episode.StillURL})
 			}
 		}
 		return nil, fmt.Errorf("remote metadata for S%02dE%02d is unavailable", input.SeasonNumber, input.EpisodeNumber)
@@ -539,41 +477,7 @@ func inspectNFOReplacement(target string) (bool, error) {
 	return true, nil
 }
 func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
-	var record Record
-	var year, runtime sql.NullInt64
-	var genres, directors, writers, studios, cast, locked string
-	var rating sql.NullFloat64
-	var votes sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at FROM media_metadata WHERE media_item_id=?`, itemID).Scan(&record.MediaItemID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &runtime, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.ContentRating, &directors, &writers, &studios, &cast, &locked, &record.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return normalized(Record{MediaItemID: itemID, Genres: []string{}, LockedFields: []string{}}), nil
-	}
-	if err != nil {
-		return Record{}, err
-	}
-	if year.Valid {
-		value := int(year.Int64)
-		record.Year = &value
-	}
-	if runtime.Valid {
-		value := int(runtime.Int64)
-		record.RuntimeMinutes = &value
-	}
-	if rating.Valid {
-		value := rating.Float64
-		record.Rating = &value
-	}
-	if votes.Valid {
-		value := int(votes.Int64)
-		record.Votes = &value
-	}
-	_ = json.Unmarshal([]byte(genres), &record.Genres)
-	_ = json.Unmarshal([]byte(directors), &record.Directors)
-	_ = json.Unmarshal([]byte(writers), &record.Writers)
-	_ = json.Unmarshal([]byte(studios), &record.Studios)
-	_ = json.Unmarshal([]byte(cast), &record.Cast)
-	_ = json.Unmarshal([]byte(locked), &record.LockedFields)
-	return normalized(record), nil
+	return s.repo.GetRecord(ctx, itemID)
 }
 
 // ReadExistingNFO loads the sidecar paired with a media file without changing it.
@@ -609,7 +513,7 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool,
 	if err != nil {
 		return Record{}, false, fmt.Errorf("read existing NFO: %w", err)
 	}
-	movie, err := kodi.ParseMovie(contents)
+	movie, err := nfo.ParseMovie(contents)
 	if err != nil {
 		return Record{}, false, fmt.Errorf("parse existing NFO: %w", err)
 	}
@@ -659,14 +563,14 @@ func normalized(record Record) Record {
 	}
 	return record
 }
-func kodiPeople(people []Person) []kodi.Person {
-	result := make([]kodi.Person, 0, len(people))
+func kodiPeople(people []Person) []nfo.Person {
+	result := make([]nfo.Person, 0, len(people))
 	for _, person := range people {
-		result = append(result, kodi.Person{Name: person.Name, Role: person.Role, Thumb: person.ProfileURL})
+		result = append(result, nfo.Person{Name: person.Name, Role: person.Role, Thumb: person.ProfileURL})
 	}
 	return result
 }
-func metadataPeople(people []kodi.Person) []Person {
+func metadataPeople(people []nfo.Person) []Person {
 	result := make([]Person, 0, len(people))
 	for _, person := range people {
 		result = append(result, Person{Name: person.Name, Role: person.Role, ProfileURL: person.Thumb})
@@ -677,19 +581,12 @@ func (s *Service) Save(ctx context.Context, record Record) (Record, error) {
 	if strings.TrimSpace(record.Title) == "" {
 		return Record{}, errors.New("title is required")
 	}
-	record = normalized(record)
-	genres, _ := json.Marshal(record.Genres)
-	directors, _ := json.Marshal(record.Directors)
-	writers, _ := json.Marshal(record.Writers)
-	studios, _ := json.Marshal(record.Studios)
-	cast, _ := json.Marshal(record.Cast)
-	locked, _ := json.Marshal(record.LockedFields)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO media_metadata(media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(media_item_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,runtime_minutes=excluded.runtime_minutes,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,content_rating=excluded.content_rating,directors_json=excluded.directors_json,writers_json=excluded.writers_json,studios_json=excluded.studios_json,cast_json=excluded.cast_json,locked_fields_json=excluded.locked_fields_json,updated_at=datetime('now')`, record.MediaItemID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), record.RuntimeMinutes, string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.ContentRating), string(directors), string(writers), string(studios), string(cast), string(locked))
-	if err != nil {
+	if err := s.repo.SaveRecord(ctx, record); err != nil {
 		return Record{}, err
 	}
 	return s.Record(ctx, record.MediaItemID)
 }
+
 func (s *Service) Preview(ctx context.Context, record Record, mediaPath string, writable bool) (WritePlan, error) {
 	if !writable {
 		return WritePlan{}, errors.New("the media source is read-only")
@@ -698,7 +595,7 @@ func (s *Service) Preview(ctx context.Context, record Record, mediaPath string, 
 	if err != nil {
 		return WritePlan{}, err
 	}
-	content, err := kodi.WriteMovie(kodi.Movie{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Runtime: record.RuntimeMinutes, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, ContentRating: record.ContentRating, Directors: record.Directors, Writers: record.Writers, Studios: record.Studios, Cast: kodiPeople(record.Cast)})
+	content, err := nfo.WriteMovie(nfo.Movie{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Runtime: record.RuntimeMinutes, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, ContentRating: record.ContentRating, Directors: record.Directors, Writers: record.Writers, Studios: record.Studios, Cast: kodiPeople(record.Cast)})
 	if err != nil {
 		return WritePlan{}, err
 	}
@@ -707,20 +604,14 @@ func (s *Service) Preview(ctx context.Context, record Record, mediaPath string, 
 		return WritePlan{}, err
 	}
 	plan := WritePlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, TargetPath: target, Content: string(content), State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), WillReplace: willReplace}
-	if _, err = s.db.ExecContext(ctx, `INSERT INTO write_plans(id,media_item_id,target_path,content,state) VALUES(?,?,?,?,?)`, plan.ID, plan.MediaItemID, plan.TargetPath, plan.Content, plan.State); err != nil {
+	if err = s.repo.SaveWritePlan(ctx, plan); err != nil {
 		return WritePlan{}, err
 	}
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.preview',?,?,?)`, plan.MediaItemID, plan.TargetPath, "NFO save plan created")
+	_ = s.repo.InsertAuditEntry(ctx, "nfo.preview", plan.MediaItemID, plan.TargetPath, "NFO save plan created")
 	return plan, nil
 }
 func (s *Service) Plan(ctx context.Context, id string) (WritePlan, error) {
-	var plan WritePlan
-	err := s.db.QueryRowContext(ctx, `SELECT id,media_item_id,target_path,content,state,created_at FROM write_plans WHERE id=?`, id).Scan(&plan.ID, &plan.MediaItemID, &plan.TargetPath, &plan.Content, &plan.State, &plan.CreatedAt)
-	if err != nil {
-		return WritePlan{}, errors.New("write plan not found")
-	}
-	plan.WillReplace, plan.Conflict, _ = files.ValidateTarget(plan.TargetPath)
-	return plan, nil
+	return s.repo.GetWritePlan(ctx, id)
 }
 func (s *Service) Apply(ctx context.Context, id string, allowed func(string) bool) (WritePlan, error) {
 	plan, err := s.Plan(ctx, id)
@@ -734,21 +625,20 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 		return WritePlan{}, err
 	}
 	if plan.Conflict {
-		_, _ = s.db.ExecContext(ctx, `UPDATE write_plans SET state='conflicted' WHERE id=?`, id)
+		_ = s.repo.UpdateWritePlanState(ctx, id, "conflicted")
 		return WritePlan{}, errors.New("target NFO is not a regular file and cannot be replaced")
 	}
 	if err := files.AtomicWriteFile(plan.TargetPath, []byte(plan.Content)); err != nil {
 		return WritePlan{}, fmt.Errorf("write NFO: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE write_plans SET state='applied',applied_at=datetime('now') WHERE id=?`, id)
-	if err != nil {
+	if err = s.repo.UpdateWritePlanState(ctx, id, "applied"); err != nil {
 		return WritePlan{}, err
 	}
 	detail := "NFO created atomically"
 	if plan.WillReplace {
 		detail = "Existing NFO replaced atomically"
 	}
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('nfo.apply',?,?,?)`, plan.MediaItemID, plan.TargetPath, detail)
+	_ = s.repo.InsertAuditEntry(ctx, "nfo.apply", plan.MediaItemID, plan.TargetPath, detail)
 	return s.Plan(ctx, id)
 }
 
@@ -767,79 +657,38 @@ func (s *Service) PreviewArtwork(ctx context.Context, record Record, mediaPath s
 			}
 		}
 	}
-	record, err := s.Save(ctx, record)
-	if err != nil {
-		return ArtworkPlan{}, err
+	if record.PosterURL == "" && record.BackdropURL == "" {
+		return ArtworkPlan{}, errors.New("select metadata with artwork before creating download plans")
 	}
+	directory := filepath.Dir(mediaPath)
 	assets := make([]ArtworkAsset, 0, 2)
-	for _, item := range []struct{ kind, source, filename string }{
-		{"poster", record.PosterURL, "poster.jpg"},
-		{"fanart", record.BackdropURL, "fanart.jpg"},
-	} {
-		if strings.TrimSpace(item.source) == "" {
-			continue
-		}
-		target := filepath.Join(filepath.Dir(mediaPath), item.filename)
-		asset := ArtworkAsset{Kind: item.kind, SourceURL: item.source, TargetPath: target}
-		if info, statErr := os.Lstat(target); statErr == nil {
-			asset.WillReplace = true
-			asset.Conflict = info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return ArtworkPlan{}, fmt.Errorf("inspect %s target: %w", item.kind, statErr)
-		}
-		assets = append(assets, asset)
-	}
-	if len(assets) == 0 {
-		return ArtworkPlan{}, errors.New("select a TMDb poster or fanart before creating an artwork plan")
-	}
-	plan := ArtworkPlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), Assets: assets}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return ArtworkPlan{}, err
-	}
-	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO artwork_plans(id,media_item_id,state) VALUES(?,?,?)`, plan.ID, plan.MediaItemID, plan.State); err != nil {
-		return ArtworkPlan{}, err
-	}
-	for _, asset := range assets {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO artwork_plan_assets(artwork_plan_id,kind,source_url,target_path) VALUES(?,?,?,?)`, plan.ID, asset.Kind, asset.SourceURL, asset.TargetPath); err != nil {
+	if record.PosterURL != "" {
+		target := filepath.Join(directory, "poster.jpg")
+		willReplace, conflict, err := files.ValidateTarget(target)
+		if err != nil {
 			return ArtworkPlan{}, err
 		}
+		assets = append(assets, ArtworkAsset{Kind: "poster", SourceURL: record.PosterURL, TargetPath: target, Conflict: conflict, WillReplace: willReplace})
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('artwork.preview',?,?,?)`, plan.MediaItemID, filepath.Dir(mediaPath), "Artwork download plan created"); err != nil {
+	if record.BackdropURL != "" {
+		target := filepath.Join(directory, "fanart.jpg")
+		willReplace, conflict, err := files.ValidateTarget(target)
+		if err != nil {
+			return ArtworkPlan{}, err
+		}
+		assets = append(assets, ArtworkAsset{Kind: "fanart", SourceURL: record.BackdropURL, TargetPath: target, Conflict: conflict, WillReplace: willReplace})
+	}
+	plan := ArtworkPlan{ID: uuid.NewString(), MediaItemID: record.MediaItemID, State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), Assets: assets}
+	if err := s.repo.SaveArtworkPlan(ctx, plan); err != nil {
 		return ArtworkPlan{}, err
 	}
-	if err = tx.Commit(); err != nil {
-		return ArtworkPlan{}, err
-	}
+	_ = s.repo.InsertAuditEntry(ctx, "artwork.preview", plan.MediaItemID, filepath.Dir(mediaPath), "Artwork download plan created")
 	s.logger.Info("Artwork download plan created", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
 	return plan, nil
 }
 
 func (s *Service) ArtworkPlan(ctx context.Context, id string) (ArtworkPlan, error) {
-	var plan ArtworkPlan
-	err := s.db.QueryRowContext(ctx, `SELECT id,media_item_id,state,created_at FROM artwork_plans WHERE id=?`, id).Scan(&plan.ID, &plan.MediaItemID, &plan.State, &plan.CreatedAt)
-	if err != nil {
-		return ArtworkPlan{}, errors.New("artwork plan not found")
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT kind,source_url,target_path FROM artwork_plan_assets WHERE artwork_plan_id=? ORDER BY id`, id)
-	if err != nil {
-		return ArtworkPlan{}, err
-	}
-	defer rows.Close()
-	plan.Assets = []ArtworkAsset{}
-	for rows.Next() {
-		var asset ArtworkAsset
-		if err := rows.Scan(&asset.Kind, &asset.SourceURL, &asset.TargetPath); err != nil {
-			return ArtworkPlan{}, err
-		}
-		if info, statErr := os.Lstat(asset.TargetPath); statErr == nil {
-			asset.WillReplace = true
-			asset.Conflict = info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()
-		}
-		plan.Assets = append(plan.Assets, asset)
-	}
-	return plan, rows.Err()
+	return s.repo.GetArtworkPlan(ctx, id)
 }
 
 func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(string) bool) (ArtworkPlan, error) {
@@ -851,11 +700,11 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 		return ArtworkPlan{}, errors.New("artwork plan is no longer pending")
 	}
 	for _, asset := range plan.Assets {
-		if !allowed(asset.TargetPath) {
+		if err := files.CheckAllowed(asset.TargetPath, allowed); err != nil {
 			return ArtworkPlan{}, errors.New("artwork target is outside configured media roots")
 		}
 		if asset.Conflict {
-			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='conflicted' WHERE id=?`, id)
+			_ = s.repo.UpdateArtworkPlanState(ctx, id, "conflicted")
 			return ArtworkPlan{}, fmt.Errorf("%s target is not a regular file and cannot be replaced", asset.Kind)
 		}
 		if err := validateTMDbImageURL(asset.SourceURL); err != nil {
@@ -875,7 +724,7 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 	for _, asset := range plan.Assets {
 		temp, downloadErr := downloadArtwork(ctx, client, asset)
 		if downloadErr != nil {
-			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='failed' WHERE id=?`, id)
+			_ = s.repo.UpdateArtworkPlanState(ctx, id, "failed")
 			s.logger.Warn("Artwork download failed", "media_item_id", plan.MediaItemID, "asset_kind", asset.Kind, "error", downloadErr)
 			return ArtworkPlan{}, downloadErr
 		}
@@ -883,11 +732,11 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 	}
 	for index, asset := range plan.Assets {
 		if err := os.Rename(temps[index], asset.TargetPath); err != nil {
-			_, _ = s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='failed' WHERE id=?`, id)
+			_ = s.repo.UpdateArtworkPlanState(ctx, id, "failed")
 			return ArtworkPlan{}, fmt.Errorf("replace %s artwork: %w", asset.Kind, err)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE artwork_plans SET state='applied',applied_at=datetime('now') WHERE id=?`, id); err != nil {
+	if err := s.repo.UpdateArtworkPlanState(ctx, id, "applied"); err != nil {
 		return ArtworkPlan{}, err
 	}
 	for _, asset := range plan.Assets {
@@ -895,7 +744,7 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 		if asset.WillReplace {
 			detail = "Existing artwork replaced atomically"
 		}
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES('artwork.apply',?,?,?)`, plan.MediaItemID, asset.TargetPath, detail)
+		_ = s.repo.InsertAuditEntry(ctx, "artwork.apply", plan.MediaItemID, asset.TargetPath, detail)
 	}
 	s.logger.Info("Artwork download completed", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
 	return s.ArtworkPlan(ctx, id)
