@@ -76,8 +76,8 @@ function isEpisodeActive(seasonNumber: number, episodeId: number): boolean {
       <!-- Poster Thumbnail with TV Spec Overlay -->
       <div class="thumb-box">
         <img
-          v-if="detail?.metadata?.posterUrl"
-          :src="detail.metadata.posterUrl"
+          v-if="show.posterUrl || detail?.metadata?.posterUrl"
+          :src="show.posterUrl || detail?.metadata?.posterUrl"
           :alt="show.titleHint"
           class="thumb-img"
           loading="lazy"

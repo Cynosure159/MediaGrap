@@ -24,7 +24,7 @@ const emit = defineEmits<{
   <nav class="nav-rail" :aria-label="labels.mainNavigation">
     <!-- Top Logo -->
     <div class="rail-logo-box">
-      <img src="/assets/logo-icon.png" alt="MediaGrap" class="rail-logo-img" />
+      <img src="/logo-icon.svg" alt="MediaGrap" class="rail-logo-img" />
       <span class="rail-pulse-dot" :title="labels.serverConnected"></span>
     </div>
 

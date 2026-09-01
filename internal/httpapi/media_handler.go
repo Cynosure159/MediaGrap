@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"mime"
 	"net/http"
 	"os"
@@ -148,6 +149,62 @@ func (s *server) getMediaLocalArtwork(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == "" || !s.library.Allowed(target) {
 		writeError(w, http.StatusNotFound, "artwork_not_found", "Artwork not found")
+		return
+	}
+	info, err := os.Lstat(target)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "Artwork not found")
+		return
+	}
+	file, err := os.Open(target)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "Artwork not found")
+		return
+	}
+	defer file.Close()
+	if contentType := mime.TypeByExtension(filepath.Ext(target)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	http.ServeContent(w, r, filepath.Base(target), info.ModTime(), file)
+}
+
+// getMediaArtwork serves one discovered local image by an opaque asset ID.
+// The ID must match a sidecar belonging to the requested media item, so callers
+// cannot turn this endpoint into arbitrary filesystem access.
+func (s *server) getMediaArtwork(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	location, err := s.library.LocateMedia(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media item not found")
+		return
+	}
+	relative, decodeErr := base64.RawURLEncoding.DecodeString(r.PathValue("asset"))
+	if decodeErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid_artwork", "Invalid artwork asset")
+		return
+	}
+	assetPath := string(relative)
+	found := false
+	for _, sidecar := range location.Item.Sidecars {
+		if sidecar.Kind == "image" && sidecar.RelativePath == assetPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "Artwork not found")
+		return
+	}
+	target := filepath.Join(filepath.Dir(location.AbsolutePath), filepath.Base(assetPath))
+	if !s.library.Allowed(target) {
+		writeError(w, http.StatusForbidden, "invalid_artwork", "Invalid artwork asset")
 		return
 	}
 	info, err := os.Lstat(target)

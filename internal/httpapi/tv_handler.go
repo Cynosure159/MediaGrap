@@ -24,6 +24,23 @@ func (s *server) listTVShows(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to list TV shows")
 		return
 	}
+	for index := range items {
+		if root, err := s.tvSourceRoot(r.Context(), items[index].SourceID); err == nil {
+			showDir := filepath.Join(root, items[index].RelativePath)
+			candidates := []string{"poster.jpg", "poster.png", "folder.jpg", "cover.jpg", "poster.jpeg"}
+			for _, name := range candidates {
+				if info, err := os.Stat(filepath.Join(showDir, name)); err == nil && info.Mode().IsRegular() {
+					items[index].PosterURL = "/api/v1/tv/shows/" + strconv.FormatInt(items[index].ID, 10) + "/poster"
+					break
+				}
+			}
+		}
+		if items[index].PosterURL == "" {
+			if record, err := s.metadata.TVRecord(r.Context(), items[index].ID); err == nil && record.PosterURL != "" {
+				items[index].PosterURL = record.PosterURL
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -69,7 +86,19 @@ func (s *server) getTVShow(w http.ResponseWriter, r *http.Request) {
 			origin = "empty"
 		}
 	}
+	for _, asset := range result.Artwork {
+		if asset.Kind == "poster" {
+			metadata.PosterURL = tvArtworkURL(id, asset.ID)
+		}
+		if asset.Kind == "fanart" {
+			metadata.BackdropURL = tvArtworkURL(id, asset.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"show": result.Show, "episodes": result.Episodes, "artwork": result.Artwork, "writable": result.Writable, "metadata": metadata, "metadataOrigin": origin})
+}
+
+func tvArtworkURL(showID int64, assetID string) string {
+	return "/api/v1/tv/shows/" + strconv.FormatInt(showID, 10) + "/artwork/" + assetID
 }
 
 func (s *server) getTVShowCandidates(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +236,43 @@ func (s *server) tvScrapeTarget(w http.ResponseWriter, r *http.Request) (int64, 
 		return 0, 0, library.TVShowDetail{}, "", false
 	}
 	return showID, seasonNumber, detail, root, true
+}
+
+func (s *server) getTVShowPoster(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_show", "Invalid TV show id")
+		return
+	}
+	detail, err := s.library.TVShow(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return
+	}
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return
+	}
+	showDir := filepath.Join(root, detail.Show.RelativePath)
+	candidates := []string{"poster.jpg", "poster.png", "folder.jpg", "cover.jpg", "poster.jpeg"}
+	for _, name := range candidates {
+		target := filepath.Join(showDir, name)
+		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
+			w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(target)))
+			http.ServeFile(w, r, target)
+			return
+		}
+	}
+	meta, err := s.metadata.TVRecord(r.Context(), id)
+	if err == nil && meta.PosterURL != "" {
+		http.Redirect(w, r, meta.PosterURL, http.StatusFound)
+		return
+	}
+	writeError(w, http.StatusNotFound, "poster_not_found", "TV show poster not found")
 }
 
 func (s *server) getTVArtwork(w http.ResponseWriter, r *http.Request) {

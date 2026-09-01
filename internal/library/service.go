@@ -78,6 +78,7 @@ type TVShow struct {
 	YearHint     *int   `json:"yearHint"`
 	EpisodeCount int    `json:"episodeCount"`
 	SeasonCount  int    `json:"seasonCount"`
+	PosterURL    string `json:"posterUrl,omitempty"`
 }
 type TVEpisode struct {
 	MediaItem
@@ -333,8 +334,14 @@ func currentSidecarsForMedia(root, relative string) []Sidecar {
 	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
 	matches, _ := filepath.Glob(filepath.Join(directory, base+".*"))
 	if directoryHasOneVideo(directory) {
-		for _, name := range []string{"movie.nfo", "poster.jpg", "poster.jpeg", "poster.png", "poster.webp", "fanart.jpg", "fanart.jpeg", "fanart.png", "fanart.webp", "folder.jpg", "folder.png", "cover.jpg", "cover.png", "backdrop.jpg", "backdrop.png", "landscape.jpg", "landscape.png", "logo.png", "clearlogo.png", "banner.jpg"} {
-			matches = append(matches, filepath.Join(directory, name))
+		entries, _ := os.ReadDir(directory)
+		for _, entry := range entries {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			if _, ok := sidecarExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; ok {
+				matches = append(matches, filepath.Join(directory, entry.Name()))
+			}
 		}
 	}
 	assets := []Sidecar{}

@@ -282,6 +282,8 @@ async function handleApplyNfo() {
 
       <MovieArtworkTab
         v-else-if="activeTab === 'artwork'"
+        :item-id="detail.item.id"
+        :sidecars="detail.item.sidecars"
         :poster-url="draft.posterUrl"
         :backdrop-url="draft.backdropUrl"
         :labels="labels"

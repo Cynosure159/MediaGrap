@@ -1,7 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="42" fill="#102b3e"/>
-  <path fill="#d7ecf5" d="M43 54h106v84H43z"/>
-  <path fill="#d6a75d" d="m83 78 42 18-42 18z"/>
-  <path fill="#4c94ad" d="M53 122h86v7H53z"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="mgGreen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00D287"/>
+      <stop offset="100%" stop-color="#00A56A"/>
+    </linearGradient>
+    <linearGradient id="mgSlate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5E6C84"/>
+      <stop offset="100%" stop-color="#465166"/>
+    </linearGradient>
+  </defs>
 
+  <!-- Left Column Film Strips (M Left Leg) -->
+  <rect x="48" y="48" width="76" height="76" rx="10" fill="url(#mgGreen)"/>
+  <rect x="48" y="144" width="76" height="76" rx="10" fill="url(#mgGreen)"/>
+  <rect x="48" y="240" width="76" height="76" rx="10" fill="url(#mgSlate)"/>
+  <rect x="48" y="336" width="76" height="76" rx="10" fill="url(#mgSlate)"/>
+
+  <!-- M Diagonal Green Stroke -->
+  <path d="M144 48L242 186L188 238L144 176V48Z" fill="url(#mgGreen)"/>
+
+  <!-- G Upper Arc & End Cap -->
+  <path d="M242 144C276 88 338 64 400 76V144C358 136 314 150 286 186L242 144Z" fill="url(#mgGreen)"/>
+  <rect x="412" y="48" width="76" height="76" rx="10" fill="url(#mgGreen)"/>
+
+  <!-- G Lower Arc & Shelf -->
+  <path d="M266 338C302 384 354 398 404 386V320H344V256H488V412C418 464 322 452 254 398L266 338Z" fill="url(#mgSlate)"/>
+  <rect x="412" y="336" width="76" height="76" rx="10" fill="url(#mgSlate)"/>
+
+  <!-- Central Angled Metadata Tag -->
+  <g transform="translate(236, 268) rotate(-42)">
+    <!-- Tag Base -->
+    <path d="M-84 -58 H46 L90 -14 V58 H-84 Z" fill="url(#mgGreen)" rx="8"/>
+    <!-- Eyelet Hole -->
+    <circle cx="48" cy="-14" r="16" fill="#ffffff"/>
+    <circle cx="48" cy="-14" r="9" fill="#00A56A"/>
+    <!-- Metadata Stripes -->
+    <rect x="-66" y="-36" width="72" height="12" rx="6" fill="#ffffff"/>
+    <rect x="-66" y="-12" width="72" height="12" rx="6" fill="#ffffff"/>
+    <rect x="-66" y="12" width="72" height="12" rx="6" fill="#ffffff"/>
+  </g>
+</svg>

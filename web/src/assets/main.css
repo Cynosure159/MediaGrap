@@ -97,16 +97,29 @@
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#app {
   margin: 0;
   padding: 0;
   min-width: 20rem;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  border-radius: 0 !important;
   background: var(--surface-base);
   color: var(--on-surface);
   font-family: var(--font-body);
+}
+
+.app-shell,
+.app-main-content,
+.workspace-shell,
+.split-pane-layout,
+.catalog-panel,
+.inspector-workspace,
+.nav-rail {
+  border-radius: 0 !important;
 }
 
 /* ── Custom Scrollbar ─────────────────────────────────────────────── */

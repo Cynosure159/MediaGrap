@@ -50,7 +50,7 @@ onMounted(initialize)
 <template>
   <!-- Loading Screen -->
   <div v-if="mode === 'loading'" class="loading-screen">
-    <img src="/assets/logo-icon.png" alt="MediaGrap" class="loading-logo" />
+    <img src="/logo-icon.svg" alt="MediaGrap" class="loading-logo" />
     <span class="loading-txt">{{ t.opening }}</span>
   </div>
 

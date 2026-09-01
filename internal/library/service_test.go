@@ -95,16 +95,16 @@ func TestDirectoryLevelKodiSidecarsBelongToOnlyMovieInDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(movieDir, "Example.Movie.mkv"), []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"movie.nfo", "poster.jpg", "fanart.jpg"} {
+	for _, name := range []string{"movie.nfo", "poster.jpg", "fanart.jpg", "disc.png", "keyart.webp"} {
 		if err := os.WriteFile(filepath.Join(movieDir, name), []byte("sidecar"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	assets := currentSidecarsForMedia(root, "Example Movie/Example.Movie.mkv")
-	if len(assets) != 3 {
+	if len(assets) != 5 {
 		t.Fatalf("expected directory-level Kodi assets, got %#v", assets)
 	}
-	for _, expected := range []string{"Example Movie/movie.nfo", "Example Movie/poster.jpg", "Example Movie/fanart.jpg"} {
+	for _, expected := range []string{"Example Movie/movie.nfo", "Example Movie/poster.jpg", "Example Movie/fanart.jpg", "Example Movie/disc.png", "Example Movie/keyart.webp"} {
 		found := false
 		for _, asset := range assets {
 			found = found || asset.RelativePath == expected

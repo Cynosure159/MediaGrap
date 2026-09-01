@@ -50,16 +50,156 @@ const scopedEpisodes = computed(() => {
 })
 const scopedArtwork = computed(() => {
   const assets = detail.value?.artwork ?? []
-  if (props.selection?.kind === 'show') return assets
-  if (props.selection?.kind === 'season') {
-    const directories = new Set(scopedEpisodes.value.map(item => item.relativePath.slice(0, item.relativePath.lastIndexOf('/'))))
-    return assets.filter(asset => directories.has(asset.relativePath.slice(0, asset.relativePath.lastIndexOf('/'))))
+  if (!props.selection || props.selection.kind === 'show') {
+    // Show level: root directory assets only (not inside Season subdirectories)
+    return assets.filter(asset => {
+      const parts = asset.relativePath.split('/')
+      return !parts.some(p => /^season\s*\d+/i.test(p) || /^specials$/i.test(p))
+    })
   }
+
+  if (props.selection.kind === 'season') {
+    const sNum = props.selection.seasonNumber
+    const sPadded = String(sNum).padStart(2, '0')
+    const sRaw = String(sNum)
+    const isSpecial = sNum === 0
+    const seasonDirRegex = new RegExp(`^season\\s*(${sRaw}|${sPadded})$`, 'i')
+
+    return assets.filter(asset => {
+      const filename = asset.relativePath.split('/').pop()?.toLowerCase() || ''
+      const parts = asset.relativePath.split('/')
+      const inSeasonDir = parts.some(p => seasonDirRegex.test(p) || (isSpecial && /^specials$/i.test(p)))
+      if (inSeasonDir) return true
+
+      if (isSpecial) {
+        return filename.includes('specials') || filename.includes('season00') || filename.includes('season-00')
+      }
+      return (
+        filename.startsWith(`season${sPadded}`) ||
+        filename.startsWith(`season${sRaw}`) ||
+        filename.startsWith(`season-${sPadded}`) ||
+        filename.startsWith(`season-${sRaw}`)
+      )
+    })
+  }
+
+  // Episode level: artwork for this specific episode
   const episode = selectedUnitEpisode.value
   if (!episode) return []
-  const basePath = episode.relativePath.slice(0, episode.relativePath.lastIndexOf('.'))
-  return assets.filter(asset => asset.relativePath.startsWith(`${basePath}.`))
+  const episodeFilename = episode.relativePath.split('/').pop() || ''
+  const episodeBase = episodeFilename.replace(/\.[^/.]+$/, '').toLowerCase()
+
+  return assets.filter(asset => {
+    const filename = (asset.relativePath.split('/').pop() || '').toLowerCase()
+    return filename.startsWith(episodeBase)
+  })
 })
+
+function findTVArtworkUrl(keywords: string[]): string | undefined {
+  const assets = detail.value?.artwork ?? []
+  const match = assets.find(asset => {
+    const filename = asset.relativePath.split('/').pop()?.toLowerCase() || ''
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, '')
+    return keywords.some(k => nameWithoutExt === k.toLowerCase() || nameWithoutExt.includes(k.toLowerCase()))
+  })
+  if (match && detail.value) {
+    return api.tvArtworkUrl(detail.value.show.id, match.id)
+  }
+  return undefined
+}
+
+const resolvedPosterUrl = computed(() => {
+  return findTVArtworkUrl(['poster', 'cover', 'folder']) || draft.posterUrl || ''
+})
+
+const resolvedBackdropUrl = computed(() => {
+  return findTVArtworkUrl(['fanart', 'backdrop', 'background', 'keyart']) || draft.backdropUrl || ''
+})
+
+const resolvedLogoUrl = computed(() => {
+  return findTVArtworkUrl(['clearlogo', 'logo', 'clearart']) || ''
+})
+
+const resolvedBannerUrl = computed(() => {
+  return findTVArtworkUrl(['banner']) || ''
+})
+
+const seasonPosterUrl = computed(() => {
+  const sNum = props.selection?.kind === 'episode' ? selectedUnitEpisode.value?.seasonNumber : props.selection?.kind === 'season' ? props.selection.seasonNumber : null
+  if (sNum !== null && sNum !== undefined) {
+    const sPadded = String(sNum).padStart(2, '0')
+    const sRaw = String(sNum)
+    const isSpecial = sNum === 0
+    const seasonPosterAsset = (detail.value?.artwork ?? []).find(a => {
+      const fn = (a.relativePath.split('/').pop() || '').toLowerCase()
+      if (isSpecial) return (fn.includes('specials') || fn.includes('season00')) && fn.includes('poster')
+      return (
+        (fn.startsWith(`season${sPadded}`) || fn.startsWith(`season${sRaw}`) || fn.startsWith(`season-${sPadded}`) || fn.startsWith(`season-${sRaw}`)) &&
+        (fn.includes('poster') || fn.includes('cover') || fn.endsWith('.jpg') || fn.endsWith('.png'))
+      )
+    })
+    if (seasonPosterAsset && detail.value) {
+      return api.tvArtworkUrl(detail.value.show.id, seasonPosterAsset.id)
+    }
+  }
+  return resolvedPosterUrl.value
+})
+
+const currentContextPosterUrl = computed(() => {
+  if (props.selection?.kind === 'episode') {
+    const episode = selectedUnitEpisode.value
+    if (episode) {
+      const epBase = (episode.relativePath.split('/').pop() || '').replace(/\.[^/.]+$/, '').toLowerCase()
+      const thumbAsset = (detail.value?.artwork ?? []).find(a => {
+        const fn = (a.relativePath.split('/').pop() || '').toLowerCase()
+        return fn.startsWith(epBase) && (fn.includes('thumb') || fn.includes('poster'))
+      })
+      if (thumbAsset && detail.value) {
+        return api.tvArtworkUrl(detail.value.show.id, thumbAsset.id)
+      }
+      const remoteStill = remoteEpisode(episode)?.stillUrl
+      if (remoteStill) return remoteStill
+    }
+    return seasonPosterUrl.value || resolvedPosterUrl.value
+  }
+
+  if (props.selection?.kind === 'season') {
+    return seasonPosterUrl.value || resolvedPosterUrl.value
+  }
+
+  return resolvedPosterUrl.value
+})
+
+const currentContextBackdropUrl = computed(() => {
+  if (props.selection?.kind === 'season') {
+    const sNum = props.selection.seasonNumber
+    const sPadded = String(sNum).padStart(2, '0')
+    const seasonFanartAsset = (detail.value?.artwork ?? []).find(a => {
+      const fn = (a.relativePath.split('/').pop() || '').toLowerCase()
+      return (fn.startsWith(`season${sPadded}`) || fn.startsWith(`season${sNum}`)) && (fn.includes('fanart') || fn.includes('backdrop'))
+    })
+    if (seasonFanartAsset && detail.value) {
+      return api.tvArtworkUrl(detail.value.show.id, seasonFanartAsset.id)
+    }
+  }
+  return resolvedBackdropUrl.value
+})
+
+const currentContextBannerUrl = computed(() => {
+  if (props.selection?.kind === 'season') {
+    const sNum = props.selection.seasonNumber
+    const sPadded = String(sNum).padStart(2, '0')
+    const seasonBannerAsset = (detail.value?.artwork ?? []).find(a => {
+      const fn = (a.relativePath.split('/').pop() || '').toLowerCase()
+      return (fn.startsWith(`season${sPadded}`) || fn.startsWith(`season${sNum}`)) && fn.includes('banner')
+    })
+    if (seasonBannerAsset && detail.value) {
+      return api.tvArtworkUrl(detail.value.show.id, seasonBannerAsset.id)
+    }
+  }
+  return resolvedBannerUrl.value
+})
+
 const scopedCastList = computed<DisplayCastMember[]>(() => props.selection?.kind === 'show' ? castList.value : [])
 const nfoRaw = shallowRef({ exists: false, targetPath: '', content: '' })
 
@@ -416,8 +556,8 @@ async function handleSaveAndWrite() {
           <div class="poster-container">
             <div class="compact-poster-card group">
               <img
-                v-if="draft.posterUrl"
-                :src="draft.posterUrl"
+                v-if="resolvedPosterUrl"
+                :src="resolvedPosterUrl"
                 :alt="draft.title || 'Poster'"
                 class="poster-img"
               />
@@ -427,7 +567,7 @@ async function handleSaveAndWrite() {
                 </svg>
                 <span>{{ labels.noPosterLoaded || '未加载海报' }}</span>
               </div>
-              <div v-if="draft.posterUrl" class="poster-res-badge font-code">
+              <div v-if="resolvedPosterUrl" class="poster-res-badge font-code">
                 1000×1500
               </div>
             </div>
@@ -589,97 +729,146 @@ async function handleSaveAndWrite() {
       <section v-else-if="activeTab === 'artwork'" class="artwork-workshop-view">
         <div class="workshop-header">
           <div class="header-left">
-            <h2>{{ labels.artworkGallery || 'Artwork & Fanart Gallery' }}</h2>
-            <span class="sub-label">Manage TV series posters, backdrops, season art and episode stills</span>
+            <h2>
+              {{ props.selection?.kind === 'episode' ? (labels.episodeArtwork || '单集剧照与图片') : props.selection?.kind === 'season' ? (labels.seasonArtwork || '季海报与背景图') : (labels.artworkGallery || '剧集图片与背景图库') }}
+            </h2>
+            <span class="sub-label">
+              {{ props.selection?.kind === 'episode' ? (selectedUnitEpisode ? `S${String(selectedUnitEpisode.seasonNumber).padStart(2,'0')}E${String(selectedUnitEpisode.episodeStart).padStart(2,'0')} - ${episodeTitle(selectedUnitEpisode)}` : '单集图片') : props.selection?.kind === 'season' ? `第 ${props.selection.seasonNumber} 季专属图片资源` : 'Manage TV series posters, backdrops, logos and banners' }}
+            </span>
           </div>
         </div>
 
         <div class="artwork-layout-grid">
-          <div v-if="props.selection?.kind === 'show'" class="art-col-primary">
-            <div v-if="props.selection?.kind === 'show'" class="art-card">
+          <!-- Left Column: Primary Art (Poster & Logo / Season Art) -->
+          <div class="art-col-primary">
+            <!-- Poster / Episode Still Card -->
+            <div class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
                     <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/>
                   </svg>
-                  <span>{{ labels.poster || 'Poster' }}</span>
+                  <span>{{ props.selection?.kind === 'episode' ? (labels.episodeThumb || '单集剧照 / 缩略图') : props.selection?.kind === 'season' ? (labels.seasonPoster || '季海报 (Season Poster)') : (labels.poster || '剧集海报 (Poster)') }}</span>
                 </div>
-                <span class="ratio-pill font-code">2:3 RATIO</span>
+                <span class="ratio-pill font-code">{{ props.selection?.kind === 'episode' ? '16:9 HD' : '2:3 RATIO' }}</span>
               </div>
-              <div class="poster-preview-box group">
-                <img v-if="draft.posterUrl" :src="draft.posterUrl" :alt="labels.poster || 'Poster'" class="preview-img" />
+              <div :class="props.selection?.kind === 'episode' ? 'fanart-preview-box' : 'poster-preview-box'" class="group">
+                <img v-if="currentContextPosterUrl" :src="currentContextPosterUrl" :alt="labels.poster || 'Poster'" class="preview-img" />
                 <div v-else class="preview-empty">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40" opacity="0.3">
                     <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
                   </svg>
-                  <span>{{ labels.noPosterLoaded || 'No Poster' }}</span>
+                  <span>{{ labels.noPosterLoaded || '暂无图片' }}</span>
                 </div>
-                <div v-if="draft.posterUrl" class="art-status-overlay">
-                  <span class="art-dim-badge font-code">1000x1500</span>
+                <div v-if="currentContextPosterUrl" class="art-status-overlay">
+                  <span class="art-dim-badge font-code">{{ props.selection?.kind === 'episode' ? '1920x1080' : '1000x1500' }}</span>
                   <span class="art-active-badge font-code">ACTIVE</span>
                 </div>
               </div>
             </div>
 
+            <!-- Clear Logo / Season Poster Card -->
             <div class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
                     <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
                   </svg>
-                  <span>{{ labels.clearLogo || 'Clear Logo' }}</span>
+                  <span>{{ props.selection?.kind === 'episode' ? '所属季海报' : (labels.clearLogo || '透明标志 (Clear Logo)') }}</span>
                 </div>
-                <span class="ratio-pill font-code">PNG</span>
+                <span class="ratio-pill font-code">{{ props.selection?.kind === 'episode' ? '2:3 RATIO' : 'PNG' }}</span>
               </div>
-              <div class="logo-preview-box checkerboard">
-                <img src="/assets/logo-icon.png" :alt="labels.logo || 'Logo'" class="logo-img" />
-                <div class="art-status-overlay">
-                  <span class="art-dim-badge font-code">512x512</span>
+
+              <!-- When episode is selected: show season poster -->
+              <div v-if="props.selection?.kind === 'episode'" class="poster-preview-box">
+                <img v-if="seasonPosterUrl" :src="seasonPosterUrl" alt="Season Poster" class="preview-img" />
+                <div v-else class="preview-empty"><span>暂无季海报</span></div>
+                <div v-if="seasonPosterUrl" class="art-status-overlay">
+                  <span class="art-dim-badge font-code">SEASON</span>
+                  <span class="art-active-badge font-code">ACTIVE</span>
+                </div>
+              </div>
+              <!-- When show or season is selected: show Clear Logo -->
+              <div v-else class="logo-preview-box checkerboard">
+                <img v-if="resolvedLogoUrl" :src="resolvedLogoUrl" :alt="labels.logo || 'Logo'" class="logo-img-preview" />
+                <div v-else class="preview-empty">
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="36" height="36" opacity="0.3">
+                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                  </svg>
+                  <span>{{ labels.noLogoLoaded || 'No Clear Logo' }}</span>
+                </div>
+                <div v-if="resolvedLogoUrl" class="art-status-overlay">
+                  <span class="art-dim-badge font-code">LOGO</span>
+                  <span class="art-active-badge font-code">ACTIVE</span>
                 </div>
               </div>
             </div>
           </div>
 
+          <!-- Right Column: Wide Art (Backdrop & Banner) -->
           <div class="art-col-wide">
-            <div v-if="props.selection?.kind === 'show'" class="art-card">
+            <!-- Backdrop / Fanart Card -->
+            <div class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
                     <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
                   </svg>
-                  <span>{{ labels.fanart || 'Fanart / Backdrop' }}</span>
+                  <span>{{ props.selection?.kind === 'season' ? '季背景图 (Fanart)' : (labels.fanart || '背景图 / Fanart') }}</span>
                 </div>
                 <span class="ratio-pill font-code">16:9 HD</span>
               </div>
               <div class="fanart-preview-box">
-                <img v-if="draft.backdropUrl" :src="draft.backdropUrl" :alt="labels.fanart || 'Fanart'" class="preview-img" />
+                <img v-if="currentContextBackdropUrl" :src="currentContextBackdropUrl" :alt="labels.fanart || 'Fanart'" class="preview-img" />
                 <div v-else class="preview-empty">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40" opacity="0.3">
                     <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
                   </svg>
                   <span>{{ labels.fanartUnavailable || 'FANART MISSING' }}</span>
                 </div>
-                <div v-if="draft.backdropUrl" class="art-status-overlay">
+                <div v-if="currentContextBackdropUrl" class="art-status-overlay">
                   <span class="art-dim-badge font-code">1920x1080</span>
                   <span class="art-active-badge font-code">ACTIVE</span>
                 </div>
               </div>
             </div>
 
+            <!-- Banner Card -->
             <div class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
-                    <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
                   </svg>
-                  <span>Local Indexed Assets</span>
+                  <span>{{ props.selection?.kind === 'season' ? '季横幅 (Banner)' : (labels.banner || '横幅 (Banner)') }}</span>
                 </div>
-                <span class="item-count font-code">{{ scopedArtwork.length }} files</span>
+                <span class="ratio-pill font-code">1000x185</span>
               </div>
-              <TVArtworkPanel :show-id="detail.show.id" :assets="scopedArtwork" :labels="labels" />
+              <div class="banner-preview-box">
+                <img v-if="currentContextBannerUrl" :src="currentContextBannerUrl" alt="Banner" class="banner-img-preview" />
+                <div v-else class="banner-sample-txt font-code">{{ labels.bannerPreview || '暂无横幅' }}</div>
+                <div v-if="currentContextBannerUrl" class="art-status-overlay">
+                  <span class="art-dim-badge font-code">BANNER</span>
+                  <span class="art-active-badge font-code">ACTIVE</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- Local Indexed Assets Card (Full-width bottom section) -->
+        <section class="local-artwork-card">
+          <div class="art-card-header">
+            <div class="header-title">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
+                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+              </svg>
+              <span>{{ props.selection?.kind === 'episode' ? '单集本地图片' : props.selection?.kind === 'season' ? '本季本地图片' : '剧集本地图片' }}</span>
+            </div>
+            <span class="ratio-pill font-code">{{ scopedArtwork.length }} FILES</span>
+          </div>
+          <TVArtworkPanel :show-id="detail.show.id" :assets="scopedArtwork" :labels="labels" />
+        </section>
       </section>
 
       <section v-else-if="activeTab === 'cast'" class="cast-workshop-view">
@@ -1528,10 +1717,11 @@ async function handleSaveAndWrite() {
   display: block;
 }
 
-.logo-img {
-  width: 60px;
-  height: 60px;
+.logo-img-preview {
+  max-width: 85%;
+  max-height: 80%;
   object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
 }
 
 .checkerboard {

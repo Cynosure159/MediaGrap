@@ -87,6 +87,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/media/{id}/write-plans", application.previewMediaWritePlan)
 	mux.HandleFunc("POST /api/v1/media/{id}/artwork-plans", application.previewMediaArtworkPlan)
 	mux.HandleFunc("GET /api/v1/media/{id}/local-artwork/{kind}", application.getMediaLocalArtwork)
+	mux.HandleFunc("GET /api/v1/media/{id}/artwork/{asset}", application.getMediaArtwork)
 
 	// TV Shows & Episodes
 	mux.HandleFunc("GET /api/v1/tv/shows", application.listTVShows)
@@ -97,6 +98,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/tv/shows/{id}/seasons/{season}/episodes/{episode}/scrape", application.scrapeTVEpisode)
 	mux.HandleFunc("POST /api/v1/tv/shows/{id}/nfo-plans", application.previewTVNFOPlans)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}/nfo", application.getTVNFORaw)
+	mux.HandleFunc("GET /api/v1/tv/shows/{id}/poster", application.getTVShowPoster)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}/artwork/{asset}", application.getTVArtwork)
 
 	// Plans (NFO & Artwork Safe Writes)

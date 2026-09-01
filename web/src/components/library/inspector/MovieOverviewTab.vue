@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import * as api from '@/api/library'
 import type { CastMember, MediaItem } from '@/api/types'
 
 export interface MovieDraft {
@@ -26,6 +27,18 @@ const props = defineProps<{
   isEditing: boolean
   labels: Record<string, string>
 }>()
+
+const resolvedPoster = computed(() => {
+  if (props.draft.posterUrl) return props.draft.posterUrl
+  const localPoster = props.item.sidecars.find(s => {
+    const filename = s.relativePath.split('/').pop()?.toLowerCase() || ''
+    return ['poster', 'folder', 'cover'].some(k => filename === k || filename.startsWith(k + '.'))
+  })
+  if (localPoster) {
+    return api.mediaArtworkUrl(props.item.id, localPoster.relativePath)
+  }
+  return ''
+})
 
 const genresInput = computed({
   get: () => props.draft.genres.join(', '),
@@ -131,8 +144,8 @@ const techSpecs = computed(() => {
       <div class="poster-container">
         <div class="compact-poster-card group">
           <img
-            v-if="draft.posterUrl"
-            :src="draft.posterUrl"
+            v-if="resolvedPoster"
+            :src="resolvedPoster"
             :alt="labels.posterAlt || 'Poster'"
             class="poster-img"
           />
@@ -144,7 +157,7 @@ const techSpecs = computed(() => {
           </div>
 
           <!-- Top-Right Resolution Badge -->
-          <div v-if="draft.posterUrl" class="poster-res-badge font-code">
+          <div v-if="resolvedPoster" class="poster-res-badge font-code">
             1000×1500
           </div>
         </div>

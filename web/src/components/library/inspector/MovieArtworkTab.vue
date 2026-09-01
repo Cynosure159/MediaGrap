@@ -1,9 +1,57 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+import * as api from '@/api/library'
+import type { SidecarAsset } from '@/api/types'
+
+const props = defineProps<{
+  itemId: number
+  sidecars: SidecarAsset[]
   posterUrl: string
   backdropUrl: string
   labels: Record<string, string>
 }>()
+
+interface ResolvedAsset extends SidecarAsset {
+  url: string
+  filename: string
+}
+
+const localArtwork = computed<ResolvedAsset[]>(() =>
+  props.sidecars
+    .filter(asset => asset.kind === 'image')
+    .map(asset => {
+      const filename = asset.relativePath.split('/').pop() || ''
+      return {
+        ...asset,
+        filename,
+        url: api.mediaArtworkUrl(props.itemId, asset.relativePath),
+      }
+    })
+)
+
+function findArtworkUrl(keywords: string[]): string | undefined {
+  const match = localArtwork.value.find(asset => {
+    const nameWithoutExt = asset.filename.replace(/\.[^/.]+$/, '').toLowerCase()
+    return keywords.some(k => nameWithoutExt === k.toLowerCase() || nameWithoutExt.includes(k.toLowerCase()))
+  })
+  return match?.url
+}
+
+const resolvedPosterUrl = computed(() => {
+  return findArtworkUrl(['poster', 'cover', 'folder']) || props.posterUrl || ''
+})
+
+const resolvedBackdropUrl = computed(() => {
+  return findArtworkUrl(['fanart', 'backdrop', 'background', 'keyart']) || props.backdropUrl || ''
+})
+
+const resolvedLogoUrl = computed(() => {
+  return findArtworkUrl(['clearlogo', 'logo', 'clearart']) || ''
+})
+
+const resolvedBannerUrl = computed(() => {
+  return findArtworkUrl(['banner']) || ''
+})
 </script>
 
 <template>
@@ -47,7 +95,7 @@ defineProps<{
           </div>
 
           <div class="poster-preview-box group">
-            <img v-if="posterUrl" :src="posterUrl" :alt="labels.poster || 'Poster'" class="preview-img" />
+            <img v-if="resolvedPosterUrl" :src="resolvedPosterUrl" :alt="labels.poster || 'Poster'" class="preview-img" />
             <div v-else class="preview-empty">
               <svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40" opacity="0.3">
                 <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
@@ -55,7 +103,7 @@ defineProps<{
               <span>{{ labels.noPosterLoaded || 'No Poster' }}</span>
             </div>
 
-            <div v-if="posterUrl" class="art-status-overlay">
+            <div v-if="resolvedPosterUrl" class="art-status-overlay">
               <span class="art-dim-badge font-code">1000x1500</span>
               <span class="art-active-badge font-code">ACTIVE</span>
             </div>
@@ -75,9 +123,16 @@ defineProps<{
           </div>
 
           <div class="logo-preview-box checkerboard">
-            <img src="/assets/logo-icon.png" :alt="labels.logo || 'Logo'" class="logo-img" />
-            <div class="art-status-overlay">
-              <span class="art-dim-badge font-code">512x512</span>
+            <img v-if="resolvedLogoUrl" :src="resolvedLogoUrl" :alt="labels.logo || 'Logo'" class="logo-img-preview" />
+            <div v-else class="preview-empty">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="36" height="36" opacity="0.3">
+                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+              </svg>
+              <span>{{ labels.noLogoLoaded || 'No Clear Logo' }}</span>
+            </div>
+            <div v-if="resolvedLogoUrl" class="art-status-overlay">
+              <span class="art-dim-badge font-code">LOGO</span>
+              <span class="art-active-badge font-code">ACTIVE</span>
             </div>
           </div>
         </div>
@@ -98,7 +153,7 @@ defineProps<{
           </div>
 
           <div class="fanart-preview-box">
-            <img v-if="backdropUrl" :src="backdropUrl" :alt="labels.fanart || 'Fanart'" class="preview-img" />
+            <img v-if="resolvedBackdropUrl" :src="resolvedBackdropUrl" :alt="labels.fanart || 'Fanart'" class="preview-img" />
             <div v-else class="preview-empty">
               <svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40" opacity="0.3">
                 <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
@@ -106,7 +161,7 @@ defineProps<{
               <span>{{ labels.fanartUnavailable || 'FANART MISSING' }}</span>
             </div>
 
-            <div v-if="backdropUrl" class="art-status-overlay">
+            <div v-if="resolvedBackdropUrl" class="art-status-overlay">
               <span class="art-dim-badge font-code">1920x1080</span>
               <span class="art-active-badge font-code">ACTIVE</span>
             </div>
@@ -126,11 +181,31 @@ defineProps<{
           </div>
 
           <div class="banner-preview-box">
-            <div class="banner-sample-txt font-code">{{ labels.bannerPreview || 'Banner Preview (1000 x 185)' }}</div>
+            <img v-if="resolvedBannerUrl" :src="resolvedBannerUrl" :alt="labels.banner || 'Banner'" class="banner-img-preview" />
+            <div v-else class="banner-sample-txt font-code">{{ labels.bannerPreview || 'No Banner Found' }}</div>
+            <div v-if="resolvedBannerUrl" class="art-status-overlay">
+              <span class="art-dim-badge font-code">BANNER</span>
+              <span class="art-active-badge font-code">ACTIVE</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Local Artwork Gallery (All 9+ files categorized) -->
+    <section class="local-artwork-card">
+      <div class="art-card-header">
+        <div class="header-title"><span>{{ labels.localArtwork || 'Local artwork' }}</span></div>
+        <span class="ratio-pill font-code">{{ localArtwork.length }} FILES</span>
+      </div>
+      <p v-if="localArtwork.length === 0" class="artwork-empty">{{ labels.noLocalArtwork || 'No local artwork found.' }}</p>
+      <div v-else class="local-artwork-grid">
+        <figure v-for="asset in localArtwork" :key="asset.relativePath" class="local-artwork-item">
+          <img :src="asset.url" :alt="asset.relativePath" class="local-artwork-image" loading="lazy">
+          <figcaption class="font-code">{{ asset.filename }}</figcaption>
+        </figure>
+      </div>
+    </section>
   </section>
 </template>
 
@@ -172,6 +247,51 @@ defineProps<{
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 18px;
+}
+
+.local-artwork-card {
+  background: var(--surface-container, #191f31);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-lg, 0.5rem);
+  padding: 12px;
+}
+
+.local-artwork-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.local-artwork-item {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: 4px;
+  background: var(--surface-container-low, #151b2d);
+}
+
+.local-artwork-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.4;
+  object-fit: cover;
+  background: var(--surface-container-lowest, #070d1f);
+}
+
+.local-artwork-item figcaption {
+  overflow: hidden;
+  padding: 6px;
+  color: var(--on-surface-variant, #c7c4d7);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artwork-empty {
+  margin: 10px 0 0;
+  color: var(--on-surface-variant, #c7c4d7);
+  font-size: 12px;
 }
 
 .art-col-primary,
@@ -251,9 +371,18 @@ defineProps<{
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
+}
+
+.logo-img-preview {
+  max-width: 85%;
+  max-height: 80%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
 }
 
 .banner-preview-box {
+  position: relative;
   width: 100%;
   height: 90px;
   background: var(--surface-container-low, #151b2d);
@@ -262,6 +391,13 @@ defineProps<{
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.banner-img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .banner-sample-txt {
@@ -274,12 +410,6 @@ defineProps<{
   height: 100%;
   object-fit: cover;
   display: block;
-}
-
-.logo-img {
-  width: 60px;
-  height: 60px;
-  object-fit: contain;
 }
 
 .checkerboard {

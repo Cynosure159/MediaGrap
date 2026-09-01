@@ -33,7 +33,7 @@ function submit() {
 
       <div class="auth-header">
         <img
-          src="/assets/logo-icon.png"
+          src="/logo-icon.svg"
           alt="MediaGrap"
           class="auth-logo"
           width="28"

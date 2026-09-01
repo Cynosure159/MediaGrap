@@ -43,6 +43,7 @@ export interface TVShow {
   yearHint: number | null
   episodeCount: number
   seasonCount: number
+  posterUrl?: string
 }
 
 export interface TVEpisode extends MediaItem {

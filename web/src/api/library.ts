@@ -177,6 +177,12 @@ export const previewTVNfoPlans = (csrf: string, id: number) =>
 export const tvArtworkUrl = (showId: number, artworkId: string) =>
   `/api/v1/tv/shows/${showId}/artwork/${encodeURIComponent(artworkId)}`
 
+export const mediaArtworkUrl = (mediaId: number, relativePath: string) => {
+  const bytes = new TextEncoder().encode(relativePath)
+  const assetID = btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
+  return `/api/v1/media/${mediaId}/artwork/${assetID}`
+}
+
 export const tvNfoRaw = (showId: number, selection: TVSelection) => {
   const params = new URLSearchParams({ kind: selection.kind })
   if (selection.kind === 'season') params.set('season', String(selection.seasonNumber))

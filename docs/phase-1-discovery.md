@@ -19,7 +19,7 @@ Browser mutations require an authenticated session cookie and `X-CSRF-Token`; fi
 
 ## Scanner behavior
 
-The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. For a movie with no existing SQLite metadata, it parses a local Kodi NFO and persists the parsed fields in SQLite; discovered image paths remain in the SQLite sidecar index. This rebuilds list and detail data after a source is removed and added again, without changing media files.
+The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. For a one-video movie directory, every supported local image (`jpg`, `jpeg`, `png`, or `webp`) is indexed, not only poster/fanart names. For a movie with no existing SQLite metadata, it parses a local Kodi NFO and persists the parsed fields in SQLite; discovered image paths remain in the SQLite sidecar index and are served through an authenticated opaque-asset URL. This rebuilds list and detail data after a source is removed and added again, without changing media files.
 
 ## Deferred UI localization requirement
 
