@@ -58,9 +58,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')" @keydown.esc="emit('close')">
-    <div class="scraper-modal" role="dialog" aria-modal="true">
-      <!-- ── Modal Header ─────────────────────────────────────────── -->
+  <Teleport to="body">
+    <div class="modal-backdrop" @click.self="emit('close')" @keydown.esc="emit('close')">
+      <div class="scraper-modal" role="dialog" aria-modal="true">
+        <div class="drawer-handle" aria-hidden="true"></div>
+        <!-- ── Modal Header ─────────────────────────────────────────── -->
       <header class="modal-header">
         <div class="header-left">
           <div class="header-icon-box">
@@ -197,6 +199,7 @@ onMounted(() => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -588,7 +591,61 @@ onMounted(() => {
   margin: 0;
 }
 
+.drawer-handle {
+  display: none;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .scraper-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-xl, 0.75rem) var(--radius-xl, 0.75rem) 0 0;
+    border-bottom: none;
+    animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .drawer-handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--outline-variant, #464554);
+    margin: 8px auto 2px;
+    flex-shrink: 0;
+  }
+
+  .modal-header {
+    padding: 10px 16px 12px;
+  }
+
+  .modal-body-content {
+    padding: 12px 14px 20px;
+  }
+
+  .candidate-card {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .cand-poster-box {
+    width: 52px;
+    height: 78px;
+  }
 }
 </style>

@@ -22,15 +22,20 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
     <div class="card-body">
       <div class="field-group locale-group">
         <label for="interface-language" class="field-label">{{ labels.interfaceLanguage }}</label>
-        <select
-          id="interface-language"
-          class="select-input"
-          :value="locale"
-          @change="emit('changeLocale', ($event.target as HTMLSelectElement).value as Locale)"
-        >
-          <option value="en">English</option>
-          <option value="zh-CN">简体中文</option>
-        </select>
+        <div class="select-wrapper">
+          <select
+            id="interface-language"
+            class="form-select"
+            :value="locale"
+            @change="emit('changeLocale', ($event.target as HTMLSelectElement).value as Locale)"
+          >
+            <option value="zh-CN">简体中文 (zh-CN)</option>
+            <option value="en">English (en)</option>
+          </select>
+          <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 10l5 5 5-5z"/>
+          </svg>
+        </div>
       </div>
     </div>
   </section>
@@ -38,29 +43,30 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
 
 <style scoped>
 .settings-card {
-  background: var(--surface-container);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
+  background: var(--surface-container, #191f31);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-xl, 0.75rem);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .card-header {
-  padding: 1.125rem 1.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-container);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  background: var(--surface-container-high, #23293c);
 }
 
 .card-header__info {
-  display: grid;
-  gap: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .header-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  color: var(--primary);
+  gap: 6px;
+  color: var(--primary, #c0c1ff);
 }
 
 .header-icon {
@@ -70,56 +76,76 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
 
 .eyebrow {
   margin: 0;
-  font-family: var(--font-data);
-  font-size: 0.6875rem;
+  font-family: var(--font-data, monospace);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: var(--primary, #c0c1ff);
 }
 
 .section-title {
   margin: 0;
-  color: var(--on-surface);
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
+  color: var(--on-surface, #dce1fb);
+  font-size: 17px;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.01em;
 }
 
 .card-body {
-  padding: 1.5rem;
+  padding: 24px;
 }
 
 .locale-group {
-  display: grid;
-  gap: 0.4rem;
-  max-width: 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 22rem;
 }
 
 .field-label {
-  font-size: 0.8125rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--on-surface-variant);
+  color: var(--on-surface-variant, #c7c4d7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.select-input {
+.select-wrapper {
+  position: relative;
   width: 100%;
-  height: 34px;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-container-low);
-  color: var(--on-surface);
-  font-size: 0.8125rem;
+}
+
+.form-select {
+  width: 100%;
+  height: 38px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-low, #151b2d);
+  color: var(--on-surface, #dce1fb);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.select-input:focus {
-  outline: none;
-  border-color: var(--primary-bright);
-  box-shadow: 0 0 0 2px rgba(128, 131, 255, 0.2);
-  background: var(--surface-container-lowest);
+.form-select:focus {
+  border-color: var(--primary, #c0c1ff);
+  box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.15);
+  background: var(--surface-container-lowest, #070d1f);
+}
+
+.select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--outline, #908fa0);
+  pointer-events: none;
 }
 </style>

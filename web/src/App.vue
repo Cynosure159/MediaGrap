@@ -144,17 +144,26 @@ onMounted(initialize)
 }
 
 /* ── Mobile Layout ────────────────────────────────────────── */
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .app-shell {
-    display: block;
-    height: auto;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    max-width: 100vw;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
   .app-main-content {
     margin-left: 0;
-    height: auto;
-    min-height: 100vh;
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    max-width: 100vw;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 }
 </style>

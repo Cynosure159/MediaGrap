@@ -343,7 +343,9 @@ async function handleApplyNfo() {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .inspector-error {
@@ -395,9 +397,13 @@ async function handleApplyNfo() {
 .inspector-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--pane-padding, 12px);
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 </style>

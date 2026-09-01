@@ -166,25 +166,39 @@ const emit = defineEmits<{
   flex-direction: column;
   flex-shrink: 0;
   z-index: 20;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 /* ── Row 1: Action Toolbar ────────────────────────────────────────── */
 .toolbar-top-row {
   height: 40px;
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 12px;
   background: var(--surface-dim, #0c1324);
   border-bottom: 1px solid var(--outline-variant, #2e3447);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar-top-row::-webkit-scrollbar {
+  display: none;
 }
 
 .top-row-left {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .mobile-back-btn {
@@ -201,6 +215,7 @@ const emit = defineEmits<{
   font-size: 12px;
   font-weight: 500;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .mobile-back-btn:hover {
@@ -211,8 +226,9 @@ const emit = defineEmits<{
 .top-row-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ── Row 2: Tabs Row (Full Width Spanning) ────────────────────────── */
@@ -225,11 +241,20 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar-tabs-row::-webkit-scrollbar {
+  display: none;
 }
 
 .workshop-tabs {
   display: flex;
   align-items: center;
+  min-width: max-content;
   width: 100%;
   height: 100%;
 }

@@ -84,8 +84,12 @@ const genresInput = computed({
 <style scoped>
 .meta-blocks-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .meta-card {
@@ -98,10 +102,16 @@ const genresInput = computed({
   gap: 4px;
   min-height: 58px;
   justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .meta-card-full {
   grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-label-caps {
@@ -175,5 +185,12 @@ const genresInput = computed({
 .genre-empty-hint {
   font-size: 12px;
   color: var(--outline, #908fa0);
+}
+
+@media (max-width: 480px) {
+  .meta-blocks-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 </style>

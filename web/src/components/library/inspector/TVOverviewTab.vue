@@ -105,20 +105,17 @@ function nfoState(ep: TVEpisode): string {
       </div>
 
       <div class="meta-strip">
-        <span class="meta-item font-code">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (draft.year ?? detail.show.yearHint ?? labels.tvSeries) }}</span>
-        <span class="meta-dot"></span>
-        <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
-        <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
-        
-        <template v-if="draft.status">
+        <div class="meta-left-group">
+          <span class="meta-item font-code">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (draft.year ?? detail.show.yearHint ?? labels.tvSeries) }}</span>
           <span class="meta-dot"></span>
-          <span class="spec-pill font-code">{{ draft.status }}</span>
-        </template>
-
-        <template v-if="draft.network">
-          <span class="meta-dot"></span>
-          <span class="meta-studio" :title="draft.network">{{ draft.network }}</span>
-        </template>
+          <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
+          <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
+          
+          <template v-if="draft.status">
+            <span class="meta-dot"></span>
+            <span class="spec-pill font-code">{{ draft.status }}</span>
+          </template>
+        </div>
 
         <div v-if="draft.rating !== null" class="rating-badge">
           <span class="star-score">★ {{ typeof draft.rating === 'number' ? draft.rating.toFixed(1) : draft.rating }}</span>
@@ -317,12 +314,19 @@ function nfoState(ep: TVEpisode): string {
   flex-direction: column;
   gap: 20px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .hero-banner {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .title-cluster {
@@ -371,6 +375,14 @@ function nfoState(ep: TVEpisode): string {
 .meta-strip {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-left-group {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -386,12 +398,6 @@ function nfoState(ep: TVEpisode): string {
   height: 3px;
   border-radius: 50%;
   background: var(--outline-variant, #2e3447);
-}
-
-.meta-studio {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--on-surface-variant, #c7c4d7);
 }
 
 .rating-badge {
@@ -491,12 +497,20 @@ function nfoState(ep: TVEpisode): string {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .meta-blocks-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .meta-card {
@@ -507,10 +521,16 @@ function nfoState(ep: TVEpisode): string {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .meta-card-full {
   grid-column: span 2;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-label-caps {
@@ -526,6 +546,7 @@ function nfoState(ep: TVEpisode): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .meta-val-highlight {
@@ -540,6 +561,8 @@ function nfoState(ep: TVEpisode): string {
   padding: 4px 8px;
   font-size: 12px;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .genres-pills-list {
@@ -566,6 +589,10 @@ function nfoState(ep: TVEpisode): string {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-md, 0.375rem);
   padding: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .plot-header {
@@ -577,10 +604,14 @@ function nfoState(ep: TVEpisode): string {
   line-height: 1.6;
   color: var(--on-surface, #dce1fb);
   margin: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .plot-textarea {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: var(--surface-container-lowest, #070d1f);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
@@ -599,17 +630,25 @@ function nfoState(ep: TVEpisode): string {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .file-icon-box {
   color: var(--primary, #c0c1ff);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .file-details {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -786,12 +825,29 @@ function nfoState(ep: TVEpisode): string {
   text-align: center;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
+  .overview-view {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .main-title {
+    font-size: 19px;
+  }
   .overview-body-layout {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
   .poster-container {
-    max-width: 160px;
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+  .compact-poster-card {
+    width: 130px;
+    height: 195px;
+  }
+  .episode-table-container {
+    overflow-x: auto;
   }
 }
 </style>

@@ -49,65 +49,82 @@ onMounted(initialize)
 
 <template>
   <main class="settings-page">
-    <header class="settings-header">
-      <div class="settings-header__info">
-        <p class="eyebrow">{{ labels.settingsEyebrow }}</p>
-        <h1 class="settings-title">{{ labels.settings }}</h1>
-        <p class="settings-intro">{{ labels.settingsIntro }}</p>
+    <div class="settings-container">
+      <header class="settings-header">
+        <div class="settings-header__info">
+          <p class="eyebrow">{{ labels.settingsEyebrow }}</p>
+          <h1 class="settings-title">{{ labels.settings }}</h1>
+          <p class="settings-intro">{{ labels.settingsIntro }}</p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm locale-toggle"
+          @click="emit('changeLocale', locale === 'en' ? 'zh-CN' : 'en')"
+        >
+          {{ labels.language }}
+        </button>
+      </header>
+
+      <div v-if="error" class="settings-error" role="alert">
+        <span class="status-dot status-dot--error"></span>
+        <span>{{ error }}</span>
       </div>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm locale-toggle"
-        @click="emit('changeLocale', locale === 'en' ? 'zh-CN' : 'en')"
-      >
-        {{ labels.language }}
-      </button>
-    </header>
 
-    <div v-if="error" class="settings-error" role="alert">
-      <span class="status-dot status-dot--error"></span>
-      <span>{{ error }}</span>
-    </div>
+      <div v-if="isLoading" class="settings-loading">
+        <span>{{ labels.loading }}</span>
+      </div>
 
-    <div v-if="isLoading" class="settings-loading">
-      <span>{{ labels.loading }}</span>
-    </div>
-
-    <div v-else class="settings-stack">
-      <SettingsProviderForm
-        v-model:model="providerForm"
-        :settings="settings"
-        :labels="labels"
-        :saving="isSaving"
-        @save="save"
-      />
-      <SettingsSources
-        v-model:source-name="sourceName"
-        v-model:source-path="sourcePath"
-        :sources="sourceItems"
-        :media-roots="settings?.mediaRoots ?? []"
-        :labels="labels"
-        :feedback="sourceFeedback"
-        @add="addSource"
-        @scan="scan"
-        @delete="deleteSource"
-      />
-      <SettingsInterfaceForm
-        :locale="locale"
-        :labels="labels"
-        @change-locale="emit('changeLocale', $event)"
-      />
+      <div v-else class="settings-grid">
+        <div class="settings-col">
+          <SettingsProviderForm
+            v-model:model="providerForm"
+            :settings="settings"
+            :labels="labels"
+            :saving="isSaving"
+            @save="save"
+          />
+        </div>
+        <div class="settings-col">
+          <SettingsSources
+            v-model:source-name="sourceName"
+            v-model:source-path="sourcePath"
+            :sources="sourceItems"
+            :media-roots="settings?.mediaRoots ?? []"
+            :labels="labels"
+            :feedback="sourceFeedback"
+            @add="addSource"
+            @scan="scan"
+            @delete="deleteSource"
+          />
+          <SettingsInterfaceForm
+            :locale="locale"
+            :labels="labels"
+            @change-locale="emit('changeLocale', $event)"
+          />
+        </div>
+      </div>
     </div>
   </main>
 </template>
 
 <style scoped>
 .settings-page {
-  max-width: 60rem;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background: var(--surface-base, #0c1324);
+  box-sizing: border-box;
+}
+
+.settings-container {
+  width: 100%;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: clamp(1rem, 2.5vw, 2rem);
-  background: var(--surface-base);
-  min-height: 100%;
+  padding: clamp(1rem, 2vw, 2.5rem);
+  box-sizing: border-box;
 }
 
 .settings-header {
@@ -177,10 +194,30 @@ onMounted(initialize)
   font-size: 0.875rem;
 }
 
-.settings-stack {
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  align-items: start;
+}
+
+.settings-col {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  margin-top: 1.25rem;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-container {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
 }
 </style>

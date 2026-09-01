@@ -157,11 +157,24 @@ onMounted(async () => {
 
 /* ── Mobile Responsive Logic ──────────────────────────────── */
 @media (max-width: 760px) {
+  .workspace-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
+
   .split-pane-layout {
     display: block;
     height: auto;
     min-height: 100vh;
     padding-bottom: 60px;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    box-sizing: border-box;
   }
 
   .split-pane-layout.mobile-show-detail :deep(.catalog-panel) {

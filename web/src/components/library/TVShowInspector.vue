@@ -567,14 +567,21 @@ async function handleSaveAndWrite() {
   flex-direction: column;
   height: 100%;
   background: var(--surface-container-lowest, #070d1f);
-  overflow: hidden;
+  overflow-x: hidden;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   position: relative;
 }
 
 .inspector-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px 24px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .inspector-error {

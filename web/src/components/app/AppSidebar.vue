@@ -246,7 +246,7 @@ const emit = defineEmits<{
 }
 
 /* ── Mobile Layout ────────────────────────────────────────── */
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .nav-rail {
     top: auto;
     bottom: 0;
@@ -260,6 +260,7 @@ const emit = defineEmits<{
     padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
     border-right: none;
     border-top: 1px solid var(--outline-variant, #2e3447);
+    z-index: 50;
   }
 
   .rail-logo-box,

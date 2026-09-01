@@ -42,25 +42,38 @@ const emit = defineEmits<{ save: [] }>()
             v-model="model.tmdbApiKey"
             type="password"
             autocomplete="off"
+            class="input-control font-code"
             :placeholder="settings?.tmdbApiKeyConfigured ? labels.apiKeyConfigured : labels.apiKeyPlaceholder"
           />
-          <p class="field-hint">{{ settings?.tmdbApiKeyConfigured ? labels.apiKeyConfigured : labels.apiKeyPlaceholder }}</p>
-          <label class="check-label">
-            <input v-model="model.clearTmdbApiKey" type="checkbox" class="form-checkbox" />
-            <span>{{ labels.clearApiKey }}</span>
+          <p v-if="!settings?.tmdbApiKeyConfigured" class="field-hint">{{ labels.apiKeyPlaceholder }}</p>
+          <label v-if="settings?.tmdbApiKeyConfigured" class="custom-checkbox-row">
+            <input v-model="model.clearTmdbApiKey" type="checkbox" class="sr-only" />
+            <span class="custom-checkbox-box" :class="{ 'custom-checkbox-box--checked': model.clearTmdbApiKey }">
+              <svg v-if="model.clearTmdbApiKey" viewBox="0 0 24 24" fill="currentColor" width="11" height="11">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </span>
+            <span class="custom-checkbox-label" :class="{ 'custom-checkbox-label--checked': model.clearTmdbApiKey }">
+              {{ labels.clearApiKey }}
+            </span>
           </label>
         </div>
 
         <!-- TMDb Language -->
         <div class="field-group">
           <label for="tmdb-language" class="field-label">{{ labels.tmdbLanguage }}</label>
-          <select id="tmdb-language" v-model="model.tmdbLanguage" class="form-select">
-            <option value="en-US">English (en-US)</option>
-            <option value="zh-CN">简体中文 (zh-CN)</option>
-            <option value="zh-TW">繁體中文 (zh-TW)</option>
-            <option value="ja-JP">日本語 (ja-JP)</option>
-            <option value="ko-KR">한국어 (ko-KR)</option>
-          </select>
+          <div class="select-wrapper">
+            <select id="tmdb-language" v-model="model.tmdbLanguage" class="form-select">
+              <option value="zh-CN">简体中文 (zh-CN)</option>
+              <option value="zh-TW">繁體中文 (zh-TW)</option>
+              <option value="en-US">English (en-US)</option>
+              <option value="ja-JP">日本語 (ja-JP)</option>
+              <option value="ko-KR">한국어 (ko-KR)</option>
+            </select>
+            <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 10l5 5 5-5z"/>
+            </svg>
+          </div>
         </div>
 
         <!-- Fanart.tv API Key -->
@@ -72,9 +85,26 @@ const emit = defineEmits<{ save: [] }>()
               {{ settings?.fanartTvApiKeyConfigured ? labels.configured : labels.notSet }}
             </span>
           </div>
-          <input id="fanart-tv-api-key" v-model="model.fanartTvApiKey" type="password" autocomplete="off" :placeholder="settings?.fanartTvApiKeyConfigured ? labels.apiKeyConfigured : labels.fanartTvApiKeyPlaceholder" />
+          <input
+            id="fanart-tv-api-key"
+            v-model="model.fanartTvApiKey"
+            type="password"
+            autocomplete="off"
+            class="input-control font-code"
+            :placeholder="settings?.fanartTvApiKeyConfigured ? labels.apiKeyConfigured : labels.fanartTvApiKeyPlaceholder"
+          />
           <p class="field-hint">{{ labels.fanartTvApiKeyHelp }}</p>
-          <label class="check-label"><input v-model="model.clearFanartTvApiKey" type="checkbox" class="form-checkbox" /><span>{{ labels.clearFanartTvApiKey }}</span></label>
+          <label v-if="settings?.fanartTvApiKeyConfigured" class="custom-checkbox-row">
+            <input v-model="model.clearFanartTvApiKey" type="checkbox" class="sr-only" />
+            <span class="custom-checkbox-box" :class="{ 'custom-checkbox-box--checked': model.clearFanartTvApiKey }">
+              <svg v-if="model.clearFanartTvApiKey" viewBox="0 0 24 24" fill="currentColor" width="11" height="11">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </span>
+            <span class="custom-checkbox-label" :class="{ 'custom-checkbox-label--checked': model.clearFanartTvApiKey }">
+              {{ labels.clearFanartTvApiKey }}
+            </span>
+          </label>
         </div>
 
         <!-- Outbound Proxy -->
@@ -97,19 +127,33 @@ const emit = defineEmits<{ save: [] }>()
             v-model="model.outboundProxy"
             type="url"
             autocomplete="off"
+            class="input-control font-code"
             :placeholder="settings?.outboundProxyConfigured ? labels.proxyConfigured : labels.proxyPlaceholder"
           />
-          <p class="field-hint">{{ settings?.outboundProxyConfigured ? labels.proxyConfigured : labels.proxyPlaceholder }}</p>
-          <label class="check-label">
-            <input v-model="model.clearOutboundProxy" type="checkbox" class="form-checkbox" />
-            <span>{{ labels.clearProxy }}</span>
+          <p v-if="!settings?.outboundProxyConfigured" class="field-hint">{{ labels.proxyPlaceholder }}</p>
+          <label v-if="settings?.outboundProxyConfigured" class="custom-checkbox-row">
+            <input v-model="model.clearOutboundProxy" type="checkbox" class="sr-only" />
+            <span class="custom-checkbox-box" :class="{ 'custom-checkbox-box--checked': model.clearOutboundProxy }">
+              <svg v-if="model.clearOutboundProxy" viewBox="0 0 24 24" fill="currentColor" width="11" height="11">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </span>
+            <span class="custom-checkbox-label" :class="{ 'custom-checkbox-label--checked': model.clearOutboundProxy }">
+              {{ labels.clearProxy }}
+            </span>
           </label>
         </div>
 
         <!-- Submit Button -->
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" :disabled="saving">
-            {{ saving ? labels.saving : labels.saveSettings }}
+          <button type="submit" class="btn btn-primary save-btn" :disabled="saving">
+            <svg v-if="saving" viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="spin-slow">
+              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z"/>
+            </svg>
+            <span>{{ saving ? (labels.saving || '正在保存…') : (labels.saveSettings || '保存提供方设置') }}</span>
           </button>
         </div>
       </form>
@@ -119,29 +163,30 @@ const emit = defineEmits<{ save: [] }>()
 
 <style scoped>
 .settings-card {
-  background: var(--surface-container);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
+  background: var(--surface-container, #191f31);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-xl, 0.75rem);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .card-header {
-  padding: 1.125rem 1.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-container);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  background: var(--surface-container-high, #23293c);
 }
 
 .card-header__info {
-  display: grid;
-  gap: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .header-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  color: var(--primary);
+  gap: 6px;
+  color: var(--primary, #c0c1ff);
 }
 
 .header-icon {
@@ -151,122 +196,244 @@ const emit = defineEmits<{ save: [] }>()
 
 .eyebrow {
   margin: 0;
-  font-family: var(--font-data);
-  font-size: 0.6875rem;
+  font-family: var(--font-data, monospace);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: var(--primary, #c0c1ff);
 }
 
 .section-title {
   margin: 0;
-  color: var(--on-surface);
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
+  color: var(--on-surface, #dce1fb);
+  font-size: 17px;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.01em;
 }
 
 .card-body {
-  padding: 1.5rem;
+  padding: 24px;
 }
 
 .settings-form {
-  display: grid;
-  gap: 1.25rem;
-  max-width: 38rem;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
 }
 
 .field-group {
-  display: grid;
-  gap: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .field-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .field-label {
-  font-size: 0.8125rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--on-surface-variant);
+  color: var(--on-surface-variant, #c7c4d7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .field-hint {
   margin: 0;
-  font-size: 0.75rem;
-  color: var(--outline);
+  font-size: 11px;
+  color: var(--outline, #908fa0);
   line-height: 1.4;
 }
 
-.settings-form input:not([type="checkbox"]),
-.form-select {
+.input-control {
   width: 100%;
-  height: 34px;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-container-low);
-  color: var(--on-surface);
-  font-size: 0.8125rem;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-low, #151b2d);
+  color: var(--on-surface, #dce1fb);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
   transition: all 0.15s ease;
 }
 
-.settings-form input:not([type="checkbox"]):focus,
-.form-select:focus {
-  outline: none;
-  border-color: var(--primary-bright);
-  box-shadow: 0 0 0 2px rgba(128, 131, 255, 0.2);
-  background: var(--surface-container-lowest);
+.input-control:focus {
+  border-color: var(--primary, #c0c1ff);
+  box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.15);
+  background: var(--surface-container-lowest, #070d1f);
 }
 
-.check-label {
+.font-code {
+  font-family: var(--font-code, monospace);
+}
+
+.select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.form-select {
+  width: 100%;
+  height: 38px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-low, #151b2d);
+  color: var(--on-surface, #dce1fb);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.form-select:focus {
+  border-color: var(--primary, #c0c1ff);
+  box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.15);
+  background: var(--surface-container-lowest, #070d1f);
+}
+
+.select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--outline, #908fa0);
+  pointer-events: none;
+}
+
+/* ── Custom Dark Theme Checkbox ───────────────────────────────────── */
+.custom-checkbox-row {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--on-surface-variant);
+  gap: 8px;
   cursor: pointer;
   user-select: none;
-  margin-top: 0.15rem;
+  margin-top: 4px;
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-lowest, #070d1f);
+  border: 1px solid var(--outline-variant, #2e3447);
+  transition: all 0.15s ease;
+  width: fit-content;
 }
 
-.form-checkbox {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--primary-bright);
-  cursor: pointer;
+.custom-checkbox-row:hover {
+  border-color: var(--outline, #908fa0);
+  background: var(--surface-container-high, #23293c);
+}
+
+.custom-checkbox-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1.5px solid var(--outline, #908fa0);
+  background: var(--surface-container-low, #151b2d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  color: #ffffff;
+}
+
+.custom-checkbox-box--checked {
+  background: #ff4d4f;
+  border-color: #ff4d4f;
+}
+
+.custom-checkbox-label {
+  font-size: 12px;
+  color: var(--on-surface-variant, #c7c4d7);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.custom-checkbox-label--checked {
+  color: #ff7875;
+  font-weight: 600;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-full);
-  font: 500 0.6875rem/1.2 var(--font-data);
-  letter-spacing: 0.02em;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-data, monospace);
 }
 
 .status-pill--configured {
-  background: rgba(0, 165, 114, 0.18);
-  color: var(--secondary);
+  background: rgba(78, 222, 163, 0.12);
+  color: var(--secondary, #4edea3);
   border: 1px solid rgba(78, 222, 163, 0.3);
 }
 
 .status-pill--unset {
-  background: var(--surface-container-low);
-  border: 1px solid var(--border-default);
-  color: var(--outline);
+  background: var(--surface-container-low, #151b2d);
+  border: 1px solid var(--outline-variant, #2e3447);
+  color: var(--outline, #908fa0);
+}
+
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.status-dot--ok {
+  background: var(--secondary, #4edea3);
+}
+
+.status-dot--neutral {
+  background: var(--outline, #908fa0);
 }
 
 .form-actions {
-  padding-top: 0.25rem;
+  padding-top: 4px;
+}
+
+.save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 20px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.spin-slow {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

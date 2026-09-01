@@ -42,13 +42,6 @@ const resolvedPoster = computed(() => {
   return ''
 })
 
-const genresInput = computed({
-  get: () => props.draft.genres.join(', '),
-  set: (val: string) => {
-    props.draft.genres = val.split(',').map(s => s.trim()).filter(Boolean)
-  },
-})
-
 function formatRuntime(minutes: number | null): string {
   if (!minutes || minutes <= 0) return '—'
   const h = Math.floor(minutes / 60)
@@ -109,19 +102,16 @@ const techSpecs = computed(() => {
 
       <!-- Metadata Strip -->
       <div class="meta-strip">
-        <span class="meta-item font-code">{{ draft.year ?? item.yearHint ?? '—' }}</span>
-        <span class="meta-dot"></span>
-        <span class="meta-item">{{ formatRuntime(draft.runtimeMinutes) }}</span>
-        
-        <template v-if="draft.contentRating">
+        <div class="meta-left-group">
+          <span class="meta-item font-code">{{ draft.year ?? item.yearHint ?? '—' }}</span>
           <span class="meta-dot"></span>
-          <span class="spec-pill font-code">{{ draft.contentRating }}</span>
-        </template>
-
-        <template v-if="draft.studio">
-          <span class="meta-dot"></span>
-          <span class="meta-studio" :title="draft.studio">{{ draft.studio }}</span>
-        </template>
+          <span class="meta-item">{{ formatRuntime(draft.runtimeMinutes) }}</span>
+          
+          <template v-if="draft.contentRating">
+            <span class="meta-dot"></span>
+            <span class="spec-pill font-code">{{ draft.contentRating }}</span>
+          </template>
+        </div>
 
         <!-- Rating Box on the right -->
         <div v-if="draft.rating !== null" class="rating-badge">
@@ -225,6 +215,10 @@ const techSpecs = computed(() => {
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 /* ── 1. Hero Title Banner ─────────────────────────────────────────── */
@@ -232,6 +226,8 @@ const techSpecs = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .title-cluster {
@@ -281,9 +277,17 @@ const techSpecs = computed(() => {
 .meta-strip {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   font-size: 12px;
   color: var(--on-surface-variant, #c7c4d7);
+  flex-wrap: wrap;
+}
+
+.meta-left-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -292,13 +296,6 @@ const techSpecs = computed(() => {
   height: 3px;
   border-radius: 50%;
   background: var(--outline-variant, #464554);
-}
-
-.meta-studio {
-  max-width: 380px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .rating-badge {
@@ -310,7 +307,6 @@ const techSpecs = computed(() => {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
   font-size: 11px;
-  margin-left: auto;
 }
 
 .star-score {
@@ -353,6 +349,9 @@ const techSpecs = computed(() => {
   gap: 20px;
   align-items: flex-start;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Poster Container */
@@ -409,96 +408,12 @@ const techSpecs = computed(() => {
 .details-container {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-/* ── Top Priority: Core Metadata Grid ── */
-.meta-blocks-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.meta-card {
-  background: var(--surface-container, #191f31);
-  border: 1px solid var(--outline-variant, #2e3447);
-  border-radius: var(--radius-md, 0.375rem);
-  padding: 6px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-height: 48px;
-  justify-content: center;
-}
-
-.meta-card-full {
-  grid-column: span 2;
-}
-
-.meta-val {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--on-surface, #dce1fb);
-  white-space: nowrap;
+  box-sizing: border-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.meta-val-highlight {
-  color: var(--primary, #c0c1ff);
-}
-
-.meta-input-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.meta-field-icon {
-  color: var(--outline, #908fa0);
-  flex-shrink: 0;
-}
-
-.card-input {
-  width: 100%;
-  background: var(--surface-container-lowest, #070d1f);
-  border: 1px solid var(--outline-variant, #2e3447);
-  border-radius: var(--radius-sm, 0.25rem);
-  color: var(--on-surface, #dce1fb);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 3px 6px;
-}
-
-.card-input:focus {
-  outline: none;
-  border-color: var(--primary, #c0c1ff);
-}
-
-.genres-pills-list {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  padding: 1px 0;
-}
-
-.genre-tag-pill {
-  background: var(--surface-container-highest, #2e3447);
-  border: 1px solid var(--outline-variant, #464554);
-  color: var(--on-surface, #dce1fb);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm, 0.25rem);
-}
-
-.genre-empty-hint {
-  font-size: 11px;
-  color: var(--outline, #908fa0);
 }
 
 /* ── Plot Summary Card ── */
@@ -507,12 +422,18 @@ const techSpecs = computed(() => {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-md, 0.375rem);
   padding: 10px 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .plot-box {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .plot-header {
@@ -535,10 +456,14 @@ const techSpecs = computed(() => {
   color: var(--on-surface, #dce1fb);
   margin: 0;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .plot-textarea {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: var(--surface-container-lowest, #070d1f);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
@@ -566,6 +491,11 @@ const techSpecs = computed(() => {
   align-items: center;
   gap: 10px;
   margin-top: auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .file-icon-box {
@@ -583,6 +513,8 @@ const techSpecs = computed(() => {
 .file-details {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .file-path {
@@ -592,6 +524,7 @@ const techSpecs = computed(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .file-specs {
@@ -644,10 +577,18 @@ const techSpecs = computed(() => {
 }
 
 /* ── Mobile / Narrow Responsive Layout ────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .overview-view {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .main-title {
+    font-size: 19px;
+  }
+
   .overview-body-layout {
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
 
   .poster-container {
