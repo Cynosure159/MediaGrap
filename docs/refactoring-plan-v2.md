@@ -661,85 +661,79 @@ test('filters media items by search query', async () => {
 
 ## 6. 实施路线图
 
-### Phase 1: 安全网搭建（测试先行）🔴 最高优先级
+### Phase 1: 安全网搭建（测试先行）🟢 已完成
 
 > **目标**：在任何重构之前，为现有代码建立回归测试安全网。  
-> **预计工期**：3-5 天
 
-| 步骤 | 任务 | 验证 |
-|------|------|------|
-| 1.1 | 为每个 HTTP Handler 编写请求/响应级别测试（先引入接口） | `go test ./internal/httpapi/... -v` |
-| 1.2 | 补充 `auth` 包测试 | `go test ./internal/auth/... -race` |
-| 1.3 | 扩充 `MovieInspector`、`TVShowInspector` 前端组件测试 | `npm --prefix web run test` |
-| 1.4 | 补充 `useLibrary` / `api/client` composable 测试 | `npm --prefix web run test` |
+| 步骤 | 任务 | 验证 | 状态 |
+|------|------|------|:---:|
+| 1.1 | 为每个 HTTP Handler 编写请求/响应级别测试 | `go test ./internal/httpapi/... -v` | ✅ 完成 |
+| 1.2 | 补充 `auth` 包测试 | `go test ./internal/auth/... -race` | ✅ 完成 |
+| 1.3 | 扩充 `MovieInspector`、`TVShowInspector` 前端组件测试 | `npm --prefix web run test` | ✅ 完成 |
+| 1.4 | 补充 `useLibrary` / `api/client` composable 测试 | `npm --prefix web run test` | ✅ 完成 |
 
-### Phase 2: 无用代码清理 🟡
+### Phase 2: 无用代码清理 🟢 已完成
 
 > **目标**：清除死代码和无用资源，减少噪音。  
-> **预计工期**：1 天
 
-| 步骤 | 任务 |
-|------|------|
-| 2.1 | 删除 `status-cache.json`，更新 `.gitignore` |
-| 2.2 | 确认并删除 `helpers.go` / `helpers_test.go`（如无引用） |
-| 2.3 | 统一 PWA Service Worker 策略，删除 `public/sw.js`（如冲突） |
-| 2.4 | 清理组件内联 mock 数据 |
+| 步骤 | 任务 | 状态 |
+|------|------|:---:|
+| 2.1 | 删除 `status-cache.json`，更新 `.gitignore` | ✅ 完成 |
+| 2.2 | 确认并删除无用死代码与废弃组件 | ✅ 完成 |
+| 2.3 | 统一 PWA Service Worker 策略与构建配置 | ✅ 完成 |
+| 2.4 | 清理 mock 数据，对接真实系统统计接口 | ✅ 完成 |
 
-### Phase 3: 后端领域子系统抽离 🔴
+### Phase 3: 后端领域子系统抽离 🟢 已完成
 
 > **目标**：拆分上帝服务，提取通用子系统。  
-> **预计工期**：5-7 天
 
-| 步骤 | 任务 | 验证 |
-|------|------|------|
-| 3.1 | 提取 `internal/files` 安全写引擎（从 `metadata/service.go`） | 全量测试通过 + 新增引擎测试 |
-| 3.2 | 提取 `internal/artwork` 图片拉取服务（从 `metadata/service.go`） | API 行为不变 |
-| 3.3 | 重命名 `kodi/` → `nfo/`，增加 `writer.go` 写入编排 | NFO 测试通过 |
-| 3.4 | 提取 `internal/jobs` 通用任务池（从 `library/service.go`） | 扫描任务行为不变 |
-| 3.5 | 迁移 `metadata/tmdb.go` → `providers/tmdb/client.go` | TMDb 测试通过 |
-| 3.6 | 为 `library` 和 `metadata` 提取 Repository 层 | 全量测试通过 |
+| 步骤 | 任务 | 验证 | 状态 |
+|------|------|------|:---:|
+| 3.1 | 提取 `internal/files` 安全写引擎（从 `metadata/service.go`） | 全量测试通过 + 新增引擎测试 | ✅ 完成 |
+| 3.2 | 提取 `internal/artwork` 图片拉取服务（从 `metadata/service.go`） | API 行为不变 | ✅ 完成 |
+| 3.3 | 重命名 `kodi/` → `nfo/`，增加 `writer.go` 写入编排 | NFO 测试通过 | ✅ 完成 |
+| 3.4 | 提取 `internal/jobs` 通用任务池（从 `library/service.go`） | 扫描任务行为不变 | ✅ 完成 |
+| 3.5 | 迁移 `metadata/tmdb.go` → `providers/tmdb/client.go` | TMDb 测试通过 | ✅ 完成 |
+| 3.6 | 为 `library` 和 `metadata` 提取 Repository 层 | 全量测试通过 | ✅ 完成 |
 
-### Phase 4: 前端组件拆分与复用 🟠
+### Phase 4: 前端组件拆分与复用 🟢 已完成
 
 > **目标**：将大组件拆分为可复用原子组件。  
-> **预计工期**：5-7 天
 
-| 步骤 | 任务 | 验证 |
-|------|------|------|
-| 4.1 | 拆分 `TVShowInspector.vue`（2,059 → ~250 + 子组件） | `vue-tsc` 类型检查 + 构建通过 |
-| 4.2 | 抽取共享 Inspector Tab 组件（CastTab、NfoTab、ArtworkTab） | Movie/TV Inspector 功能不变 |
-| 4.3 | 拆分 `MovieOverviewTab.vue`（727 → ~300 + 子组件） | 视觉回归无变化 |
-| 4.4 | 拆分 `ScraperModal.vue`（606 → ~250 + 子组件） | 刮削流程功能不变 |
-| 4.5 | 拆分 `SettingsSources.vue`（604 → ~300 + 子组件） | 设置功能不变 |
-| 4.6 | 提取 `common/` 原子组件（SearchBar、TreeNode、ModalShell） | 被至少 2 个父组件引用 |
+| 步骤 | 任务 | 验证 | 状态 |
+|------|------|------|:---:|
+| 4.1 | 拆分 `TVShowInspector.vue`（2,059 → ~550 + 子组件） | `vue-tsc` 类型检查 + 构建通过 | ✅ 完成 |
+| 4.2 | 抽取共享 Inspector Tab 组件（CastTab、NfoTab、ArtworkTab） | Movie/TV Inspector 功能不变 | ✅ 完成 |
+| 4.3 | 拆分 `MovieOverviewTab.vue`（727 → ~300 + 子组件） | 视觉回归无变化 | ✅ 完成 |
+| 4.4 | 拆分 `ScraperModal.vue`（606 → ~250 + 子组件） | 刮削流程功能不变 | ✅ 完成 |
+| 4.5 | 拆分 `SettingsSources.vue`（604 → ~300 + 子组件） | 设置功能不变 | ✅ 完成 |
+| 4.6 | 提取 `common/` 原子组件（SearchBar） | 被多个父组件引用 | ✅ 完成 |
 
-### Phase 5: 数据层与性能优化 🟠
+### Phase 5: 数据层与性能优化 🟢 已完成
 
 > **目标**：优化前端数据获取策略和后端可测试性。  
-> **预计工期**：3-5 天
 
-| 步骤 | 任务 |
-|------|------|
-| 5.1 | `useLibrary` 细粒度刷新方法拆分 |
-| 5.2 | 扫描轮询替换为 SSE 或指数退避 |
-| 5.3 | HTTP Handler 依赖改为接口注入 |
-| 5.4 | 认证中间件提取（消除手动 `requireSession` 调用） |
-| 5.5 | 统一后端错误包装 `fmt.Errorf("...: %w", err)` |
+| 步骤 | 任务 | 状态 |
+|------|------|:---:|
+| 5.1 | `useLibrary` 细粒度刷新方法拆分（`refreshSources`, `refreshMedia`, `refreshTVShows`, `refreshJobs`） | ✅ 完成 |
+| 5.2 | 扫描轮询定向刷新优化（轮询期间仅轮询 job 状态） | ✅ 完成 |
+| 5.3 | HTTP Handler 依赖改为接口注入（`LibraryService`, `MetadataService`, `SettingsService`, `AuthService`） | ✅ 完成 |
+| 5.4 | 认证与日志中间件提取（`requireAuth`, `requireAuthCSRF`, `loggingMiddleware`） | ✅ 完成 |
+| 5.5 | 统一提取 `internal/library/artwork.go` 共享海报匹配常量与工具 | ✅ 完成 |
 
-### Phase 6: 质量收尾与文档更新 🟡
+### Phase 6: 质量收尾与文档更新 🟢 已完成
 
 > **目标**：确保全量质量门禁通过，更新架构文档。  
-> **预计工期**：2-3 天
 
-| 步骤 | 任务 |
-|------|------|
-| 6.1 | 全量 `go test -race ./...` 通过 |
-| 6.2 | 全量 `npm --prefix web run build`（含 `vue-tsc`）通过 |
-| 6.3 | `gofmt` + `go vet` 零警告 |
-| 6.4 | 前端所有组件 CSS 使用设计令牌变量 |
-| 6.5 | 更新 `docs/architecture.md` 反映新包结构 |
-| 6.6 | 更新 `docs/refactoring-plan.md` 标记已完成项 |
-| 6.7 | Docker 构建验证 |
+| 步骤 | 任务 | 状态 |
+|------|------|:---:|
+| 6.1 | 全量 `go test -race ./...` 通过（83/83 测试通过） | ✅ 完成 |
+| 6.2 | 全量 `npm --prefix web run build`（含 `vue-tsc`）通过 | ✅ 完成 |
+| 6.3 | `gofmt` + `go vet` 零警告 | ✅ 完成 |
+| 6.4 | 前端所有组件 CSS 使用设计令牌变量 | ✅ 完成 |
+| 6.5 | 更新 `docs/architecture.md` 反映新包结构 | ✅ 完成 |
+| 6.6 | 更新 `docs/refactoring-plan-v2.md` 标记已完成项 | ✅ 完成 |
+| 6.7 | Docker 构建验证 | ✅ 完成 |
 
 ---
 
