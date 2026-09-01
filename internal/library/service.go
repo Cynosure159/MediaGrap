@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -86,14 +88,23 @@ type TVEpisode struct {
 type TVShowDetail struct {
 	Show     TVShow      `json:"show"`
 	Episodes []TVEpisode `json:"episodes"`
+	Artwork  []TVArtwork `json:"artwork"`
 	Writable bool        `json:"writable"`
+}
+type TVArtwork struct {
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	RelativePath string `json:"relativePath"`
 }
 
 type Service struct {
-	db     *sql.DB
-	roots  []string
-	locks  sync.Map
-	logger *slog.Logger
+	db               *sql.DB
+	roots            []string
+	locks            sync.Map
+	logger           *slog.Logger
+	metadataHydrator interface {
+		HydrateExistingNFO(context.Context, int64, string) error
+	}
 }
 
 func NewService(db *sql.DB, roots []string) *Service {
@@ -104,6 +115,12 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 	if logger != nil {
 		s.logger = logger
 	}
+}
+
+func (s *Service) SetMetadataHydrator(hydrator interface {
+	HydrateExistingNFO(context.Context, int64, string) error
+}) {
+	s.metadataHydrator = hydrator
 }
 
 func (s *Service) ListSources(ctx context.Context) ([]Source, error) {
@@ -232,7 +249,7 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		if err != nil {
 			return Page{}, err
 		}
-		item.Sidecars, _ = s.sidecars(ctx, item.ID)
+		item.Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, item.SourceID), item.RelativePath)
 		items = append(items, item)
 	}
 	return Page{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
@@ -283,7 +300,8 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 		return TVShowDetail{}, err
 	}
 	defer rows.Close()
-	detail := TVShowDetail{Show: *show, Writable: s.sourceWritable(ctx, show.SourceID), Episodes: []TVEpisode{}}
+	root := s.sourceRoot(ctx, show.SourceID)
+	detail := TVShowDetail{Show: *show, Writable: s.sourceWritable(ctx, show.SourceID), Episodes: []TVEpisode{}, Artwork: []TVArtwork{}}
 	for rows.Next() {
 		var episode TVEpisode
 		var year sql.NullInt64
@@ -294,10 +312,118 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 			value := int(year.Int64)
 			episode.YearHint = &value
 		}
-		episode.Sidecars, _ = s.sidecars(ctx, episode.ID)
+		episode.Sidecars = currentSidecarsForMedia(root, episode.RelativePath)
 		detail.Episodes = append(detail.Episodes, episode)
 	}
-	return detail, rows.Err()
+	if err := rows.Err(); err != nil {
+		return TVShowDetail{}, err
+	}
+	detail.Artwork = s.tvArtwork(ctx, detail)
+	return detail, nil
+}
+
+// currentSidecarsForMedia is the one discovery rule used both by scans and by
+// read APIs. Besides same-basename files, a directory with one video owns the
+// standard Kodi directory-level assets such as movie.nfo and poster.jpg.
+func currentSidecarsForMedia(root, relative string) []Sidecar {
+	if root == "" {
+		return []Sidecar{}
+	}
+	directory := filepath.Dir(filepath.Join(root, relative))
+	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
+	matches, _ := filepath.Glob(filepath.Join(directory, base+".*"))
+	if directoryHasOneVideo(directory) {
+		for _, name := range []string{"movie.nfo", "poster.jpg", "poster.jpeg", "poster.png", "poster.webp", "fanart.jpg", "fanart.jpeg", "fanart.png", "fanart.webp", "folder.jpg", "folder.png", "cover.jpg", "cover.png", "backdrop.jpg", "backdrop.png", "landscape.jpg", "landscape.png", "logo.png", "clearlogo.png", "banner.jpg"} {
+			matches = append(matches, filepath.Join(directory, name))
+		}
+	}
+	assets := []Sidecar{}
+	seen := make(map[string]struct{})
+	for _, match := range matches {
+		if _, exists := seen[match]; exists {
+			continue
+		}
+		seen[match] = struct{}{}
+		extension := strings.ToLower(filepath.Ext(match))
+		kind, ok := sidecarExtensions[extension]
+		if !ok {
+			continue
+		}
+		info, err := os.Lstat(match)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			continue
+		}
+		path, err := filepath.Rel(root, match)
+		if err == nil {
+			assets = append(assets, Sidecar{RelativePath: path, Kind: kind})
+		}
+	}
+	return assets
+}
+
+func directoryHasOneVideo(directory string) bool {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return false
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] {
+			continue
+		}
+		count++
+	}
+	return count == 1
+}
+
+func (s *Service) tvArtwork(ctx context.Context, detail TVShowDetail) []TVArtwork {
+	var root string
+	if err := s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, detail.Show.SourceID).Scan(&root); err != nil {
+		return []TVArtwork{}
+	}
+	directories := map[string]struct{}{filepath.Join(root, detail.Show.RelativePath): {}}
+	for _, episode := range detail.Episodes {
+		directories[filepath.Dir(filepath.Join(root, episode.RelativePath))] = struct{}{}
+	}
+	assets := []TVArtwork{}
+	seen := make(map[string]struct{})
+	for directory := range directories {
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			if sidecarExtensions[strings.ToLower(filepath.Ext(entry.Name()))] != "image" {
+				continue
+			}
+			path := filepath.Join(directory, entry.Name())
+			info, statErr := entry.Info()
+			if statErr != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			relative, relErr := filepath.Rel(root, path)
+			if relErr != nil || !s.allowed(path) {
+				continue
+			}
+			if _, ok := seen[relative]; ok {
+				continue
+			}
+			seen[relative] = struct{}{}
+			name := strings.ToLower(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
+			kind := "image"
+			if name == "poster" || name == "folder" || name == "cover" {
+				kind = "poster"
+			} else if name == "fanart" || name == "backdrop" || name == "landscape" {
+				kind = "fanart"
+			}
+			assets = append(assets, TVArtwork{ID: base64.RawURLEncoding.EncodeToString([]byte(relative)), Kind: kind, RelativePath: relative})
+		}
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].RelativePath < assets[j].RelativePath })
+	return assets
 }
 func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id=m.id WHERE m.id=? AND m.missing=0`, id)
@@ -305,7 +431,7 @@ func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
 	if err != nil {
 		return MediaItem{}, errors.New("media item not found")
 	}
-	item.Sidecars, _ = s.sidecars(ctx, item.ID)
+	item.Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, item.SourceID), item.RelativePath)
 	return item, nil
 }
 func (s *Service) LocateMedia(ctx context.Context, id int64) (MediaLocation, error) {
@@ -325,6 +451,12 @@ func (s *Service) LocateMedia(ctx context.Context, id int64) (MediaLocation, err
 }
 
 func (s *Service) Allowed(path string) bool { return s.allowed(path) }
+
+func (s *Service) sourceRoot(ctx context.Context, sourceID int64) string {
+	var root string
+	_ = s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, sourceID).Scan(&root)
+	return root
+}
 
 // MetadataSearchHint prefers the movie directory name because it commonly
 // contains the release title while the filename often includes codec and group tags.
@@ -456,6 +588,13 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 		}
 		s.recordSidecars(ctx, itemID, root, relative)
 		s.recordTVEpisode(ctx, itemID, sourceID, relative)
+		if s.metadataHydrator != nil {
+			if _, _, _, isEpisode := parseEpisodeHint(filepath.Base(relative)); !isEpisode {
+				if hydrateErr := s.metadataHydrator.HydrateExistingNFO(ctx, itemID, path); hydrateErr != nil {
+					s.logger.Warn("existing movie NFO hydration failed", "media_item_id", itemID, "error", hydrateErr)
+				}
+			}
+		}
 		count++
 		if count%25 == 0 {
 			s.db.ExecContext(ctx, `UPDATE jobs SET progress_current=?,message='Indexed media files',updated_at=datetime('now') WHERE id=?`, count, jobID)
@@ -468,20 +607,9 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 	return err
 }
 func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) {
-	directory := filepath.Dir(filepath.Join(root, relative))
-	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
-	matches, _ := filepath.Glob(filepath.Join(directory, base+".*"))
 	s.db.ExecContext(ctx, `DELETE FROM sidecar_assets WHERE media_item_id=?`, itemID)
-	for _, match := range matches {
-		extension := strings.ToLower(filepath.Ext(match))
-		kind, ok := sidecarExtensions[extension]
-		if !ok {
-			continue
-		}
-		rel, err := filepath.Rel(root, match)
-		if err == nil {
-			s.db.ExecContext(ctx, `INSERT OR IGNORE INTO sidecar_assets(media_item_id,relative_path,kind) VALUES(?,?,?)`, itemID, rel, kind)
-		}
+	for _, asset := range currentSidecarsForMedia(root, relative) {
+		s.db.ExecContext(ctx, `INSERT OR IGNORE INTO sidecar_assets(media_item_id,relative_path,kind) VALUES(?,?,?)`, itemID, asset.RelativePath, asset.Kind)
 	}
 }
 

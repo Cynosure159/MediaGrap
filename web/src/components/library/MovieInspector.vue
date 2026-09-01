@@ -135,6 +135,7 @@ async function loadDetail(id: number) {
     const result = await api.mediaDetail(id)
     detail.value = result
     applyMetadataToDraft(result.metadata, result.item.titleHint, result.item.yearHint)
+    if (result.item.posterUrl) draft.posterUrl = result.item.posterUrl
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadMedia
   } finally {

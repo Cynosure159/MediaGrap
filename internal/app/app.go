@@ -59,6 +59,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 		return nil, err
 	}
 	metadataService := metadata.NewService(db, metadata.NewTMDb(logger, outbound, currentSettings.TMDbAPIKey))
+	libraryService.SetMetadataHydrator(metadataService)
 	if err := metadataService.ConfigureTMDb(currentSettings.TMDbAPIKey, currentSettings.TMDbLanguage, currentSettings.OutboundProxy); err != nil {
 		db.Close()
 		return nil, err

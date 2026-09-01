@@ -54,8 +54,16 @@ export interface TVEpisode extends MediaItem {
 export interface TVShowDetail {
   show: TVShow
   episodes: TVEpisode[]
+  artwork: TVArtwork[]
   writable: boolean
   metadata: TVMetadata
+  metadataOrigin: 'draft' | 'nfo' | 'empty'
+}
+
+export interface TVArtwork {
+  id: string
+  kind: 'poster' | 'fanart' | 'image'
+  relativePath: string
 }
 
 export interface TVMetadata {

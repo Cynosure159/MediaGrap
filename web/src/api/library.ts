@@ -161,6 +161,9 @@ export const previewTVNfoPlans = (csrf: string, id: number) =>
     headers: { 'X-CSRF-Token': csrf },
   })
 
+export const tvArtworkUrl = (showId: number, artworkId: string) =>
+  `/api/v1/tv/shows/${showId}/artwork/${encodeURIComponent(artworkId)}`
+
 // Jobs
 export const jobs = () =>
   request<{ items: Job[] }>('/api/v1/jobs')

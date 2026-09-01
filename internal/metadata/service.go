@@ -204,6 +204,27 @@ func (s *Service) SelectTV(ctx context.Context, showID int64, providerID string,
 	return saved, nil
 }
 
+// SelectTVAndWrite replaces a show's selected metadata and immediately applies
+// one atomic Kodi NFO write for every supplied show, season, and episode target.
+// Image files are deliberately outside this operation.
+func (s *Service) SelectTVAndWrite(ctx context.Context, showID int64, providerID string, seasons []int, inputs []TVNFOInput, writable bool, allowed func(string) bool) (TVRecord, error) {
+	record, err := s.SelectTV(ctx, showID, providerID, seasons)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	plans, err := s.PreviewTVNFO(ctx, record, inputs, writable)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	for _, plan := range plans {
+		if _, err := s.Apply(ctx, plan.ID, allowed); err != nil {
+			return TVRecord{}, err
+		}
+	}
+	s.logger.Info("TMDb TV selection NFO writes completed", "show_id", showID, "provider_id", providerID, "plan_count", len(plans))
+	return record, nil
+}
+
 func (s *Service) TVRecord(ctx context.Context, showID int64) (TVRecord, error) {
 	var record TVRecord
 	var year, votes sql.NullInt64
@@ -248,6 +269,65 @@ func (s *Service) TVRecord(ctx context.Context, showID int64) (TVRecord, error) 
 		record.Episodes = append(record.Episodes, episode)
 	}
 	return normalizedTV(record), rows.Err()
+}
+
+// ReadExistingTVNFO reads existing Kodi show and episode NFOs without
+// persisting or changing them. It is used only when no selected draft exists.
+func (s *Service) ReadExistingTVNFO(showID int64, inputs []TVNFOInput) (TVRecord, bool, error) {
+	record := normalizedTV(TVRecord{ShowID: showID, Provider: "nfo"})
+	found := false
+	for _, input := range inputs {
+		contents, exists, err := readRegularNFO(input.TargetPath)
+		if err != nil {
+			return TVRecord{}, false, err
+		}
+		if !exists {
+			continue
+		}
+		switch input.Kind {
+		case "show":
+			show, err := kodi.ParseTVShow(contents)
+			if err != nil {
+				return TVRecord{}, false, fmt.Errorf("parse existing TV show NFO: %w", err)
+			}
+			if show.Title == "" {
+				return TVRecord{}, false, errors.New("existing TV show NFO has no title")
+			}
+			record.Title, record.OriginalTitle, record.Year, record.Overview = show.Title, show.OriginalTitle, show.Year, show.Plot
+			record.ProviderID, record.Genres, record.PosterURL, record.BackdropURL = show.TMDbID, show.Genres, show.PosterURL, show.BackdropURL
+			record.Rating, record.Votes, record.Status, record.Network, record.Cast = show.Rating, show.Votes, show.Status, show.Network, metadataPeople(show.Cast)
+			found = true
+		case "episode":
+			episode, err := kodi.ParseEpisode(contents)
+			if err != nil {
+				return TVRecord{}, false, fmt.Errorf("parse existing episode NFO: %w", err)
+			}
+			record.Episodes = append(record.Episodes, TVEpisodeDetails{SeasonNumber: episode.Season, EpisodeNumber: episode.Episode, Title: episode.Title, Overview: episode.Plot, AirDate: episode.AirDate, RuntimeMinutes: episode.Runtime, StillURL: episode.StillURL})
+			found = true
+		}
+	}
+	return record, found, nil
+}
+
+func readRegularNFO(path string) ([]byte, bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("inspect existing NFO: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, false, errors.New("existing NFO must be a regular file")
+	}
+	if info.Size() > 1<<20 {
+		return nil, false, errors.New("existing NFO exceeds the 1 MiB safety limit")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("read existing NFO: %w", err)
+	}
+	return contents, true, nil
 }
 
 func (s *Service) SaveTV(ctx context.Context, record TVRecord) (TVRecord, error) {
@@ -445,7 +525,26 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool,
 	if movie.Title == "" {
 		return Record{}, false, errors.New("existing NFO has no movie title")
 	}
-	return normalized(Record{MediaItemID: itemID, Provider: "tmdb", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, Rating: movie.Rating, Votes: movie.Votes, ContentRating: movie.ContentRating, Directors: movie.Directors, Writers: movie.Writers, Studios: movie.Studios, Cast: metadataPeople(movie.Cast), LockedFields: []string{}}), true, nil
+	return normalized(Record{MediaItemID: itemID, Provider: "nfo", ProviderID: movie.TMDbID, Title: movie.Title, OriginalTitle: movie.OriginalTitle, Year: movie.Year, Overview: movie.Plot, RuntimeMinutes: movie.Runtime, Genres: movie.Genres, PosterURL: movie.PosterURL, BackdropURL: movie.BackdropURL, Rating: movie.Rating, Votes: movie.Votes, ContentRating: movie.ContentRating, Directors: movie.Directors, Writers: movie.Writers, Studios: movie.Studios, Cast: metadataPeople(movie.Cast), LockedFields: []string{}}), true, nil
+}
+
+// HydrateExistingNFO persists local Kodi metadata only when the item has no
+// selected or manually saved SQLite metadata. Scans remain read-only for media
+// files; this only repopulates the application index after a source is readded.
+func (s *Service) HydrateExistingNFO(ctx context.Context, itemID int64, mediaPath string) error {
+	existing, err := s.Record(ctx, itemID)
+	if err != nil || existing.Title != "" {
+		return err
+	}
+	record, found, err := s.ReadExistingNFO(mediaPath, itemID)
+	if err != nil || !found {
+		return err
+	}
+	if _, err := s.Save(ctx, record); err != nil {
+		return err
+	}
+	s.logger.Info("existing movie NFO hydrated", "media_item_id", itemID)
+	return nil
 }
 
 func normalized(record Record) Record {

@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/base64"
+	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,7 +45,25 @@ func (s *server) getTVShow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load TV metadata draft")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"show": result.Show, "episodes": result.Episodes, "writable": result.Writable, "metadata": metadata})
+	origin := "draft"
+	if metadata.Title == "" {
+		root, rootErr := s.tvSourceRoot(r.Context(), result.Show.SourceID)
+		if rootErr != nil {
+			writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+			return
+		}
+		fromNFO, found, readErr := s.metadata.ReadExistingTVNFO(id, tvNFOInputs(root, result))
+		if readErr != nil {
+			writeError(w, http.StatusBadRequest, "nfo_read_failed", readErr.Error())
+			return
+		}
+		if found {
+			metadata, origin = fromNFO, "nfo"
+		} else {
+			origin = "empty"
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"show": result.Show, "episodes": result.Episodes, "artwork": result.Artwork, "writable": result.Writable, "metadata": metadata, "metadataOrigin": origin})
 }
 
 func (s *server) getTVShowCandidates(w http.ResponseWriter, r *http.Request) {
@@ -93,13 +115,82 @@ func (s *server) selectTVShowCandidate(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	root, err := s.tvSourceRoot(r.Context(), show.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return
+	}
 	seasons := seasonsFromEpisodes(show.Episodes)
-	record, err := s.metadata.SelectTV(r.Context(), id, body.CandidateID, seasons)
+	record, err := s.metadata.SelectTVAndWrite(r.Context(), id, body.CandidateID, seasons, tvNFOInputs(root, show), show.Writable, s.library.Allowed)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "provider_unavailable", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *server) getTVArtwork(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_show", "Invalid TV show id")
+		return
+	}
+	detail, err := s.library.TVShow(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return
+	}
+	assetID := r.PathValue("asset")
+	var relative string
+	for _, asset := range detail.Artwork {
+		if asset.ID == assetID {
+			relative = asset.RelativePath
+			break
+		}
+	}
+	if relative == "" {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "TV artwork not found")
+		return
+	}
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return
+	}
+	decoded, decodeErr := base64.RawURLEncoding.DecodeString(assetID)
+	if decodeErr != nil || string(decoded) != relative {
+		writeError(w, http.StatusBadRequest, "invalid_artwork", "Invalid TV artwork")
+		return
+	}
+	path := filepath.Join(root, relative)
+	if !s.library.Allowed(path) {
+		writeError(w, http.StatusForbidden, "invalid_artwork", "Invalid TV artwork")
+		return
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "TV artwork not found")
+		return
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "artwork_not_found", "TV artwork not found")
+		return
+	}
+	defer file.Close()
+	if contentType := mime.TypeByExtension(filepath.Ext(path)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
+}
+
+func (s *server) tvSourceRoot(ctx context.Context, sourceID int64) (string, error) {
+	var root string
+	err := s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, sourceID).Scan(&root)
+	return root, err
 }
 
 func seasonsFromEpisodes(episodes []library.TVEpisode) []int {
@@ -134,8 +225,8 @@ func (s *server) previewTVNFOPlans(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load TV metadata")
 		return
 	}
-	var root string
-	if err := s.db.QueryRowContext(r.Context(), `SELECT root_path FROM sources WHERE id=?`, detail.Show.SourceID).Scan(&root); err != nil {
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
 		return
 	}

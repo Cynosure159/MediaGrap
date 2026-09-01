@@ -2,7 +2,7 @@
 import { computed, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
 import TVMatchPanel from './TVMatchPanel.vue'
-import NfoPreview from './NfoPreview.vue'
+import TVArtworkPanel from './TVArtworkPanel.vue'
 
 const props = defineProps<{
   showId: number | null
@@ -20,8 +20,7 @@ const error = shallowRef<string | null>(null)
 const selectedEpisodeId = shallowRef<number | null>(null)
 const showMatchPanel = shallowRef(false)
 const isApplying = shallowRef(false)
-const nfoPlans = shallowRef<api.WritePlan[]>([])
-const isWritingNfo = shallowRef(false)
+const activeTab = shallowRef<'episodes' | 'artwork' | 'cast'>('episodes')
 
 async function loadDetail(id: number) {
   isLoading.value = true
@@ -77,7 +76,12 @@ function nfoState(ep: api.TVEpisode): string {
   return ep.sidecars.some(sidecar => sidecar.kind === 'nfo') ? props.labels.nfoReady : props.labels.nfoMissing
 }
 
-const currentNfoPlan = computed(() => nfoPlans.value[0] ?? null)
+const metadataSource = computed(() => {
+  if (!detail.value) return ''
+  if (detail.value.metadataOrigin === 'nfo') return props.labels.metadataFromNfo
+  if (detail.value.metadataOrigin === 'draft') return 'TMDb'
+  return props.labels.metadataEmpty
+})
 
 async function selectCandidate(candidate: api.Candidate) {
   if (!props.showId || isApplying.value) return
@@ -85,8 +89,9 @@ async function selectCandidate(candidate: api.Candidate) {
   error.value = null
   try {
     const metadata = await api.selectTVShowCandidate(props.csrfToken, props.showId, candidate.id)
-    if (detail.value) detail.value = { ...detail.value, metadata }
+    if (detail.value) detail.value = { ...detail.value, metadata, metadataOrigin: 'draft' }
     showMatchPanel.value = false
+    await loadDetail(props.showId)
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
   } finally {
@@ -94,33 +99,6 @@ async function selectCandidate(candidate: api.Candidate) {
   }
 }
 
-async function previewNfoPlans() {
-  if (!props.showId || isWritingNfo.value) return
-  isWritingNfo.value = true
-  error.value = null
-  try {
-    const result = await api.previewTVNfoPlans(props.csrfToken, props.showId)
-    nfoPlans.value = result.items
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : props.labels.errorPreviewNfo
-  } finally {
-    isWritingNfo.value = false
-  }
-}
-
-async function applyCurrentNfoPlan() {
-  if (!currentNfoPlan.value || isWritingNfo.value) return
-  isWritingNfo.value = true
-  error.value = null
-  try {
-    await api.applyNfo(props.csrfToken, currentNfoPlan.value.id)
-    nfoPlans.value = nfoPlans.value.slice(1)
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : props.labels.errorWriteNfo
-  } finally {
-    isWritingNfo.value = false
-  }
-}
 </script>
 
 <template>
@@ -144,22 +122,14 @@ async function applyCurrentNfoPlan() {
             </svg>
             {{ isApplying ? labels.applyingCandidate : labels.scrapeTvShow }}
           </button>
-          <button
-            class="btn btn-ghost"
-            :disabled="!detail.metadata.provider || isWritingNfo"
-            type="button"
-            @click="previewNfoPlans"
-          >
-            {{ isWritingNfo ? labels.saving : labels.previewTvNfo }}
-          </button>
         </div>
       </div>
 
       <div class="toolbar-tabs-row">
         <nav class="workshop-tabs">
-          <button class="tab-btn tab-btn--active" type="button">{{ labels.episodesAndSeasons }}</button>
-          <button class="tab-btn" type="button">{{ labels.artworkTab }}</button>
-          <button class="tab-btn" type="button">{{ labels.castTab }}</button>
+          <button class="tab-btn" :class="{ 'tab-btn--active': activeTab === 'episodes' }" type="button" @click="activeTab = 'episodes'">{{ labels.episodesAndSeasons }}</button>
+          <button class="tab-btn" :class="{ 'tab-btn--active': activeTab === 'artwork' }" type="button" @click="activeTab = 'artwork'">{{ labels.artworkTab }}</button>
+          <button class="tab-btn" :class="{ 'tab-btn--active': activeTab === 'cast' }" type="button" @click="activeTab = 'cast'">{{ labels.castTab }}</button>
         </nav>
       </div>
     </header>
@@ -200,13 +170,13 @@ async function applyCurrentNfoPlan() {
 
           <div class="rating-badge">
             <span class="star-score">★ {{ detail.metadata.rating ?? labels.ratingUnavailable }}</span>
-            <span class="provider-tag">{{ detail.metadata.provider ? 'TMDb' : labels.metadataEmpty }}</span>
+            <span class="provider-tag">{{ metadataSource }}</span>
           </div>
         </div>
       </div>
 
       <!-- Seasons & Episodes Accordion -->
-      <div class="seasons-container">
+      <div v-if="activeTab === 'episodes'" class="seasons-container">
         <section
           v-for="[seasonNum, episodes] in seasonsMap"
           :key="seasonNum"
@@ -253,6 +223,15 @@ async function applyCurrentNfoPlan() {
           </table>
         </section>
       </div>
+      <TVArtworkPanel v-else-if="activeTab === 'artwork'" :show-id="showId" :assets="detail.artwork" :labels="labels" />
+      <section v-else class="cast-panel">
+        <p v-if="detail.metadata.cast.length === 0" class="cast-empty">{{ labels.noCastLoaded }}</p>
+        <div v-else class="cast-grid">
+          <article v-for="person in detail.metadata.cast" :key="`${person.name}-${person.role}`" class="cast-card">
+            <strong>{{ person.name }}</strong><span>{{ person.role }}</span>
+          </article>
+        </div>
+      </section>
     </div>
     <TVMatchPanel
       v-if="showMatchPanel && showId && detail"
@@ -261,13 +240,6 @@ async function applyCurrentNfoPlan() {
       :labels="labels"
       @close="showMatchPanel = false"
       @select="selectCandidate"
-    />
-    <NfoPreview
-      :plan="currentNfoPlan"
-      :applying="isWritingNfo"
-      :labels="labels"
-      @apply="applyCurrentNfoPlan"
-      @close="nfoPlans = []"
     />
   </main>
 </template>

@@ -41,6 +41,12 @@ func TestScanIndexesTVSeparatelyFromMovies(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(episodeDirectory, "Example.Show.S01E01E02.mkv"), []byte("episode"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(episodeDirectory, "Example.Show.S01E01E02.nfo"), []byte("<episodedetails/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Example Show (2024)", "poster.jpg"), []byte("image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "Example.Movie.2024.mkv"), []byte("movie"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +79,39 @@ func TestScanIndexesTVSeparatelyFromMovies(t *testing.T) {
 	movies, err := service.ListMedia(t.Context(), "", 1, 50)
 	if err != nil || len(movies.Items) != 1 || movies.Items[0].RelativePath != "Example.Movie.2024.mkv" {
 		t.Fatalf("unexpected movies: %#v err=%v", movies.Items, err)
+	}
+	detail, err := service.TVShow(t.Context(), shows[0].ID)
+	if err != nil || len(detail.Artwork) != 1 || detail.Artwork[0].Kind != "poster" || len(detail.Episodes[0].Sidecars) != 1 || detail.Episodes[0].Sidecars[0].Kind != "nfo" {
+		t.Fatalf("unexpected TV detail: %#v err=%v", detail, err)
+	}
+}
+
+func TestDirectoryLevelKodiSidecarsBelongToOnlyMovieInDirectory(t *testing.T) {
+	root := t.TempDir()
+	movieDir := filepath.Join(root, "Example Movie")
+	if err := os.MkdirAll(movieDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(movieDir, "Example.Movie.mkv"), []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"movie.nfo", "poster.jpg", "fanart.jpg"} {
+		if err := os.WriteFile(filepath.Join(movieDir, name), []byte("sidecar"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assets := currentSidecarsForMedia(root, "Example Movie/Example.Movie.mkv")
+	if len(assets) != 3 {
+		t.Fatalf("expected directory-level Kodi assets, got %#v", assets)
+	}
+	for _, expected := range []string{"Example Movie/movie.nfo", "Example Movie/poster.jpg", "Example Movie/fanart.jpg"} {
+		found := false
+		for _, asset := range assets {
+			found = found || asset.RelativePath == expected
+		}
+		if !found {
+			t.Fatalf("missing %q from %#v", expected, assets)
+		}
 	}
 }
 

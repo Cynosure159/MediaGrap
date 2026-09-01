@@ -24,6 +24,20 @@ func (p staticMovieProvider) SearchMovies(context.Context, string, *int) ([]Cand
 }
 func (p staticMovieProvider) Movie(context.Context, string) (Details, error) { return p.details, nil }
 
+type staticTVProvider struct {
+	staticMovieProvider
+	details  TVDetails
+	episodes []TVEpisodeDetails
+}
+
+func (p staticTVProvider) SearchTV(context.Context, string, *int) ([]Candidate, error) {
+	return nil, nil
+}
+func (p staticTVProvider) TV(context.Context, string) (TVDetails, error) { return p.details, nil }
+func (p staticTVProvider) TVSeason(context.Context, string, int) ([]TVEpisodeDetails, error) {
+	return p.episodes, nil
+}
+
 func TestSelectAndWriteReplacesMetadataAndWritesNFO(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
@@ -64,6 +78,82 @@ func TestSelectAndWriteReplacesMetadataAndWritesNFO(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "<title>Selected title</title>") {
 		t.Fatalf("NFO did not contain selected metadata: %s", content)
+	}
+}
+
+func TestSelectTVAndWriteReplacesMetadataAndWritesAllNFOs(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	seasonDir := filepath.Join(root, "Example Show", "Season 01")
+	if err := os.MkdirAll(seasonDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	video := filepath.Join(seasonDir, "Example.Show.S01E01.mkv")
+	if err := os.WriteFile(video, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	source, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "TV", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := source.LastInsertId()
+	show, err := db.ExecContext(ctx, `INSERT INTO tv_shows(source_id,relative_path,title_hint) VALUES(?,?,?)`, sourceID, "Example Show", "Example Show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	showID, _ := show.LastInsertId()
+	season, err := db.ExecContext(ctx, `INSERT INTO tv_seasons(show_id,season_number) VALUES(?,?)`, showID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seasonID, _ := season.LastInsertId()
+	media, err := db.ExecContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, "Example Show/Season 01/Example.Show.S01E01.mkv", "Example Show", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaID, _ := media.LastInsertId()
+	if _, err := db.ExecContext(ctx, `INSERT INTO tv_episodes(media_item_id,show_id,season_id,season_number,episode_start,episode_end,title_hint) VALUES(?,?,?,?,?,?,?)`, mediaID, showID, seasonID, 1, 1, 1, "Example Show"); err != nil {
+		t.Fatal(err)
+	}
+	provider := staticTVProvider{details: TVDetails{Candidate: Candidate{ID: "10", Title: "Selected Show"}}, episodes: []TVEpisodeDetails{{SeasonNumber: 1, EpisodeNumber: 1, Title: "Pilot"}}}
+	service := NewService(db, provider)
+	inputs := []TVNFOInput{
+		{MediaItemID: mediaID, Kind: "show", TargetPath: filepath.Join(root, "Example Show", "tvshow.nfo")},
+		{MediaItemID: mediaID, Kind: "season", SeasonNumber: 1, TargetPath: filepath.Join(seasonDir, "season.nfo")},
+		{MediaItemID: mediaID, Kind: "episode", SeasonNumber: 1, EpisodeNumber: 1, TargetPath: strings.TrimSuffix(video, ".mkv") + ".nfo"},
+	}
+	if _, err := service.SelectTVAndWrite(ctx, showID, "10", []int{1}, inputs, true, func(path string) bool { return strings.HasPrefix(path, root+string(filepath.Separator)) }); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{inputs[0].TargetPath, inputs[1].TargetPath, inputs[2].TargetPath} {
+		contents, readErr := os.ReadFile(target)
+		if readErr != nil || len(contents) == 0 {
+			t.Fatalf("expected written NFO at %q: %v", target, readErr)
+		}
+	}
+}
+
+func TestReadExistingTVNFOUsesShowAndEpisodeSidecars(t *testing.T) {
+	root := t.TempDir()
+	showNFO := filepath.Join(root, "tvshow.nfo")
+	episodeNFO := filepath.Join(root, "Example.S01E01.nfo")
+	if err := os.WriteFile(showNFO, []byte("<tvshow><title>Local Show</title><year>2024</year></tvshow>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(episodeNFO, []byte("<episodedetails><title>Local Pilot</title><season>1</season><episode>1</episode></episodedetails>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := NewService(nil, nil).ReadExistingTVNFO(7, []TVNFOInput{{Kind: "show", TargetPath: showNFO}, {Kind: "episode", TargetPath: episodeNFO}})
+	if err != nil || !found || record.Title != "Local Show" || len(record.Episodes) != 1 || record.Episodes[0].Title != "Local Pilot" {
+		t.Fatalf("unexpected record: %#v found=%t err=%v", record, found, err)
 	}
 }
 
@@ -213,6 +303,54 @@ func TestReadExistingNFOFallsBackToKodiMovieNFO(t *testing.T) {
 	record, found, err := NewService(nil, nil).ReadExistingNFO(media, 1)
 	if err != nil || !found || record.Title != "Folder title" {
 		t.Fatalf("expected movie.nfo fallback, record=%#v found=%v err=%v", record, found, err)
+	}
+}
+
+func TestHydrateExistingNFOPersistsOnlyWhenSQLiteIsEmpty(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	video := filepath.Join(root, "Example.mkv")
+	if err := os.WriteFile(video, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "movie.nfo"), []byte("<movie><title>Local title</title></movie>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	source, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := source.LastInsertId()
+	item, err := db.ExecContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, "Example.mkv", "Example", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := item.LastInsertId()
+	service := NewService(db, nil)
+	if err := service.HydrateExistingNFO(ctx, itemID, video); err != nil {
+		t.Fatal(err)
+	}
+	record, err := service.Record(ctx, itemID)
+	if err != nil || record.Title != "Local title" || record.Provider != "nfo" {
+		t.Fatalf("unexpected hydrated record: %#v err=%v", record, err)
+	}
+	if _, err := service.Save(ctx, Record{MediaItemID: itemID, Provider: "tmdb", Title: "Selected title"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HydrateExistingNFO(ctx, itemID, video); err != nil {
+		t.Fatal(err)
+	}
+	record, err = service.Record(ctx, itemID)
+	if err != nil || record.Title != "Selected title" || record.Provider != "tmdb" {
+		t.Fatalf("existing SQLite metadata must be preserved: %#v err=%v", record, err)
 	}
 }
 
