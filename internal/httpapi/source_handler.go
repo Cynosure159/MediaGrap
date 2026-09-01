@@ -40,6 +40,22 @@ func (s *server) createSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, source)
 }
 
+func (s *server) deleteSource(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_source", "Invalid source id")
+		return
+	}
+	if err := s.library.DeleteSource(r.Context(), id); err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "Media source not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *server) scanSource(w http.ResponseWriter, r *http.Request) {
 	_, ok := s.requireSession(w, r, true)
 	if !ok {

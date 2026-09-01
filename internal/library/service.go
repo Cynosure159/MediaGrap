@@ -147,6 +147,24 @@ func (s *Service) CreateSource(ctx context.Context, name, rootPath string) (Sour
 	return Source{ID: id, Name: name, RootPath: rootPath, Enabled: true, Writable: isWritable(rootPath)}, nil
 }
 
+// DeleteSource removes only MediaGrap's source configuration and its indexed
+// records. It never touches the mounted media files themselves.
+func (s *Service) DeleteSource(ctx context.Context, sourceID int64) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM sources WHERE id=?`, sourceID)
+	if err != nil {
+		return fmt.Errorf("delete source: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete source result: %w", err)
+	}
+	if deleted == 0 {
+		return errors.New("source not found")
+	}
+	s.logger.Info("media source deleted", "source_id", sourceID)
+	return nil
+}
+
 func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
 	var exists int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sources WHERE id = ? AND enabled = 1`, sourceID).Scan(&exists); err != nil || exists == 0 {

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import type { Source } from '@/api/library'
 
-defineProps<{ sources: Source[]; mediaRoots: string[]; labels: Record<string, string> }>()
+defineProps<{
+  sources: Source[]
+  mediaRoots: string[]
+  labels: Record<string, string>
+  feedback: { kind: 'success' | 'error'; message: string } | null
+}>()
 const sourceName = defineModel<string>('sourceName', { required: true })
 const sourcePath = defineModel<string>('sourcePath', { required: true })
-const emit = defineEmits<{ add: []; scan: [id: number] }>()
+const emit = defineEmits<{ add: []; scan: [id: number]; delete: [id: number] }>()
 </script>
 
 <template>
@@ -48,6 +53,9 @@ const emit = defineEmits<{ add: []; scan: [id: number] }>()
           </button>
         </div>
       </form>
+      <p v-if="feedback" class="source-feedback" :class="`source-feedback--${feedback.kind}`" role="status">
+        {{ feedback.message }}
+      </p>
 
       <!-- Empty State -->
       <p v-if="sources.length === 0" class="empty-sources">
@@ -85,6 +93,13 @@ const emit = defineEmits<{ add: []; scan: [id: number] }>()
               @click="emit('scan', source.id)"
             >
               {{ labels.scan }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger btn-sm"
+              @click="emit('delete', source.id)"
+            >
+              {{ labels.deleteSource }}
             </button>
           </div>
         </article>
@@ -173,6 +188,24 @@ const emit = defineEmits<{ add: []; scan: [id: number] }>()
 .form-action {
   display: flex;
   align-items: flex-end;
+}
+
+.source-feedback {
+  margin: -0.5rem 0 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+}
+
+.source-feedback--success {
+  border-color: var(--secondary-container, #00a572);
+  color: var(--secondary, #4edea3);
+}
+
+.source-feedback--error {
+  border-color: var(--error-bright, #f43f5e);
+  color: var(--error, #ffb4ab);
 }
 
 .empty-sources {

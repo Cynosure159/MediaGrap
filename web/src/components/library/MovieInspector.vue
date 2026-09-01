@@ -189,7 +189,6 @@ async function handleCandidateSelect(candidate: api.Candidate) {
   if (!props.itemId) return
   try {
     const newMeta = await api.selectCandidate(props.csrfToken, props.itemId, candidate.id)
-    await writeNfoToDisk(newMeta)
     applyMetadataToDraft(newMeta)
     await loadDetail(props.itemId)
     isEditing.value = false

@@ -23,7 +23,9 @@ Once a value is saved in Settings it takes precedence over the corresponding env
 
 The Settings page also manages indexed media sources. A source must be an existing directory beneath a startup media-root allowlist (`MEDIAGRAP_MEDIA_ROOTS`, default `/media`) and must already have been mounted into the container. The UI cannot browse or grant access to arbitrary host paths.
 
-For example, a Compose mount of `/srv/media/movies:/media/movies:ro` allows `/media/movies` to be added as a source. To permit NFO creation, mount that particular path read-write, then rescan after changing filesystem contents.
+Configure one logical source at the common mounted parent directory, normally `/media`. For example, mounts such as `/srv/media/movies:/media/movies:rw` and `/srv/media/shows:/media/shows:rw` can be indexed together by adding `/media` once. The scanner derives TV shows from episode filenames and lists all other indexed video files as movies; sources do not have separate Movie or TV types. To permit NFO creation, mount the relevant child paths read-write, then rescan after changing filesystem contents.
+
+Removing a media source removes only its MediaGrap configuration and indexed database records. It does not modify, move, or delete any mounted media files.
 
 ## Interface language
 

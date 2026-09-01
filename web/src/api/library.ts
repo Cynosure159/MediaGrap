@@ -53,6 +53,12 @@ export const addSource = (csrf: string, name: string, rootPath: string) =>
     body: JSON.stringify({ name, rootPath }),
   })
 
+export const deleteSource = (csrf: string, id: number) =>
+  request<void>(`/api/v1/sources/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
 export const scanSource = (csrf: string, id: number) =>
   request<Job>(`/api/v1/sources/${id}/scans`, {
     method: 'POST',

@@ -9,15 +9,41 @@ import SettingsSources from './SettingsSources.vue'
 
 const props = defineProps<{ csrfToken: string; labels: Record<string, string>; locale: Locale }>()
 const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
-const sourceName = shallowRef('Movies')
-const sourcePath = shallowRef('/media/movies')
+const sourceName = shallowRef('Media')
+const sourcePath = shallowRef('/media')
+const sourceFeedback = shallowRef<{ kind: 'success' | 'error'; message: string } | null>(null)
 const isSaving = shallowRef(false)
-const { sourceItems, refresh, createSource, scan } = useLibrary(() => props.csrfToken)
+const { sourceItems, refresh, createSource, removeSource, scan } = useLibrary(() => props.csrfToken)
 const { settings, error, isLoading, providerForm, load, saveProvider } = useSettings(() => props.csrfToken)
 
 async function initialize() { await Promise.all([load(), refresh()]) }
 async function save() { isSaving.value = true; try { await saveProvider() } finally { isSaving.value = false } }
-async function addSource() { await createSource(sourceName.value, sourcePath.value) }
+function sourceErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('outside configured media roots')) return props.labels.errorSourceOutsideRoots
+  if (message.includes('must be an accessible directory')) return props.labels.errorSourceMissing
+  if (message.includes('UNIQUE constraint failed')) return props.labels.errorSourceExists
+  return message || props.labels.errorAddSource
+}
+async function addSource() {
+  sourceFeedback.value = null
+  try {
+    await createSource(sourceName.value, sourcePath.value)
+    sourceFeedback.value = { kind: 'success', message: props.labels.sourceAdded }
+  } catch (caught) {
+    sourceFeedback.value = { kind: 'error', message: sourceErrorMessage(caught) }
+  }
+}
+async function deleteSource(id: number) {
+  if (!window.confirm(props.labels.confirmDeleteSource)) return
+  sourceFeedback.value = null
+  try {
+    await removeSource(id)
+    sourceFeedback.value = { kind: 'success', message: props.labels.sourceDeleted }
+  } catch (caught) {
+    sourceFeedback.value = { kind: 'error', message: sourceErrorMessage(caught) }
+  }
+}
 onMounted(initialize)
 </script>
 
@@ -61,8 +87,10 @@ onMounted(initialize)
         :sources="sourceItems"
         :media-roots="settings?.mediaRoots ?? []"
         :labels="labels"
+        :feedback="sourceFeedback"
         @add="addSource"
         @scan="scan"
+        @delete="deleteSource"
       />
       <SettingsInterfaceForm
         :locale="locale"

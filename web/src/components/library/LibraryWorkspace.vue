@@ -29,6 +29,11 @@ async function search(value = '') {
   await refresh(query.value)
 }
 
+async function scanActiveSource() {
+  const source = sourceItems.value[0]
+  if (source) await queueScan(source.id, query.value)
+}
+
 onMounted(async () => {
   await refresh()
 })
@@ -58,7 +63,7 @@ onMounted(async () => {
           :labels="labels"
           @search="search"
           @select="selectedMovieId = $event"
-          @scan="sourceItems[0] && queueScan(sourceItems[0].id)"
+          @scan="scanActiveSource"
         />
         <MovieInspector
           :item-id="selectedMovieId"
@@ -78,6 +83,7 @@ onMounted(async () => {
           :labels="labels"
           @search="search"
           @select="selectedShowId = $event"
+          @scan="scanActiveSource"
         />
         <TVShowInspector
           :show-id="selectedShowId"

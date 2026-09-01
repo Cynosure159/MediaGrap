@@ -147,6 +147,25 @@ func (s *Service) Select(ctx context.Context, itemID int64, providerID string) (
 	return saved, nil
 }
 
+// SelectAndWrite replaces an item's metadata with the explicitly selected
+// provider result and immediately writes its Kodi NFO using the same atomic
+// write and audit path as an applied write plan.
+func (s *Service) SelectAndWrite(ctx context.Context, itemID int64, providerID, mediaPath string, writable bool, allowed func(string) bool) (Record, error) {
+	record, err := s.Select(ctx, itemID, providerID)
+	if err != nil {
+		return Record{}, err
+	}
+	plan, err := s.Preview(ctx, record, mediaPath, writable)
+	if err != nil {
+		return Record{}, err
+	}
+	if _, err = s.Apply(ctx, plan.ID, allowed); err != nil {
+		return Record{}, err
+	}
+	s.logger.Info("TMDb movie selection NFO write completed", "media_item_id", itemID, "provider_id", providerID)
+	return record, nil
+}
+
 func (s *Service) SearchTV(ctx context.Context, query string, year *int) ([]Candidate, error) {
 	provider, ok := s.provider.(TVProvider)
 	if !ok {

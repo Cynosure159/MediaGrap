@@ -17,6 +17,56 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
 
+type staticMovieProvider struct{ details Details }
+
+func (p staticMovieProvider) SearchMovies(context.Context, string, *int) ([]Candidate, error) {
+	return nil, nil
+}
+func (p staticMovieProvider) Movie(context.Context, string) (Details, error) { return p.details, nil }
+
+func TestSelectAndWriteReplacesMetadataAndWritesNFO(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	media := filepath.Join(root, "Example.mkv")
+	if err := os.WriteFile(media, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	source, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := source.LastInsertId()
+	item, err := db.ExecContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, filepath.Base(media), "Example", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := item.LastInsertId()
+	year := 2024
+	service := NewService(db, staticMovieProvider{details: Details{Candidate: Candidate{ID: "42", Title: "Selected title", OriginalTitle: "Original title", Year: &year}}})
+	record, err := service.SelectAndWrite(ctx, itemID, "42", media, true, func(path string) bool { return strings.HasPrefix(path, root+string(filepath.Separator)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Title != "Selected title" || record.ProviderID != "42" {
+		t.Fatalf("unexpected selected record: %#v", record)
+	}
+	content, err := os.ReadFile(strings.TrimSuffix(media, ".mkv") + ".nfo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "<title>Selected title</title>") {
+		t.Fatalf("NFO did not contain selected metadata: %s", content)
+	}
+}
+
 func TestPreviewAndApplyReplacesExistingNFO(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

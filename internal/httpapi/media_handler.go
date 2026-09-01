@@ -111,7 +111,16 @@ func (s *server) selectMediaCandidate(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	record, err := s.metadata.Select(r.Context(), id, body.CandidateID)
+	location, err := s.library.LocateMedia(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media item not found")
+		return
+	}
+	if !location.Writable {
+		writeError(w, http.StatusBadRequest, "source_read_only", "The media source is read-only")
+		return
+	}
+	record, err := s.metadata.SelectAndWrite(r.Context(), id, body.CandidateID, location.AbsolutePath, location.Writable, s.library.Allowed)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "provider_unavailable", err.Error())
 		return

@@ -75,6 +75,7 @@ func NewServer(
 	// Sources
 	mux.HandleFunc("GET /api/v1/sources", application.listSources)
 	mux.HandleFunc("POST /api/v1/sources", application.createSource)
+	mux.HandleFunc("DELETE /api/v1/sources/{id}", application.deleteSource)
 	mux.HandleFunc("POST /api/v1/sources/{id}/scans", application.scanSource)
 
 	// Media (Movies)

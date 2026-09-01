@@ -95,3 +95,44 @@ func TestMetadataSearchHintFallsBackToFilenameAtSourceRoot(t *testing.T) {
 		t.Fatalf("unexpected filename search hint: title=%q year=%v origin=%q", title, actualYear, origin)
 	}
 }
+
+func TestDeleteSourceRemovesOnlyIndexedRecords(t *testing.T) {
+	root := t.TempDir()
+	mediaPath := filepath.Join(root, "Movie.mkv")
+	if err := os.WriteFile(mediaPath, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(t.TempDir(), "mediagrap.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := database.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.ExecContext(t.Context(), `INSERT INTO sources(name, root_path) VALUES(?, ?)`, "Media", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO media_items(source_id, relative_path, title_hint, file_size, modified_at) VALUES(?, ?, ?, ?, ?)`, sourceID, "Movie.mkv", "Movie", 1, "2024-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewService(db, []string{root}).DeleteSource(t.Context(), sourceID); err != nil {
+		t.Fatal(err)
+	}
+	var sourceCount, mediaCount int
+	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sources`).Scan(&sourceCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM media_items`).Scan(&mediaCount); err != nil {
+		t.Fatal(err)
+	}
+	if sourceCount != 0 || mediaCount != 0 {
+		t.Fatalf("expected source and index records to be removed, got sources=%d media=%d", sourceCount, mediaCount)
+	}
+	if _, err := os.Stat(mediaPath); err != nil {
+		t.Fatalf("source deletion must not affect mounted files: %v", err)
+	}
+}

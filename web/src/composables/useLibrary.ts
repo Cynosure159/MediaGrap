@@ -37,9 +37,24 @@ export function useLibrary(csrfToken: () => string) {
     await refresh()
   }
 
-  async function scan(id: number) {
-    await api.scanSource(csrfToken(), id)
+  async function removeSource(id: number) {
+    await api.deleteSource(csrfToken(), id)
     await refresh()
+  }
+
+  async function scan(id: number, query = '') {
+    const job = await api.scanSource(csrfToken(), id)
+    await refresh(query)
+
+    // Scans run in the server worker. Keep the catalog in sync when this
+    // particular scan reaches a terminal state instead of leaving stale rows
+    // visible until the user manually reloads the page.
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+      await refresh(query)
+      const currentJob = jobItems.value.find(item => item.id === job.id)
+      if (currentJob && ['succeeded', 'failed', 'cancelled'].includes(currentJob.state)) return
+    }
   }
 
   return {
@@ -52,6 +67,7 @@ export function useLibrary(csrfToken: () => string) {
     hasSources,
     refresh,
     createSource,
+    removeSource,
     scan,
   }
 }
