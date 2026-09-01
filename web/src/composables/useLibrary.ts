@@ -11,6 +11,42 @@ export function useLibrary(csrfToken: () => string) {
 
   const hasSources = computed(() => sourceItems.value.length > 0)
 
+  async function refreshSources() {
+    try {
+      const res = await api.sources()
+      sourceItems.value = res.items
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : 'Unable to load sources'
+    }
+  }
+
+  async function refreshMedia(query = '') {
+    try {
+      const res = await api.media(query)
+      mediaItems.value = res.items
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : 'Unable to load media items'
+    }
+  }
+
+  async function refreshTVShows(query = '') {
+    try {
+      const res = await api.tvShows(query)
+      tvShowItems.value = res.items
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : 'Unable to load TV shows'
+    }
+  }
+
+  async function refreshJobs() {
+    try {
+      const res = await api.jobs()
+      jobItems.value = res.items
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : 'Unable to load jobs'
+    }
+  }
+
   async function refresh(query = '') {
     isLoading.value = true
     error.value = null
@@ -34,26 +70,27 @@ export function useLibrary(csrfToken: () => string) {
 
   async function createSource(name: string, rootPath: string) {
     await api.addSource(csrfToken(), name, rootPath)
-    await refresh()
+    await refreshSources()
   }
 
   async function removeSource(id: number) {
     await api.deleteSource(csrfToken(), id)
-    await refresh()
+    await refreshSources()
   }
 
   async function scan(id: number, query = '') {
     const job = await api.scanSource(csrfToken(), id)
-    await refresh(query)
+    await refreshJobs()
 
-    // Scans run in the server worker. Keep the catalog in sync when this
-    // particular scan reaches a terminal state instead of leaving stale rows
-    // visible until the user manually reloads the page.
+    // Scans run in the server worker. Poll job status efficiently.
     for (let attempt = 0; attempt < 120; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      await refresh(query)
+      await refreshJobs()
       const currentJob = jobItems.value.find(item => item.id === job.id)
-      if (currentJob && ['succeeded', 'failed', 'cancelled'].includes(currentJob.state)) return
+      if (currentJob && ['succeeded', 'failed', 'cancelled'].includes(currentJob.state)) {
+        await Promise.all([refreshMedia(query), refreshTVShows(query), refreshSources()])
+        return
+      }
     }
   }
 
@@ -66,6 +103,10 @@ export function useLibrary(csrfToken: () => string) {
     isLoading,
     hasSources,
     refresh,
+    refreshSources,
+    refreshMedia,
+    refreshTVShows,
+    refreshJobs,
     createSource,
     removeSource,
     scan,

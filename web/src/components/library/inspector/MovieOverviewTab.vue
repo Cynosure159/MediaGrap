@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import * as api from '@/api/library'
 import type { CastMember, MediaItem } from '@/api/types'
+import TechSpecGrid from './TechSpecGrid.vue'
+import MetadataForm from './MetadataForm.vue'
 
 export interface MovieDraft {
   title: string
@@ -131,11 +133,7 @@ const techSpecs = computed(() => {
       </div>
 
       <!-- Spec Pills Row (High-Density Tech Tags) -->
-      <div class="spec-pills-row">
-        <span v-for="spec in techSpecs" :key="spec" class="spec-pill">
-          {{ spec }}
-        </span>
-      </div>
+      <TechSpecGrid :specs="techSpecs" />
     </div>
 
     <!-- ── 2. Content Layout (Compact Poster + High Priority Info) ──── -->
@@ -165,69 +163,8 @@ const techSpecs = computed(() => {
 
       <!-- ── Right: High-Priority Info + Plot + File Info ── -->
       <div class="details-container">
-        <!-- ── Top Priority: Core Metadata Grid (2 Columns) ── -->
-        <div class="meta-blocks-grid">
-          <!-- Row 1, Col 1: Release Date -->
-          <div class="meta-card">
-            <span class="card-label-caps">{{ labels.releaseDate || '上映日期' }}</span>
-            <div v-if="!isEditing" class="meta-val font-code">
-              {{ draft.year || '—' }}
-            </div>
-            <div v-else class="meta-input-wrap">
-              <input v-model="draft.year" type="number" class="card-input font-code" :placeholder="labels.yearPlaceholder || 'YYYY'" />
-              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" class="meta-field-icon">
-                <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
-              </svg>
-            </div>
-          </div>
-
-          <!-- Row 1, Col 2: Genres (Pill Badges) -->
-          <div class="meta-card">
-            <span class="card-label-caps">{{ labels.genres || '类型' }}</span>
-            <div v-if="!isEditing" class="genres-pills-list">
-              <span v-for="g in draft.genres" :key="g" class="genre-tag-pill">
-                {{ g }}
-              </span>
-              <span v-if="draft.genres.length === 0" class="genre-empty-hint">
-                {{ labels.noGenres || '暂无分类' }}
-              </span>
-            </div>
-            <input
-              v-else
-              v-model="genresInput"
-              type="text"
-              class="card-input"
-              :placeholder="labels.genresPlaceholder || '剧情, 动作, 历史'"
-            />
-          </div>
-
-          <!-- Row 2, Col 1: Director -->
-          <div class="meta-card">
-            <span class="card-label-caps">{{ labels.director || '导演' }}</span>
-            <div v-if="!isEditing" class="meta-val meta-val-highlight">
-              {{ draft.director || '—' }}
-            </div>
-            <input v-else v-model="draft.director" type="text" class="card-input" :placeholder="labels.directorPlaceholder || '导演'" />
-          </div>
-
-          <!-- Row 2, Col 2: Writers -->
-          <div class="meta-card">
-            <span class="card-label-caps">{{ labels.writers || '编剧' }}</span>
-            <div v-if="!isEditing" class="meta-val" :title="draft.writers">
-              {{ draft.writers || '—' }}
-            </div>
-            <input v-else v-model="draft.writers" type="text" class="card-input" :placeholder="labels.writerPlaceholder || '编剧、剧本'" />
-          </div>
-
-          <!-- Row 3: Studio / Production (Full Width across 2 columns) -->
-          <div class="meta-card meta-card-full">
-            <span class="card-label-caps">{{ labels.studio || '制作公司' }}</span>
-            <div v-if="!isEditing" class="meta-val" :title="draft.studio">
-              {{ draft.studio || '—' }}
-            </div>
-            <input v-else v-model="draft.studio" type="text" class="card-input" :placeholder="labels.studioPlaceholder || '制作公司'" />
-          </div>
-        </div>
+        <!-- ── Top Priority: Core Metadata Grid ── -->
+        <MetadataForm :draft="draft" :is-editing="isEditing" :labels="labels" />
 
         <!-- ── Plot Summary Card ── -->
         <div class="plot-card">

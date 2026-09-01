@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import type { Candidate } from '@/api/types'
 import * as api from '@/api/library'
+import ScraperSearchForm from './ScraperSearchForm.vue'
 
 const props = withDefaults(defineProps<{
   itemId: number
@@ -84,27 +85,14 @@ onMounted(() => {
       </header>
 
       <!-- ── Search Box ───────────────────────────────────────────── -->
-      <div class="search-bar-wrap">
-        <div class="search-input-box">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="modal-search-input"
-            :placeholder="labels.searchKeyword || '输入电影名称或关键词搜索...'"
-            @keydown.enter.prevent="performSearch"
-          />
-        </div>
-        <button class="btn btn-primary search-action-btn" :disabled="isSearching" type="button" @click="performSearch">
-          <svg v-if="isSearching" viewBox="0 0 24 24" fill="currentColor" width="14" height="14" class="spin-slow">
-            <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-          </svg>
-          <span>{{ isSearching ? (labels.searching || '搜索中...') : (labels.search || '搜索') }}</span>
-        </button>
-      </div>
+      <ScraperSearchForm
+        v-model="searchQuery"
+        :is-searching="isSearching"
+        :placeholder="labels.searchKeyword || '输入电影/剧集名称或关键词搜索...'"
+        :search-label="labels.search || '搜索'"
+        :searching-label="labels.searching || '搜索中...'"
+        @search="performSearch"
+      />
 
       <!-- ── Error Alert ──────────────────────────────────────────── -->
       <div v-if="searchError" class="modal-error-alert">

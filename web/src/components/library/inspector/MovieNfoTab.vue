@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-const props = defineProps<{
-  content: string
-  labels: Record<string, string>
-}>()
+const props = withDefaults(
+  defineProps<{
+    content: string
+    labels: Record<string, string>
+    filename?: string
+    headerLabel?: string
+    actionLabel?: string
+    readOnly?: boolean
+  }>(),
+  {
+    filename: 'movie.nfo',
+    readOnly: false,
+  }
+)
 
 const emit = defineEmits<{
   saveToNfo: []
@@ -27,7 +37,7 @@ async function copyXml() {
   <section class="nfo-workshop-view">
     <div class="workshop-header">
       <div class="header-left">
-        <h2>{{ labels.nfoXmlEditor || 'Kodi NFO Raw XML' }}</h2>
+        <h2>{{ headerLabel || labels.nfoXmlEditor || 'Kodi NFO Raw XML' }}</h2>
         <span class="sub-label">Deterministic UTF-8 Kodi sidecar metadata specification</span>
       </div>
       <div class="workshop-actions">
@@ -37,11 +47,11 @@ async function copyXml() {
           </svg>
           {{ copied ? (labels.copied || 'Copied!') : (labels.copy || 'Copy XML') }}
         </button>
-        <button class="btn btn-success" type="button" @click="emit('saveToNfo')">
+        <button v-if="!readOnly" class="btn btn-success" type="button" @click="emit('saveToNfo')">
           <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
             <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
           </svg>
-          {{ labels.saveToNfo || 'Save to movie.nfo' }}
+          {{ actionLabel || labels.saveToNfo || 'Save to movie.nfo' }}
         </button>
       </div>
     </div>
@@ -49,7 +59,7 @@ async function copyXml() {
     <!-- XML Editor / Code Canvas -->
     <div class="xml-editor-canvas">
       <div class="xml-canvas-header">
-        <div class="file-tag font-code">movie.nfo</div>
+        <div class="file-tag font-code">{{ filename }}</div>
         <div class="encoding-tag font-code">UTF-8 • XML v1.0 • Kodi v20/v21</div>
       </div>
       <pre class="xml-code font-code"><code>{{ content }}</code></pre>
