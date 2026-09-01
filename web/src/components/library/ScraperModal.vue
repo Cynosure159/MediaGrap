@@ -3,12 +3,15 @@ import { ref, onMounted } from 'vue'
 import type { Candidate } from '@/api/types'
 import * as api from '@/api/library'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   itemId: number
   itemTitle: string
   itemYear?: number | null
   labels: Record<string, string>
-}>()
+  mediaType?: 'movie' | 'tv'
+}>(), {
+  mediaType: 'movie'
+})
 
 const emit = defineEmits<{
   select: [candidate: Candidate]
@@ -27,8 +30,13 @@ async function performSearch() {
   isSearching.value = true
   searchError.value = null
   try {
-    const res = await api.candidates(props.itemId, searchQuery.value.trim())
-    candidatesList.value = res.items || []
+    if (props.mediaType === 'tv') {
+      const res = await api.tvShowCandidates(props.itemId, searchQuery.value.trim())
+      candidatesList.value = res.items || []
+    } else {
+      const res = await api.candidates(props.itemId, searchQuery.value.trim())
+      candidatesList.value = res.items || []
+    }
   } catch (err) {
     searchError.value = err instanceof Error ? err.message : (props.labels.errorSearchCandidates || 'Failed to search candidates')
   } finally {
