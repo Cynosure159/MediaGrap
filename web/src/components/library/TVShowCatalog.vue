@@ -3,6 +3,7 @@ import { computed, shallowReactive, shallowRef } from 'vue'
 import * as api from '@/api/library'
 import type { Job, TVSelection, TVShow, TVShowDetail } from '@/api/library'
 import TVShowTreeItem from './TVShowTreeItem.vue'
+import SearchBar from '@/components/common/SearchBar.vue'
 
 const props = defineProps<{
   items: TVShow[]
@@ -53,19 +54,11 @@ async function toggleShow(showId: number) {
     <!-- Header with Search and Stats -->
     <div class="catalog-header">
       <!-- Search Input -->
-      <div class="search-box">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          v-model="query"
-          type="text"
-          class="search-input"
-          :placeholder="labels.searchShows || '搜索剧名、年份、路径...'"
-          @keydown.enter.prevent="emit('search', query)"
-        />
-      </div>
+      <SearchBar
+        v-model="query"
+        :placeholder="labels.searchShows || '搜索剧名、年份、路径...'"
+        @search="emit('search', query)"
+      />
 
       <!-- Count & Actions Bar -->
       <div class="catalog-toolbar">

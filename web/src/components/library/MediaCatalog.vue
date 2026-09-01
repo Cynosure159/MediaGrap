@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import type { Job, MediaItem } from '@/api/library'
+import SearchBar from '@/components/common/SearchBar.vue'
 
 const props = defineProps<{
   items: MediaItem[]
@@ -51,19 +52,11 @@ function getResolution(item: MediaItem): string {
     <!-- Header with Search and Stats -->
     <div class="catalog-header">
       <!-- Search Input -->
-      <div class="search-box">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          v-model="query"
-          type="text"
-          class="search-input"
-          :placeholder="labels.searchPlaceholder || '搜索片名、年份、IMDb ID...'"
-          @keydown.enter.prevent="submitSearch"
-        />
-      </div>
+      <SearchBar
+        v-model="query"
+        :placeholder="labels.searchPlaceholder || '搜索片名、年份、IMDb ID...'"
+        @search="submitSearch"
+      />
 
       <!-- Count & Actions Bar -->
       <div class="catalog-toolbar">
