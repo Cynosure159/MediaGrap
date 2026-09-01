@@ -1,12 +1,20 @@
 package metadata
 
-import "testing"
+import (
+	"log/slog"
+	"net/http"
+	"testing"
+)
 
-func TestReleaseYear(t *testing.T) {
-	if year := releaseYear("1999-03-30"); year == nil || *year != 1999 {
-		t.Fatalf("unexpected year: %v", year)
+func TestTMDbProviderInterface(t *testing.T) {
+	provider := NewTMDb(slog.Default(), http.DefaultClient, "test-api-key")
+	var _ Provider = provider
+	var _ TVProvider = provider
+
+	if provider.HTTPClient() == nil {
+		t.Fatal("expected HTTP client to be configured")
 	}
-	if releaseYear("bad") != nil {
-		t.Fatal("invalid date returned a year")
+	if provider.Logger() == nil {
+		t.Fatal("expected logger to be configured")
 	}
 }

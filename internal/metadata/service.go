@@ -1,17 +1,13 @@
 package metadata
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mediagrap/mediagrap/internal/artwork"
+	"github.com/mediagrap/mediagrap/internal/files"
 	"github.com/mediagrap/mediagrap/internal/kodi"
 )
 
@@ -721,9 +719,7 @@ func (s *Service) Plan(ctx context.Context, id string) (WritePlan, error) {
 	if err != nil {
 		return WritePlan{}, errors.New("write plan not found")
 	}
-	info, statErr := os.Lstat(plan.TargetPath)
-	plan.WillReplace = statErr == nil
-	plan.Conflict = statErr == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular())
+	plan.WillReplace, plan.Conflict, _ = files.ValidateTarget(plan.TargetPath)
 	return plan, nil
 }
 func (s *Service) Apply(ctx context.Context, id string, allowed func(string) bool) (WritePlan, error) {
@@ -734,31 +730,15 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 	if plan.State != "previewed" {
 		return WritePlan{}, errors.New("write plan is no longer pending")
 	}
-	if !allowed(plan.TargetPath) {
-		return WritePlan{}, errors.New("target path is outside configured media roots")
+	if err := files.CheckAllowed(plan.TargetPath, allowed); err != nil {
+		return WritePlan{}, err
 	}
 	if plan.Conflict {
 		_, _ = s.db.ExecContext(ctx, `UPDATE write_plans SET state='conflicted' WHERE id=?`, id)
 		return WritePlan{}, errors.New("target NFO is not a regular file and cannot be replaced")
 	}
-	directory := filepath.Dir(plan.TargetPath)
-	temp, err := os.CreateTemp(directory, ".mediagrap-*.nfo")
-	if err != nil {
-		return WritePlan{}, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err = temp.WriteString(plan.Content); err == nil {
-		err = temp.Sync()
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	if err := files.AtomicWriteFile(plan.TargetPath, []byte(plan.Content)); err != nil {
 		return WritePlan{}, fmt.Errorf("write NFO: %w", err)
-	}
-	if err = os.Rename(tempName, plan.TargetPath); err != nil {
-		return WritePlan{}, fmt.Errorf("replace NFO: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE write_plans SET state='applied',applied_at=datetime('now') WHERE id=?`, id)
 	if err != nil {
@@ -922,66 +902,20 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 }
 
 func downloadArtwork(ctx context.Context, client *http.Client, asset ArtworkAsset) (string, error) {
-	if client == nil {
-		return "", errors.New("artwork client is unavailable")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.SourceURL, nil)
-	if err != nil {
-		return "", errors.New("create artwork request")
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return "", errors.New("download artwork request failed")
-	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("artwork provider returned HTTP %d", response.StatusCode)
-	}
-	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || contentType != "image/jpeg" {
-		return "", errors.New("artwork provider did not return a JPEG image")
-	}
-	reader := bufio.NewReader(response.Body)
-	header, err := reader.Peek(3)
-	if err != nil || len(header) != 3 || header[0] != 0xff || header[1] != 0xd8 || header[2] != 0xff {
-		return "", errors.New("artwork provider returned an invalid JPEG image")
-	}
-	temp, err := os.CreateTemp(filepath.Dir(asset.TargetPath), ".mediagrap-*.jpg")
-	if err != nil {
-		return "", err
-	}
-	tempName := temp.Name()
-	written, copyErr := io.Copy(temp, io.LimitReader(reader, maxArtworkBytes+1))
-	if copyErr == nil && written > maxArtworkBytes {
-		copyErr = errors.New("artwork exceeds the 25 MiB safety limit")
-	}
-	if copyErr == nil {
-		copyErr = temp.Sync()
-	}
-	if closeErr := temp.Close(); copyErr == nil {
-		copyErr = closeErr
-	}
-	if copyErr != nil {
-		_ = os.Remove(tempName)
-		return "", fmt.Errorf("write artwork: %w", copyErr)
-	}
-	return tempName, nil
+	return artwork.DownloadJPEG(ctx, client, asset.SourceURL, filepath.Dir(asset.TargetPath))
 }
 
 func validateTMDbImageURL(value string) error {
-	parsed, err := url.Parse(strings.TrimSpace(value))
-	if err != nil || parsed.Scheme != "https" || parsed.Host != "image.tmdb.org" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || !strings.HasPrefix(parsed.EscapedPath(), "/t/p/") {
-		return errors.New("must be an HTTPS image.tmdb.org URL")
-	}
-	return nil
+	return artwork.ValidateTMDbImageURL(value)
 }
 
 func nfoTarget(mediaPath string) (string, bool, error) {
 	candidates := []string{strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo", filepath.Join(filepath.Dir(mediaPath), "movie.nfo")}
 	for _, candidate := range candidates {
-		if _, err := os.Lstat(candidate); err == nil {
+		willReplace, _, err := files.ValidateTarget(candidate)
+		if err == nil && willReplace {
 			return candidate, true, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
+		} else if err != nil {
 			return "", false, fmt.Errorf("inspect NFO target: %w", err)
 		}
 	}

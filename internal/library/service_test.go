@@ -69,7 +69,7 @@ func TestScanIndexesTVSeparatelyFromMovies(t *testing.T) {
 	}
 	jobID, _ := result.LastInsertId()
 	service := NewService(db, []string{root})
-	if err := service.scan(t.Context(), jobID, sourceID); err != nil {
+	if err := service.scan(t.Context(), jobID, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	shows, err := service.ListTVShows(t.Context(), "")

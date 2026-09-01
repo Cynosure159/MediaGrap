@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mediagrap/mediagrap/internal/jobs"
 )
 
 var videoExtensions = map[string]bool{".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".webm": true}
@@ -53,17 +55,7 @@ type Sidecar struct {
 	RelativePath string `json:"relativePath"`
 	Kind         string `json:"kind"`
 }
-type Job struct {
-	ID              int64  `json:"id"`
-	Kind            string `json:"kind"`
-	SourceID        *int64 `json:"sourceId"`
-	State           string `json:"state"`
-	ProgressCurrent int    `json:"progressCurrent"`
-	ProgressTotal   int    `json:"progressTotal"`
-	Message         string `json:"message"`
-	ErrorMessage    string `json:"errorMessage"`
-	CreatedAt       string `json:"createdAt"`
-}
+type Job = jobs.Job
 type Page struct {
 	Items    []MediaItem `json:"items"`
 	Total    int         `json:"total"`
@@ -103,19 +95,34 @@ type Service struct {
 	roots            []string
 	locks            sync.Map
 	logger           *slog.Logger
+	jobs             *jobs.Service
 	metadataHydrator interface {
 		HydrateExistingNFO(context.Context, int64, string) error
 	}
 }
 
 func NewService(db *sql.DB, roots []string) *Service {
-	return &Service{db: db, roots: roots, logger: slog.Default()}
+	logger := slog.Default()
+	s := &Service{db: db, roots: roots, logger: logger, jobs: jobs.NewService(db, logger)}
+	s.registerScanJobHandler()
+	return s
 }
 
 func (s *Service) SetLogger(logger *slog.Logger) {
 	if logger != nil {
 		s.logger = logger
+		s.jobs = jobs.NewService(s.db, logger)
+		s.registerScanJobHandler()
 	}
+}
+
+func (s *Service) registerScanJobHandler() {
+	s.jobs.RegisterHandler("scan", func(ctx context.Context, job jobs.Job, updateProgress func(current int, message string)) error {
+		if job.SourceID == nil {
+			return errors.New("source id is required for scan job")
+		}
+		return s.scan(ctx, job.ID, *job.SourceID, updateProgress)
+	})
 }
 
 func (s *Service) SetMetadataHydrator(hydrator interface {
@@ -188,43 +195,15 @@ func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sources WHERE id = ? AND enabled = 1`, sourceID).Scan(&exists); err != nil || exists == 0 {
 		return Job{}, errors.New("source not found")
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO jobs(kind, source_id, state, message) VALUES('scan', ?, 'queued', 'Waiting for a worker')`, sourceID)
-	if err != nil {
-		return Job{}, err
-	}
-	id, _ := result.LastInsertId()
-	return s.Job(ctx, id)
+	return s.jobs.Queue(ctx, "scan", &sourceID)
 }
 
 func (s *Service) ListJobs(ctx context.Context) ([]Job, error) {
-	return s.listJobs(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, created_at FROM jobs ORDER BY id DESC LIMIT 50`)
+	return s.jobs.List(ctx)
 }
+
 func (s *Service) Job(ctx context.Context, id int64) (Job, error) {
-	jobs, err := s.listJobs(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, created_at FROM jobs WHERE id = `+fmt.Sprint(id))
-	if err != nil || len(jobs) == 0 {
-		return Job{}, errors.New("job not found")
-	}
-	return jobs[0], nil
-}
-func (s *Service) listJobs(ctx context.Context, query string) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	jobs := []Job{}
-	for rows.Next() {
-		var job Job
-		var source sql.NullInt64
-		if err := rows.Scan(&job.ID, &job.Kind, &source, &job.State, &job.ProgressCurrent, &job.ProgressTotal, &job.Message, &job.ErrorMessage, &job.CreatedAt); err != nil {
-			return nil, err
-		}
-		if source.Valid {
-			job.SourceID = &source.Int64
-		}
-		jobs = append(jobs, job)
-	}
-	return jobs, rows.Err()
+	return s.jobs.Get(ctx, id)
 }
 
 func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize int) (Page, error) {
@@ -516,41 +495,10 @@ func (s *Service) sidecars(ctx context.Context, id int64) ([]Sidecar, error) {
 }
 
 func (s *Service) RunWorker(ctx context.Context) {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.runOne(ctx)
-		}
-	}
+	s.jobs.RunWorker(ctx)
 }
-func (s *Service) runOne(ctx context.Context) {
-	var id, sourceID int64
-	err := s.db.QueryRowContext(ctx, `SELECT id,source_id FROM jobs WHERE state='queued' AND kind='scan' ORDER BY id LIMIT 1`).Scan(&id, &sourceID)
-	if err != nil {
-		return
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE jobs SET state='running',started_at=datetime('now'),updated_at=datetime('now'),message='Scanning source' WHERE id=? AND state='queued'`, id)
-	if err != nil {
-		return
-	}
-	changed, _ := result.RowsAffected()
-	if changed == 0 {
-		return
-	}
-	s.logger.Info("library scan started", "job_id", id, "source_id", sourceID)
-	if err := s.scan(ctx, id, sourceID); err != nil {
-		s.db.ExecContext(ctx, `UPDATE jobs SET state='failed',error_message=?,completed_at=datetime('now'),updated_at=datetime('now') WHERE id=?`, err.Error(), id)
-		s.logger.Error("library scan failed", "job_id", id, "source_id", sourceID, "error", err)
-		return
-	}
-	s.db.ExecContext(ctx, `UPDATE jobs SET state='succeeded',message='Scan complete',completed_at=datetime('now'),updated_at=datetime('now') WHERE id=?`, id)
-	s.logger.Info("library scan completed", "job_id", id, "source_id", sourceID)
-}
-func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
+
+func (s *Service) scan(ctx context.Context, jobID, sourceID int64, progress func(current int, message string)) error {
 	var root string
 	if err := s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, sourceID).Scan(&root); err != nil {
 		return err
@@ -603,8 +551,8 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64) error {
 			}
 		}
 		count++
-		if count%25 == 0 {
-			s.db.ExecContext(ctx, `UPDATE jobs SET progress_current=?,message='Indexed media files',updated_at=datetime('now') WHERE id=?`, count, jobID)
+		if count%25 == 0 && progress != nil {
+			progress(count, "Indexed media files")
 		}
 		return nil
 	})
