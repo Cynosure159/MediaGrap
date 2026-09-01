@@ -27,8 +27,7 @@ func (s *server) listTVShows(w http.ResponseWriter, r *http.Request) {
 	for index := range items {
 		if root, err := s.tvSourceRoot(r.Context(), items[index].SourceID); err == nil {
 			showDir := filepath.Join(root, items[index].RelativePath)
-			candidates := []string{"poster.jpg", "poster.png", "folder.jpg", "cover.jpg", "poster.jpeg"}
-			for _, name := range candidates {
+			for _, name := range library.PosterFilenames {
 				if info, err := os.Stat(filepath.Join(showDir, name)); err == nil && info.Mode().IsRegular() {
 					items[index].PosterURL = "/api/v1/tv/shows/" + strconv.FormatInt(items[index].ID, 10) + "/poster"
 					break
@@ -258,8 +257,7 @@ func (s *server) getTVShowPoster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	showDir := filepath.Join(root, detail.Show.RelativePath)
-	candidates := []string{"poster.jpg", "poster.png", "folder.jpg", "cover.jpg", "poster.jpeg"}
-	for _, name := range candidates {
+	for _, name := range library.PosterFilenames {
 		target := filepath.Join(showDir, name)
 		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
 			w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(target)))

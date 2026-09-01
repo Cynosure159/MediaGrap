@@ -8,11 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/mediagrap/mediagrap/internal/auth"
-	"github.com/mediagrap/mediagrap/internal/library"
-	"github.com/mediagrap/mediagrap/internal/metadata"
-	"github.com/mediagrap/mediagrap/internal/settings"
 )
 
 //go:embed ui/fallback.html ui/dist/*
@@ -28,20 +23,20 @@ type server struct {
 	logger          *slog.Logger
 	db              *sql.DB
 	build           BuildInfo
-	auth            *auth.Service
-	library         *library.Service
-	metadata        *metadata.Service
-	settingsService *settings.Service
+	auth            AuthService
+	library         LibraryService
+	metadata        MetadataService
+	settingsService SettingsService
 }
 
 func NewServer(
 	logger *slog.Logger,
 	db *sql.DB,
 	build BuildInfo,
-	authService *auth.Service,
-	libraryService *library.Service,
-	metadataService *metadata.Service,
-	settingsService *settings.Service,
+	authService AuthService,
+	libraryService LibraryService,
+	metadataService MetadataService,
+	settingsService SettingsService,
 ) http.Handler {
 	application := &server{
 		logger:          logger,

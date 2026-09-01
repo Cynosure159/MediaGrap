@@ -103,19 +103,7 @@ func mediaLocalArtworkURL(mediaID int64, kind string) string {
 }
 
 func hasLocalArtwork(item library.MediaItem, kind string) bool {
-	for _, asset := range item.Sidecars {
-		name := strings.ToLower(strings.TrimSuffix(filepath.Base(asset.RelativePath), filepath.Ext(asset.RelativePath)))
-		if asset.Kind != "image" {
-			continue
-		}
-		if kind == "poster" && (name == "poster" || name == "folder" || name == "cover") {
-			return true
-		}
-		if kind == "fanart" && (name == "fanart" || name == "backdrop" || name == "landscape") {
-			return true
-		}
-	}
-	return false
+	return library.HasLocalArtwork(item.Sidecars, kind)
 }
 
 func (s *server) getMediaLocalArtwork(w http.ResponseWriter, r *http.Request) {
