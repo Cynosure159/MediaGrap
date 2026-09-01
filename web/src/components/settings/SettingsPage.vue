@@ -124,20 +124,30 @@ onMounted(initialize)
   gap: 0.25rem;
 }
 
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
 .settings-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  line-height: 1.3;
+  color: var(--on-surface);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 .settings-intro {
   margin: 0;
   font-size: 0.8125rem;
-  color: var(--text-muted);
+  color: var(--on-surface-variant);
   line-height: 1.5;
 }
 
@@ -152,7 +162,7 @@ onMounted(initialize)
   margin-top: 1.25rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
-  background: var(--surface-elevated);
+  background: var(--surface-container-low);
   border: 1px solid var(--error-container);
   color: var(--error);
   font-size: 0.8125rem;
@@ -163,7 +173,7 @@ onMounted(initialize)
   align-items: center;
   justify-content: center;
   padding: 3rem 1rem;
-  color: var(--text-muted);
+  color: var(--outline);
   font-size: 0.875rem;
 }
 

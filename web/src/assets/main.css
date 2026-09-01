@@ -193,6 +193,25 @@ button:focus-visible {
   color: var(--error);
   border-color: var(--error);
 }
+.btn-danger:hover:not(:disabled) {
+  background: var(--error-bright);
+  color: #ffffff;
+}
+.btn-danger-subtle {
+  background: rgba(147, 0, 10, 0.25);
+  color: var(--error);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+.btn-danger-subtle:hover:not(:disabled) {
+  background: var(--error-container);
+  color: #ffffff;
+  border-color: var(--error-bright);
+}
+.btn-sm {
+  height: 24px;
+  padding: 0 0.5rem;
+  font-size: 11px;
+}
 
 /* ── Badges & Spec Pills ──────────────────────────────────────────── */
 .spec-pill {
