@@ -55,13 +55,13 @@ type TVDetails struct {
 }
 
 type TVEpisodeDetails struct {
-	SeasonNumber   int     `json:"seasonNumber"`
-	EpisodeNumber  int     `json:"episodeNumber"`
-	Title          string  `json:"title"`
-	Overview       string  `json:"overview"`
-	AirDate        string  `json:"airDate"`
-	RuntimeMinutes *int    `json:"runtimeMinutes"`
-	StillURL       string  `json:"stillUrl"`
+	SeasonNumber   int    `json:"seasonNumber"`
+	EpisodeNumber  int    `json:"episodeNumber"`
+	Title          string `json:"title"`
+	Overview       string `json:"overview"`
+	AirDate        string `json:"airDate"`
+	RuntimeMinutes *int   `json:"runtimeMinutes"`
+	StillURL       string `json:"stillUrl"`
 }
 
 type Provider interface {
@@ -179,34 +179,56 @@ func (t *TMDb) Movie(ctx context.Context, id string) (Details, error) {
 
 func (t *TMDb) SearchTV(ctx context.Context, query string, year *int) ([]Candidate, error) {
 	apiKey, language, _, err := t.configured()
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	params := url.Values{"api_key": {apiKey}, "query": {query}, "language": {language}}
-	if year != nil { params.Set("first_air_date_year", strconv.Itoa(*year)) }
-	var result struct { Results []tmdbTV `json:"results"` }
-	if err := t.get(ctx, "/search/tv", params, &result); err != nil { return nil, err }
+	if year != nil {
+		params.Set("first_air_date_year", strconv.Itoa(*year))
+	}
+	var result struct {
+		Results []tmdbTV `json:"results"`
+	}
+	if err := t.get(ctx, "/search/tv", params, &result); err != nil {
+		return nil, err
+	}
 	candidates := make([]Candidate, 0, len(result.Results))
-	for _, item := range result.Results { candidates = append(candidates, item.candidate()) }
+	for _, item := range result.Results {
+		candidates = append(candidates, item.candidate())
+	}
 	return candidates, nil
 }
 
 func (t *TMDb) TV(ctx context.Context, id string) (TVDetails, error) {
 	apiKey, language, _, err := t.configured()
-	if err != nil { return TVDetails{}, err }
-	if id == "" { return TVDetails{}, errors.New("TMDb TV id is required") }
+	if err != nil {
+		return TVDetails{}, err
+	}
+	if id == "" {
+		return TVDetails{}, errors.New("TMDb TV id is required")
+	}
 	var result tmdbTV
 	params := url.Values{"api_key": {apiKey}, "language": {language}, "append_to_response": {"credits"}}
-	if err := t.get(ctx, "/tv/"+url.PathEscape(id), params, &result); err != nil { return TVDetails{}, err }
+	if err := t.get(ctx, "/tv/"+url.PathEscape(id), params, &result); err != nil {
+		return TVDetails{}, err
+	}
 	genres := make([]string, 0, len(result.Genres))
-	for _, genre := range result.Genres { genres = append(genres, genre.Name) }
+	for _, genre := range result.Genres {
+		genres = append(genres, genre.Name)
+	}
 	cast := make([]Person, 0, min(len(result.Credits.Cast), 20))
 	for index, person := range result.Credits.Cast {
-		if index == 20 { break }
+		if index == 20 {
+			break
+		}
 		if name := strings.TrimSpace(person.Name); name != "" {
 			cast = append(cast, Person{Name: name, Role: strings.TrimSpace(person.Character), ProfileURL: profileURL(person.ProfilePath)})
 		}
 	}
 	network := ""
-	if len(result.Networks) > 0 { network = strings.TrimSpace(result.Networks[0].Name) }
+	if len(result.Networks) > 0 {
+		network = strings.TrimSpace(result.Networks[0].Name)
+	}
 	details := TVDetails{Candidate: result.candidate(), Genres: genres, BackdropURL: imageURL(result.BackdropPath), Rating: optionalFloat(result.VoteAverage), Votes: optionalInt(result.VoteCount), Status: strings.TrimSpace(result.Status), Network: network, Cast: cast}
 	t.logger.Info("TMDb TV details mapped", "tv_id", id, "season_count", len(result.Seasons), "cast_count", len(cast), "has_rating", details.Rating != nil)
 	return details, nil
@@ -214,11 +236,19 @@ func (t *TMDb) TV(ctx context.Context, id string) (TVDetails, error) {
 
 func (t *TMDb) TVSeason(ctx context.Context, id string, seasonNumber int) ([]TVEpisodeDetails, error) {
 	apiKey, language, _, err := t.configured()
-	if err != nil { return nil, err }
-	if seasonNumber < 0 { return nil, errors.New("TMDb season number is invalid") }
-	var result struct { Episodes []tmdbTVEpisode `json:"episodes"` }
+	if err != nil {
+		return nil, err
+	}
+	if seasonNumber < 0 {
+		return nil, errors.New("TMDb season number is invalid")
+	}
+	var result struct {
+		Episodes []tmdbTVEpisode `json:"episodes"`
+	}
 	params := url.Values{"api_key": {apiKey}, "language": {language}}
-	if err := t.get(ctx, "/tv/"+url.PathEscape(id)+"/season/"+strconv.Itoa(seasonNumber), params, &result); err != nil { return nil, err }
+	if err := t.get(ctx, "/tv/"+url.PathEscape(id)+"/season/"+strconv.Itoa(seasonNumber), params, &result); err != nil {
+		return nil, err
+	}
 	episodes := make([]TVEpisodeDetails, 0, len(result.Episodes))
 	for _, episode := range result.Episodes {
 		episodes = append(episodes, TVEpisodeDetails{SeasonNumber: seasonNumber, EpisodeNumber: episode.EpisodeNumber, Title: strings.TrimSpace(episode.Name), Overview: strings.TrimSpace(episode.Overview), AirDate: strings.TrimSpace(episode.AirDate), RuntimeMinutes: optionalInt(episode.Runtime()), StillURL: imageURL(episode.StillPath)})
@@ -298,20 +328,32 @@ type tmdbMovie struct {
 }
 
 type tmdbTV struct {
-	ID int `json:"id"`
-	Name string `json:"name"`
-	OriginalName string `json:"original_name"`
-	FirstAirDate string `json:"first_air_date"`
-	Overview string `json:"overview"`
-	PosterPath string `json:"poster_path"`
-	BackdropPath string `json:"backdrop_path"`
-	VoteAverage float64 `json:"vote_average"`
-	VoteCount int `json:"vote_count"`
-	Status string `json:"status"`
-	Genres []struct { Name string `json:"name"` } `json:"genres"`
-	Networks []struct { Name string `json:"name"` } `json:"networks"`
-	Seasons []struct { SeasonNumber int `json:"season_number"` } `json:"seasons"`
-	Credits struct { Cast []struct { Name string `json:"name"`; Character string `json:"character"`; ProfilePath string `json:"profile_path"` } `json:"cast"` } `json:"credits"`
+	ID           int     `json:"id"`
+	Name         string  `json:"name"`
+	OriginalName string  `json:"original_name"`
+	FirstAirDate string  `json:"first_air_date"`
+	Overview     string  `json:"overview"`
+	PosterPath   string  `json:"poster_path"`
+	BackdropPath string  `json:"backdrop_path"`
+	VoteAverage  float64 `json:"vote_average"`
+	VoteCount    int     `json:"vote_count"`
+	Status       string  `json:"status"`
+	Genres       []struct {
+		Name string `json:"name"`
+	} `json:"genres"`
+	Networks []struct {
+		Name string `json:"name"`
+	} `json:"networks"`
+	Seasons []struct {
+		SeasonNumber int `json:"season_number"`
+	} `json:"seasons"`
+	Credits struct {
+		Cast []struct {
+			Name        string `json:"name"`
+			Character   string `json:"character"`
+			ProfilePath string `json:"profile_path"`
+		} `json:"cast"`
+	} `json:"credits"`
 }
 
 func (v tmdbTV) candidate() Candidate {
@@ -319,12 +361,12 @@ func (v tmdbTV) candidate() Candidate {
 }
 
 type tmdbTVEpisode struct {
-	EpisodeNumber int `json:"episode_number"`
-	Name string `json:"name"`
-	Overview string `json:"overview"`
-	AirDate string `json:"air_date"`
-	StillPath string `json:"still_path"`
-	RuntimeMinutes int `json:"runtime"`
+	EpisodeNumber  int    `json:"episode_number"`
+	Name           string `json:"name"`
+	Overview       string `json:"overview"`
+	AirDate        string `json:"air_date"`
+	StillPath      string `json:"still_path"`
+	RuntimeMinutes int    `json:"runtime"`
 }
 
 func (e tmdbTVEpisode) Runtime() int {

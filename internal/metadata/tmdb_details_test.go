@@ -47,7 +47,9 @@ func TestTVMapsDetailsAndSeasonEpisodes(t *testing.T) {
 		var body string
 		switch request.URL.Path {
 		case "/3/tv/42":
-			if request.URL.Query().Get("append_to_response") != "credits" { t.Fatalf("credits were not requested: %s", request.URL.RawQuery) }
+			if request.URL.Query().Get("append_to_response") != "credits" {
+				t.Fatalf("credits were not requested: %s", request.URL.RawQuery)
+			}
 			body = `{"id":42,"name":"Example Show","original_name":"Example Show","first_air_date":"2023-01-01","vote_average":8.1,"vote_count":99,"genres":[{"name":"Drama"}],"networks":[{"name":"Example Network"}],"credits":{"cast":[{"name":"Actor","character":"Lead","profile_path":"/actor.jpg"}]}}`
 		case "/3/tv/42/season/1":
 			body = `{"episodes":[{"episode_number":2,"name":"Episode Two","overview":"Remote episode","air_date":"2023-01-08","runtime":48,"still_path":"/still.jpg"}]}`
@@ -58,9 +60,17 @@ func TestTVMapsDetailsAndSeasonEpisodes(t *testing.T) {
 	})}
 	provider := NewTMDb(nil, client, "test-key")
 	details, err := provider.TV(t.Context(), "42")
-	if err != nil { t.Fatalf("TV details: %v", err) }
-	if details.Rating == nil || *details.Rating != 8.1 || details.Network != "Example Network" || len(details.Cast) != 1 { t.Fatalf("TV details were not mapped: %#v", details) }
+	if err != nil {
+		t.Fatalf("TV details: %v", err)
+	}
+	if details.Rating == nil || *details.Rating != 8.1 || details.Network != "Example Network" || len(details.Cast) != 1 {
+		t.Fatalf("TV details were not mapped: %#v", details)
+	}
 	episodes, err := provider.TVSeason(t.Context(), "42", 1)
-	if err != nil { t.Fatalf("season details: %v", err) }
-	if len(episodes) != 1 || episodes[0].EpisodeNumber != 2 || episodes[0].RuntimeMinutes == nil || *episodes[0].RuntimeMinutes != 48 { t.Fatalf("episode details were not mapped: %#v", episodes) }
+	if err != nil {
+		t.Fatalf("season details: %v", err)
+	}
+	if len(episodes) != 1 || episodes[0].EpisodeNumber != 2 || episodes[0].RuntimeMinutes == nil || *episodes[0].RuntimeMinutes != 48 {
+		t.Fatalf("episode details were not mapped: %#v", episodes)
+	}
 }

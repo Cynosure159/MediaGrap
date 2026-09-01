@@ -473,8 +473,11 @@ func (s *server) previewTVNFOPlans(w http.ResponseWriter, r *http.Request) {
 
 func tvNFOInputs(root string, detail library.TVShowDetail) []metadata.TVNFOInput {
 	inputs := make([]metadata.TVNFOInput, 0, len(detail.Episodes)*2+1)
-	first := detail.Episodes[0]
-	inputs = append(inputs, metadata.TVNFOInput{MediaItemID: first.ID, Kind: "show", TargetPath: filepath.Join(root, detail.Show.RelativePath, "tvshow.nfo")})
+	var firstID int64
+	if len(detail.Episodes) > 0 {
+		firstID = detail.Episodes[0].ID
+	}
+	inputs = append(inputs, metadata.TVNFOInput{MediaItemID: firstID, Kind: "show", TargetPath: filepath.Join(root, detail.Show.RelativePath, "tvshow.nfo")})
 	seenSeasons := make(map[int]struct{})
 	seenMedia := make(map[int64]struct{})
 	for _, episode := range detail.Episodes {
