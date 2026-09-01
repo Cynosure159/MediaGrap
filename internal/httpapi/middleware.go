@@ -31,6 +31,7 @@ type LibraryService interface {
 // MetadataService defines the subset of metadata methods needed by httpapi handlers.
 type MetadataService interface {
 	ConfigureTMDb(apiKey, language, proxy string) error
+	ConfigureFanart(apiKey, language, proxy string) error
 	Search(ctx context.Context, query string, year *int) ([]metadata.Candidate, error)
 	Select(ctx context.Context, itemID int64, providerID string) (metadata.Record, error)
 	Record(ctx context.Context, itemID int64) (metadata.Record, error)
@@ -42,6 +43,11 @@ type MetadataService interface {
 	PreviewArtwork(ctx context.Context, record metadata.Record, mediaPath string, writable bool) (metadata.ArtworkPlan, error)
 	ArtworkPlan(ctx context.Context, id string) (metadata.ArtworkPlan, error)
 	ApplyArtwork(ctx context.Context, id string, allowed func(string) bool) (metadata.ArtworkPlan, error)
+	ArtworkCandidates(ctx context.Context, itemID int64) ([]metadata.ArtworkCandidate, error)
+	CachedArtworkCandidates(ctx context.Context, itemID int64) ([]metadata.ArtworkCandidate, error)
+	OpenArtworkPreview(ctx context.Context, itemID int64, candidateID string) (metadata.ArtworkPreview, error)
+	PreviewArtworkSelection(ctx context.Context, itemID int64, selections []metadata.ArtworkSelection, mediaPath string, writable bool) (metadata.ArtworkPlan, error)
+	QueueArtwork(ctx context.Context, id string, allowed func(string) bool) (metadata.ArtworkPlan, error)
 	SearchTV(ctx context.Context, query string, year *int) ([]metadata.Candidate, error)
 	TVRecord(ctx context.Context, showID int64) (metadata.TVRecord, error)
 	SaveTV(ctx context.Context, record metadata.TVRecord) (metadata.TVRecord, error)

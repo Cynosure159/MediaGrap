@@ -32,6 +32,21 @@ func TestValidateTMDbImageURL(t *testing.T) {
 	}
 }
 
+func TestFanartPreviewURLReplacesAssetPathPrefix(t *testing.T) {
+	got, err := FanartPreviewURL("https://assets.fanart.tv/fanart/movies/550/poster/example.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://assets.fanart.tv/preview/movies/550/poster/example.png"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+
+	if _, err := FanartPreviewURL("https://assets.fanart.tv/poster/example.png"); err == nil {
+		t.Fatal("expected non-fanart asset path to be rejected")
+	}
+}
+
 func TestDownloadJPEG(t *testing.T) {
 	dir := t.TempDir()
 
@@ -76,5 +91,24 @@ func TestDownloadJPEG(t *testing.T) {
 	_, err = DownloadJPEG(t.Context(), tsFake.Client(), tsFake.URL+"/image.jpg", dir)
 	if err == nil || !strings.Contains(err.Error(), "invalid JPEG image") {
 		t.Fatalf("expected invalid JPEG image error, got %v", err)
+	}
+}
+
+func TestDownloadPNG(t *testing.T) {
+	dir := t.TempDir()
+	validPNG := []byte("\x89PNG\r\n\x1a\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(validPNG)
+	}))
+	defer server.Close()
+	tempPath, err := DownloadImage(t.Context(), server.Client(), server.URL+"/logo.png", dir, "image/png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tempPath)
+	data, err := os.ReadFile(tempPath)
+	if err != nil || string(data) != string(validPNG) {
+		t.Fatalf("unexpected PNG content: %v", err)
 	}
 }

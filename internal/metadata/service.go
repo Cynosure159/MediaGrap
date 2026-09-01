@@ -1,11 +1,15 @@
 package metadata
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,7 +20,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/mediagrap/mediagrap/internal/artwork"
 	"github.com/mediagrap/mediagrap/internal/files"
+	"github.com/mediagrap/mediagrap/internal/jobs"
 	"github.com/mediagrap/mediagrap/internal/nfo"
+	"github.com/mediagrap/mediagrap/internal/providers/fanart"
 )
 
 type Record struct {
@@ -52,11 +58,20 @@ type WritePlan struct {
 	WillReplace bool   `json:"willReplace"`
 }
 type ArtworkAsset struct {
-	Kind        string `json:"kind"`
-	SourceURL   string `json:"sourceUrl"`
-	TargetPath  string `json:"targetPath"`
-	Conflict    bool   `json:"conflict"`
-	WillReplace bool   `json:"willReplace"`
+	Kind            string `json:"kind"`
+	CandidateID     string `json:"candidateId,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	ProviderAssetID string `json:"providerAssetId,omitempty"`
+	SourceURL       string `json:"sourceUrl"`
+	PreviewURL      string `json:"previewUrl,omitempty"`
+	Language        string `json:"language,omitempty"`
+	Likes           int    `json:"likes,omitempty"`
+	Width           int    `json:"width,omitempty"`
+	Height          int    `json:"height,omitempty"`
+	MimeType        string `json:"mimeType,omitempty"`
+	TargetPath      string `json:"targetPath"`
+	Conflict        bool   `json:"conflict"`
+	WillReplace     bool   `json:"willReplace"`
 }
 type ArtworkPlan struct {
 	ID          string         `json:"id"`
@@ -64,6 +79,30 @@ type ArtworkPlan struct {
 	State       string         `json:"state"`
 	CreatedAt   string         `json:"createdAt"`
 	Assets      []ArtworkAsset `json:"assets"`
+}
+type ArtworkCandidate struct {
+	ID              string `json:"id"`
+	MediaItemID     int64  `json:"mediaItemId"`
+	Provider        string `json:"provider"`
+	ProviderAssetID string `json:"providerAssetId"`
+	Kind            string `json:"kind"`
+	SourceURL       string `json:"sourceUrl"`
+	PreviewURL      string `json:"previewUrl"`
+	Language        string `json:"language"`
+	Likes           int    `json:"likes"`
+	Width           int    `json:"width"`
+	Height          int    `json:"height"`
+	MimeType        string `json:"mimeType"`
+}
+type ArtworkSelection struct {
+	Kind        string `json:"kind"`
+	CandidateID string `json:"candidateId"`
+}
+
+type ArtworkPreview struct {
+	Body          io.ReadCloser
+	ContentType   string
+	ContentLength int64
 }
 type TVRecord struct {
 	ShowID        int64              `json:"showId"`
@@ -97,7 +136,15 @@ type Service struct {
 	provider      Provider
 	artworkMu     sync.RWMutex
 	artworkClient *http.Client
+	artworkLocks  sync.Map
+	fanart        *fanart.Client
+	jobQueue      artworkJobQueue
 	logger        *slog.Logger
+}
+
+type artworkJobQueue interface {
+	QueuePayload(context.Context, string, *int64, []byte) (jobs.Job, error)
+	RegisterJobHandler(string, func(context.Context, jobs.Job, func(int, string)) error)
 }
 
 func NewService(db *sql.DB, provider Provider) *Service {
@@ -123,6 +170,35 @@ func (s *Service) ConfigureTMDb(apiKey, language, proxy string) error {
 	s.artworkClient = client
 	s.artworkMu.Unlock()
 	return nil
+}
+
+func (s *Service) SetFanartProvider(provider *fanart.Client) {
+	s.fanart = provider
+}
+
+func (s *Service) ConfigureFanart(apiKey, language, proxy string) error {
+	if s.fanart == nil {
+		if strings.TrimSpace(apiKey) == "" {
+			return nil
+		}
+		return errors.New("Fanart.tv provider is unavailable")
+	}
+	client, err := NewOutboundClient(proxy)
+	if err != nil {
+		return err
+	}
+	s.fanart.Configure(client, apiKey, language)
+	s.artworkMu.Lock()
+	s.artworkClient = client
+	s.artworkMu.Unlock()
+	return nil
+}
+
+func (s *Service) SetJobService(queue artworkJobQueue) {
+	s.jobQueue = queue
+	if queue != nil {
+		queue.RegisterJobHandler("artwork_download", s.handleArtworkDownloadJob)
+	}
 }
 
 func (s *Service) Search(ctx context.Context, query string, year *int) ([]Candidate, error) {
@@ -691,6 +767,188 @@ func (s *Service) ArtworkPlan(ctx context.Context, id string) (ArtworkPlan, erro
 	return s.repo.GetArtworkPlan(ctx, id)
 }
 
+// ArtworkCandidates refreshes the persisted Fanart.tv candidate catalog for a
+// matched movie. The HTTP layer only receives normalized candidates, never a
+// provider response payload.
+func (s *Service) ArtworkCandidates(ctx context.Context, itemID int64) ([]ArtworkCandidate, error) {
+	record, err := s.Record(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	if record.Provider != "tmdb" || strings.TrimSpace(record.ProviderID) == "" {
+		return nil, errors.New("select TMDb metadata before loading artwork candidates")
+	}
+	if s.fanart == nil {
+		return nil, errors.New("Fanart.tv provider is unavailable")
+	}
+	assets, err := s.fanart.Movie(ctx, record.ProviderID)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]ArtworkCandidate, 0, len(assets))
+	for _, asset := range assets {
+		if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.URL) == "" {
+			continue
+		}
+		previewURL, err := artwork.FanartPreviewURL(asset.URL)
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, ArtworkCandidate{
+			ID: fmt.Sprintf("fanart:%d:%s:%s", itemID, asset.Kind, asset.ID), MediaItemID: itemID,
+			Provider: "fanart.tv", ProviderAssetID: asset.ID, Kind: asset.Kind, SourceURL: asset.URL,
+			PreviewURL: previewURL, Language: asset.Lang, Likes: asset.Likes,
+			Width: asset.Width, Height: asset.Height, MimeType: imageMIME(asset.URL),
+		})
+	}
+	if err := s.repo.ReplaceArtworkCandidates(ctx, candidates); err != nil {
+		return nil, err
+	}
+	return s.repo.ListArtworkCandidates(ctx, itemID)
+}
+
+func (s *Service) CachedArtworkCandidates(ctx context.Context, itemID int64) ([]ArtworkCandidate, error) {
+	return s.repo.ListArtworkCandidates(ctx, itemID)
+}
+
+// OpenArtworkPreview resolves a persisted candidate and opens its reduced
+// preview through the configured server-side HTTP client. Callers must close
+// Body; the candidate ID is the only client-controlled lookup value.
+func (s *Service) OpenArtworkPreview(ctx context.Context, itemID int64, candidateID string) (ArtworkPreview, error) {
+	candidate, err := s.repo.GetArtworkCandidate(ctx, candidateID)
+	if err != nil || candidate.MediaItemID != itemID {
+		return ArtworkPreview{}, errors.New("artwork candidate not found")
+	}
+	if err := validateArtworkSource(candidate.Provider, candidate.PreviewURL); err != nil {
+		return ArtworkPreview{}, err
+	}
+	s.artworkMu.RLock()
+	client := s.artworkClient
+	s.artworkMu.RUnlock()
+	if client == nil {
+		return ArtworkPreview{}, errors.New("artwork client is unavailable")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, candidate.PreviewURL, nil)
+	if err != nil {
+		return ArtworkPreview{}, errors.New("create artwork preview request")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return ArtworkPreview{}, errors.New("download artwork preview request failed")
+	}
+	if response.Request != nil && response.Request.URL.String() != request.URL.String() {
+		response.Body.Close()
+		return ArtworkPreview{}, errors.New("artwork preview redirect is not allowed")
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		response.Body.Close()
+		return ArtworkPreview{}, fmt.Errorf("artwork preview provider returned HTTP %d", response.StatusCode)
+	}
+	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || (contentType != "image/jpeg" && contentType != "image/png") {
+		response.Body.Close()
+		return ArtworkPreview{}, errors.New("artwork preview provider did not return a JPEG or PNG image")
+	}
+	if response.ContentLength > artwork.MaxArtworkBytes {
+		response.Body.Close()
+		return ArtworkPreview{}, errors.New("artwork preview exceeds the 25 MiB safety limit")
+	}
+	reader := bufio.NewReader(io.LimitReader(response.Body, artwork.MaxArtworkBytes+1))
+	header, err := reader.Peek(3)
+	validJPEG := err == nil && len(header) == 3 && header[0] == 0xff && header[1] == 0xd8 && header[2] == 0xff
+	validPNG := false
+	if contentType == "image/png" {
+		pngHeader, pngErr := reader.Peek(8)
+		validPNG = pngErr == nil && string(pngHeader) == "\x89PNG\r\n\x1a\n"
+	}
+	if (contentType == "image/jpeg" && !validJPEG) || (contentType == "image/png" && !validPNG) {
+		response.Body.Close()
+		return ArtworkPreview{}, errors.New("artwork preview provider returned an invalid image")
+	}
+	return ArtworkPreview{Body: structReadCloser{Reader: reader, closer: response.Body}, ContentType: contentType, ContentLength: response.ContentLength}, nil
+}
+
+type structReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r structReadCloser) Close() error { return r.closer.Close() }
+
+func (s *Service) PreviewArtworkSelection(ctx context.Context, itemID int64, selections []ArtworkSelection, mediaPath string, writable bool) (ArtworkPlan, error) {
+	if !writable {
+		return ArtworkPlan{}, errors.New("the media source is read-only")
+	}
+	if len(selections) == 0 {
+		return ArtworkPlan{}, errors.New("select at least one artwork candidate")
+	}
+	assets := make([]ArtworkAsset, 0, len(selections))
+	seenKinds := make(map[string]struct{}, len(selections))
+	directory := filepath.Dir(mediaPath)
+	for _, selection := range selections {
+		if !supportedArtworkKind(selection.Kind) {
+			return ArtworkPlan{}, fmt.Errorf("unsupported artwork kind %q", selection.Kind)
+		}
+		if _, ok := seenKinds[selection.Kind]; ok {
+			return ArtworkPlan{}, fmt.Errorf("multiple candidates selected for %s", selection.Kind)
+		}
+		seenKinds[selection.Kind] = struct{}{}
+		candidate, err := s.repo.GetArtworkCandidate(ctx, selection.CandidateID)
+		if err != nil || candidate.MediaItemID != itemID || candidate.Kind != selection.Kind {
+			return ArtworkPlan{}, fmt.Errorf("artwork candidate %q is not available for this movie", selection.CandidateID)
+		}
+		if err := validateArtworkSource(candidate.Provider, candidate.SourceURL); err != nil {
+			return ArtworkPlan{}, fmt.Errorf("%s image: %w", candidate.Kind, err)
+		}
+		extension := ".jpg"
+		if candidate.MimeType == "image/png" {
+			extension = ".png"
+		}
+		target := filepath.Join(directory, candidate.Kind+extension)
+		willReplace, conflict, err := files.ValidateTarget(target)
+		if err != nil {
+			return ArtworkPlan{}, err
+		}
+		assets = append(assets, ArtworkAsset{Kind: candidate.Kind, CandidateID: candidate.ID, Provider: candidate.Provider, ProviderAssetID: candidate.ProviderAssetID, SourceURL: candidate.SourceURL, PreviewURL: candidate.PreviewURL, Language: candidate.Language, Likes: candidate.Likes, Width: candidate.Width, Height: candidate.Height, MimeType: candidate.MimeType, TargetPath: target, Conflict: conflict, WillReplace: willReplace})
+	}
+	plan := ArtworkPlan{ID: uuid.NewString(), MediaItemID: itemID, State: "previewed", CreatedAt: time.Now().UTC().Format(time.RFC3339), Assets: assets}
+	if err := s.repo.SaveArtworkPlan(ctx, plan); err != nil {
+		return ArtworkPlan{}, err
+	}
+	_ = s.repo.InsertAuditEntry(ctx, "artwork.preview", itemID, directory, "Fanart.tv artwork selection plan created")
+	return plan, nil
+}
+
+func (s *Service) QueueArtwork(ctx context.Context, id string, allowed func(string) bool) (ArtworkPlan, error) {
+	if s.jobQueue == nil {
+		return ArtworkPlan{}, errors.New("artwork job service is unavailable")
+	}
+	plan, err := s.ArtworkPlan(ctx, id)
+	if err != nil {
+		return ArtworkPlan{}, err
+	}
+	if plan.State != "previewed" {
+		return ArtworkPlan{}, errors.New("artwork plan is no longer pending")
+	}
+	for _, asset := range plan.Assets {
+		if err := files.CheckAllowed(asset.TargetPath, allowed); err != nil {
+			return ArtworkPlan{}, errors.New("artwork target is outside configured media roots")
+		}
+		if asset.Conflict {
+			_ = s.repo.UpdateArtworkPlanState(ctx, id, "conflicted")
+			return ArtworkPlan{}, fmt.Errorf("%s target is not a regular file and cannot be replaced", asset.Kind)
+		}
+	}
+	payload, _ := json.Marshal(map[string]string{"planId": id})
+	if _, err := s.jobQueue.QueuePayload(ctx, "artwork_download", nil, payload); err != nil {
+		return ArtworkPlan{}, err
+	}
+	if err := s.repo.UpdateArtworkPlanState(ctx, id, "queued"); err != nil {
+		return ArtworkPlan{}, err
+	}
+	return s.ArtworkPlan(ctx, id)
+}
+
 func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(string) bool) (ArtworkPlan, error) {
 	plan, err := s.ArtworkPlan(ctx, id)
 	if err != nil {
@@ -707,10 +965,44 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 			_ = s.repo.UpdateArtworkPlanState(ctx, id, "conflicted")
 			return ArtworkPlan{}, fmt.Errorf("%s target is not a regular file and cannot be replaced", asset.Kind)
 		}
-		if err := validateTMDbImageURL(asset.SourceURL); err != nil {
+		if err := validateArtworkSource(asset.Provider, asset.SourceURL); err != nil {
 			return ArtworkPlan{}, fmt.Errorf("%s image: %w", asset.Kind, err)
 		}
 	}
+	return s.applyArtworkFiles(ctx, plan, func(int, string) {})
+}
+
+func (s *Service) handleArtworkDownloadJob(ctx context.Context, job jobs.Job, updateProgress func(int, string)) error {
+	var payload struct {
+		PlanID string `json:"planId"`
+	}
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil || payload.PlanID == "" {
+		return errors.New("artwork job payload is invalid")
+	}
+	plan, err := s.ArtworkPlan(ctx, payload.PlanID)
+	if err != nil {
+		return err
+	}
+	if plan.State != "queued" && plan.State != "running" {
+		return errors.New("artwork plan is not queued")
+	}
+	if err := s.repo.UpdateArtworkPlanState(ctx, plan.ID, "running"); err != nil {
+		return err
+	}
+	_, err = s.applyArtworkFiles(ctx, plan, updateProgress)
+	if err != nil && job.RetryCount < job.MaxRetries && !errors.Is(err, context.Canceled) {
+		if current, getErr := s.ArtworkPlan(ctx, plan.ID); getErr == nil && current.State == "failed" {
+			_ = s.repo.UpdateArtworkPlanState(ctx, plan.ID, "queued")
+		}
+	}
+	return err
+}
+
+func (s *Service) applyArtworkFiles(ctx context.Context, plan ArtworkPlan, updateProgress func(int, string)) (ArtworkPlan, error) {
+	lockValue, _ := s.artworkLocks.LoadOrStore(plan.MediaItemID, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
 	s.logger.Info("Artwork download started", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
 	temps := make([]string, 0, len(plan.Assets))
 	defer func() {
@@ -721,22 +1013,33 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 	s.artworkMu.RLock()
 	client := s.artworkClient
 	s.artworkMu.RUnlock()
-	for _, asset := range plan.Assets {
+	for index, asset := range plan.Assets {
+		updateProgress(index, "Downloading "+asset.Kind)
 		temp, downloadErr := downloadArtwork(ctx, client, asset)
 		if downloadErr != nil {
-			_ = s.repo.UpdateArtworkPlanState(ctx, id, "failed")
+			_ = s.repo.UpdateArtworkPlanState(ctx, plan.ID, "failed")
 			s.logger.Warn("Artwork download failed", "media_item_id", plan.MediaItemID, "asset_kind", asset.Kind, "error", downloadErr)
 			return ArtworkPlan{}, downloadErr
 		}
 		temps = append(temps, temp)
 	}
 	for index, asset := range plan.Assets {
+		willReplace, conflict, inspectErr := files.ValidateTarget(asset.TargetPath)
+		if inspectErr != nil || conflict {
+			_ = s.repo.UpdateArtworkPlanState(ctx, plan.ID, "conflicted")
+			return ArtworkPlan{}, fmt.Errorf("%s target changed and cannot be replaced", asset.Kind)
+		}
 		if err := os.Rename(temps[index], asset.TargetPath); err != nil {
-			_ = s.repo.UpdateArtworkPlanState(ctx, id, "failed")
+			_ = s.repo.UpdateArtworkPlanState(ctx, plan.ID, "failed")
 			return ArtworkPlan{}, fmt.Errorf("replace %s artwork: %w", asset.Kind, err)
 		}
+		if err := s.repo.SetArtworkAsset(ctx, asset, plan.MediaItemID); err != nil {
+			return ArtworkPlan{}, err
+		}
+		_ = willReplace
+		updateProgress(index+1, "Saved "+asset.Kind)
 	}
-	if err := s.repo.UpdateArtworkPlanState(ctx, id, "applied"); err != nil {
+	if err := s.repo.UpdateArtworkPlanState(ctx, plan.ID, "applied"); err != nil {
 		return ArtworkPlan{}, err
 	}
 	for _, asset := range plan.Assets {
@@ -747,15 +1050,33 @@ func (s *Service) ApplyArtwork(ctx context.Context, id string, allowed func(stri
 		_ = s.repo.InsertAuditEntry(ctx, "artwork.apply", plan.MediaItemID, asset.TargetPath, detail)
 	}
 	s.logger.Info("Artwork download completed", "media_item_id", plan.MediaItemID, "asset_count", len(plan.Assets))
-	return s.ArtworkPlan(ctx, id)
+	return s.ArtworkPlan(ctx, plan.ID)
 }
 
 func downloadArtwork(ctx context.Context, client *http.Client, asset ArtworkAsset) (string, error) {
-	return artwork.DownloadJPEG(ctx, client, asset.SourceURL, filepath.Dir(asset.TargetPath))
+	return artwork.DownloadImage(ctx, client, asset.SourceURL, filepath.Dir(asset.TargetPath), asset.MimeType)
 }
 
 func validateTMDbImageURL(value string) error {
 	return artwork.ValidateTMDbImageURL(value)
+}
+
+var artworkKinds = map[string]bool{"poster": true, "fanart": true, "clearlogo": true, "clearart": true, "discart": true, "banner": true, "landscape": true}
+
+func supportedArtworkKind(kind string) bool { return artworkKinds[kind] }
+
+func validateArtworkSource(provider, value string) error {
+	if provider == "fanart.tv" {
+		return artwork.ValidateFanartImageURL(value)
+	}
+	return artwork.ValidateTMDbImageURL(value)
+}
+
+func imageMIME(value string) string {
+	if strings.HasSuffix(strings.ToLower(strings.Split(value, "?")[0]), ".png") {
+		return "image/png"
+	}
+	return "image/jpeg"
 }
 
 func nfoTarget(mediaPath string) (string, bool, error) {

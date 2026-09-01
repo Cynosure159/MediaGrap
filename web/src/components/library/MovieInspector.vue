@@ -286,7 +286,10 @@ async function handleApplyNfo() {
         :sidecars="detail.item.sidecars"
         :poster-url="draft.posterUrl"
         :backdrop-url="draft.backdropUrl"
+        :csrf-token="props.csrfToken"
+        :writable="detail.writable"
         :labels="labels"
+        @applied="loadDetail(detail.item.id)"
       />
 
       <MovieCastTab

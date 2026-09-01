@@ -35,8 +35,13 @@ func (s *server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
 		return
 	}
+	if err := s.metadata.ConfigureFanart(current.FanartTVAPIKey, current.TMDbLanguage, current.OutboundProxy); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
+		return
+	}
 	s.logger.Info("Application settings updated",
 		"tmdb_api_key_configured", current.TMDbAPIKey != "",
+		"fanart_tv_api_key_configured", current.FanartTVAPIKey != "",
 		"tmdb_language", current.TMDbLanguage,
 		"outbound_proxy_configured", current.OutboundProxy != "",
 	)

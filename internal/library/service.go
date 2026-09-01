@@ -199,6 +199,17 @@ func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
 	return s.jobs.Queue(ctx, "scan", &sourceID)
 }
 
+// QueuePayload and RegisterJobHandler let adjacent bounded-context services
+// use the same durable worker without exposing the jobs implementation to the
+// HTTP layer.
+func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64, payload []byte) (Job, error) {
+	return s.jobs.QueuePayload(ctx, kind, sourceID, payload)
+}
+
+func (s *Service) RegisterJobHandler(kind string, handler func(context.Context, Job, func(int, string)) error) {
+	s.jobs.RegisterHandler(kind, handler)
+}
+
 func (s *Service) ListJobs(ctx context.Context) ([]Job, error) {
 	return s.jobs.List(ctx)
 }

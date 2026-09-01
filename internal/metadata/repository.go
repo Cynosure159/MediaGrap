@@ -22,6 +22,10 @@ type Repository interface {
 	GetArtworkPlan(ctx context.Context, id string) (ArtworkPlan, error)
 	SaveArtworkPlan(ctx context.Context, plan ArtworkPlan) error
 	UpdateArtworkPlanState(ctx context.Context, id, state string) error
+	ReplaceArtworkCandidates(ctx context.Context, candidates []ArtworkCandidate) error
+	ListArtworkCandidates(ctx context.Context, itemID int64) ([]ArtworkCandidate, error)
+	GetArtworkCandidate(ctx context.Context, id string) (ArtworkCandidate, error)
+	SetArtworkAsset(ctx context.Context, asset ArtworkAsset, mediaItemID int64) error
 	InsertAuditEntry(ctx context.Context, action string, mediaItemID int64, targetPath, detail string) error
 }
 
@@ -188,7 +192,7 @@ func (r *sqliteRepository) GetArtworkPlan(ctx context.Context, id string) (Artwo
 	if err != nil {
 		return ArtworkPlan{}, errors.New("artwork plan not found")
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT kind,source_url,target_path FROM artwork_plan_assets WHERE artwork_plan_id=? ORDER BY id`, id)
+	rows, err := r.db.QueryContext(ctx, `SELECT kind,candidate_id,provider,provider_asset_id,source_url,preview_url,language,likes,width,height,mime_type,target_path FROM artwork_plan_assets WHERE artwork_plan_id=? ORDER BY id`, id)
 	if err != nil {
 		return ArtworkPlan{}, err
 	}
@@ -196,7 +200,7 @@ func (r *sqliteRepository) GetArtworkPlan(ctx context.Context, id string) (Artwo
 	plan.Assets = []ArtworkAsset{}
 	for rows.Next() {
 		var asset ArtworkAsset
-		if err := rows.Scan(&asset.Kind, &asset.SourceURL, &asset.TargetPath); err != nil {
+		if err := rows.Scan(&asset.Kind, &asset.CandidateID, &asset.Provider, &asset.ProviderAssetID, &asset.SourceURL, &asset.PreviewURL, &asset.Language, &asset.Likes, &asset.Width, &asset.Height, &asset.MimeType, &asset.TargetPath); err != nil {
 			return ArtworkPlan{}, err
 		}
 		asset.WillReplace, asset.Conflict, _ = files.ValidateTarget(asset.TargetPath)
@@ -216,11 +220,67 @@ func (r *sqliteRepository) SaveArtworkPlan(ctx context.Context, plan ArtworkPlan
 		return err
 	}
 	for _, asset := range plan.Assets {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO artwork_plan_assets(artwork_plan_id,kind,source_url,target_path) VALUES(?,?,?,?)`, plan.ID, asset.Kind, asset.SourceURL, asset.TargetPath); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO artwork_plan_assets(artwork_plan_id,kind,candidate_id,provider,provider_asset_id,source_url,preview_url,language,likes,width,height,mime_type,target_path) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, asset.Kind, asset.CandidateID, asset.Provider, asset.ProviderAssetID, asset.SourceURL, asset.PreviewURL, asset.Language, asset.Likes, asset.Width, asset.Height, asset.MimeType, asset.TargetPath); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func (r *sqliteRepository) ReplaceArtworkCandidates(ctx context.Context, candidates []ArtworkCandidate) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM artwork_candidates WHERE media_item_id=? AND provider=?`, candidates[0].MediaItemID, candidates[0].Provider); err != nil {
+		return err
+	}
+	for _, candidate := range candidates {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO artwork_candidates(id,media_item_id,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, candidate.ID, candidate.MediaItemID, candidate.Provider, candidate.ProviderAssetID, candidate.Kind, candidate.SourceURL, candidate.PreviewURL, candidate.Language, candidate.Likes, candidate.Width, candidate.Height, candidate.MimeType); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func scanArtworkCandidate(scanner interface{ Scan(...any) error }) (ArtworkCandidate, error) {
+	var candidate ArtworkCandidate
+	err := scanner.Scan(&candidate.ID, &candidate.MediaItemID, &candidate.Provider, &candidate.ProviderAssetID, &candidate.Kind, &candidate.SourceURL, &candidate.PreviewURL, &candidate.Language, &candidate.Likes, &candidate.Width, &candidate.Height, &candidate.MimeType)
+	return candidate, err
+}
+
+func (r *sqliteRepository) ListArtworkCandidates(ctx context.Context, itemID int64) ([]ArtworkCandidate, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,media_item_id,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type FROM artwork_candidates WHERE media_item_id=? ORDER BY kind, likes DESC, id`, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ArtworkCandidate, 0)
+	for rows.Next() {
+		candidate, err := scanArtworkCandidate(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, candidate)
+	}
+	return items, rows.Err()
+}
+
+func (r *sqliteRepository) GetArtworkCandidate(ctx context.Context, id string) (ArtworkCandidate, error) {
+	candidate, err := scanArtworkCandidate(r.db.QueryRowContext(ctx, `SELECT id,media_item_id,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type FROM artwork_candidates WHERE id=?`, id))
+	if err != nil {
+		return ArtworkCandidate{}, errors.New("artwork candidate not found")
+	}
+	return candidate, nil
+}
+
+func (r *sqliteRepository) SetArtworkAsset(ctx context.Context, asset ArtworkAsset, mediaItemID int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO artwork_assets(media_item_id,kind,provider,provider_asset_id,target_path) VALUES(?,?,?,?,?) ON CONFLICT(media_item_id,kind) DO UPDATE SET provider=excluded.provider,provider_asset_id=excluded.provider_asset_id,target_path=excluded.target_path,updated_at=datetime('now')`, mediaItemID, asset.Kind, asset.Provider, asset.ProviderAssetID, asset.TargetPath)
+	return err
 }
 
 func (r *sqliteRepository) UpdateArtworkPlanState(ctx context.Context, id, state string) error {

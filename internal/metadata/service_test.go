@@ -414,3 +414,55 @@ func TestPreviewArtworkRejectsNonTMDbURLs(t *testing.T) {
 		t.Fatalf("expected TMDb URL validation error, got %v", err)
 	}
 }
+
+func TestOpenArtworkPreviewUsesServerArtworkClient(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	db, err := database.Open(filepath.Join(t.TempDir(), "preview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	result, err = db.ExecContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, "Example.mkv", "Example", 5, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := result.LastInsertId()
+	previewURL := "https://assets.fanart.tv/preview/example-asset.png"
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != previewURL {
+			t.Fatalf("unexpected preview URL: %s", request.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"image/png"}},
+			Body:       io.NopCloser(bytes.NewReader([]byte("\x89PNG\r\n\x1a\n"))),
+		}, nil
+	})}
+	service := NewService(db, NewTMDb(nil, client, "key"))
+	if _, err := db.ExecContext(ctx, `INSERT INTO artwork_candidates(id,media_item_id,provider,provider_asset_id,kind,source_url,preview_url,mime_type) VALUES(?,?,?,?,?,?,?,?)`, "candidate-1", itemID, "fanart.tv", "asset-1", "poster", "https://assets.fanart.tv/fanart/example-asset.png", previewURL, "image/png"); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := service.OpenArtworkPreview(ctx, itemID, "candidate-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer preview.Body.Close()
+	data, err := io.ReadAll(preview.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatalf("unexpected preview bytes: %x", data)
+	}
+}

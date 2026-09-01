@@ -12,6 +12,7 @@ TVSelection,
   Candidate,
   WritePlan,
   ArtworkPlan,
+  ArtworkCandidate,
   Settings,
   SettingsUpdate,
 } from './types'
@@ -131,6 +132,22 @@ export const previewArtwork = (csrf: string, id: number, metadataPayload: Metada
     body: JSON.stringify(metadataPayload),
   })
 
+export const artworkCandidates = (id: number) =>
+  request<{ items: ArtworkCandidate[] }>(`/api/v1/media/${id}/artwork-candidates`)
+
+export const scrapeArtworkCandidates = (csrf: string, id: number) =>
+  request<{ items: ArtworkCandidate[] }>(`/api/v1/media/${id}/artwork-candidates`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const previewArtworkSelection = (csrf: string, id: number, selections: { kind: ArtworkCandidate['kind']; candidateId: string }[]) =>
+  request<ArtworkPlan>(`/api/v1/media/${id}/artwork-plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ selections }),
+  })
+
 export const applyArtwork = (csrf: string, id: string) =>
   request<ArtworkPlan>(`/api/v1/artwork-plans/${id}/apply`, {
     method: 'POST',
@@ -182,6 +199,9 @@ export const mediaArtworkUrl = (mediaId: number, relativePath: string) => {
   const assetID = btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
   return `/api/v1/media/${mediaId}/artwork/${assetID}`
 }
+
+export const artworkPreviewUrl = (mediaId: number, candidateId: string) =>
+  `/api/v1/media/${mediaId}/artwork-preview/${encodeURIComponent(candidateId)}`
 
 export const tvNfoRaw = (showId: number, selection: TVSelection) => {
   const params = new URLSearchParams({ kind: selection.kind })

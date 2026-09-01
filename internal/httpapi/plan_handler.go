@@ -48,7 +48,7 @@ func (s *server) applyArtworkPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	plan, err := s.metadata.ApplyArtwork(r.Context(), id, s.library.Allowed)
+	plan, err := s.metadata.QueueArtwork(r.Context(), id, s.library.Allowed)
 	if err != nil {
 		s.logger.Warn("Artwork apply failed", "plan_id", id, "error", err)
 		writeError(w, http.StatusConflict, "artwork_write_failed", err.Error())

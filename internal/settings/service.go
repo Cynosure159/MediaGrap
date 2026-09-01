@@ -13,32 +13,37 @@ import (
 var tmdbLanguagePattern = regexp.MustCompile(`^[a-z]{2}(-[A-Z]{2})?$`)
 
 type Defaults struct {
-	TMDbAPIKey    string
-	TMDbLanguage  string
-	OutboundProxy string
-	MediaRoots    []string
+	TMDbAPIKey     string
+	FanartTVAPIKey string
+	TMDbLanguage   string
+	OutboundProxy  string
+	MediaRoots     []string
 }
 
 type Snapshot struct {
-	TMDbAPIKey    string
-	TMDbLanguage  string
-	OutboundProxy string
-	MediaRoots    []string
+	TMDbAPIKey     string
+	FanartTVAPIKey string
+	TMDbLanguage   string
+	OutboundProxy  string
+	MediaRoots     []string
 }
 
 type View struct {
-	TMDbAPIKeyConfigured    bool     `json:"tmdbApiKeyConfigured"`
-	OutboundProxyConfigured bool     `json:"outboundProxyConfigured"`
-	TMDbLanguage            string   `json:"tmdbLanguage"`
-	MediaRoots              []string `json:"mediaRoots"`
+	TMDbAPIKeyConfigured     bool     `json:"tmdbApiKeyConfigured"`
+	FanartTVAPIKeyConfigured bool     `json:"fanartTvApiKeyConfigured"`
+	OutboundProxyConfigured  bool     `json:"outboundProxyConfigured"`
+	TMDbLanguage             string   `json:"tmdbLanguage"`
+	MediaRoots               []string `json:"mediaRoots"`
 }
 
 type Update struct {
-	TMDbAPIKey         string `json:"tmdbApiKey"`
-	ClearTMDbAPIKey    bool   `json:"clearTmdbApiKey"`
-	TMDbLanguage       string `json:"tmdbLanguage"`
-	OutboundProxy      string `json:"outboundProxy"`
-	ClearOutboundProxy bool   `json:"clearOutboundProxy"`
+	TMDbAPIKey          string `json:"tmdbApiKey"`
+	ClearTMDbAPIKey     bool   `json:"clearTmdbApiKey"`
+	FanartTVAPIKey      string `json:"fanartTvApiKey"`
+	ClearFanartTVAPIKey bool   `json:"clearFanartTvApiKey"`
+	TMDbLanguage        string `json:"tmdbLanguage"`
+	OutboundProxy       string `json:"outboundProxy"`
+	ClearOutboundProxy  bool   `json:"clearOutboundProxy"`
 }
 
 type Service struct {
@@ -55,7 +60,7 @@ func NewService(db *sql.DB, defaults Defaults) *Service {
 
 func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 	values := map[string]string{}
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'tmdb_language', 'outbound_proxy')`)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'fanart_tv_api_key', 'tmdb_language', 'outbound_proxy')`)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -71,10 +76,11 @@ func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return Snapshot{
-		TMDbAPIKey:    valueOrDefault(values, "tmdb_api_key", s.defaults.TMDbAPIKey),
-		TMDbLanguage:  valueOrDefault(values, "tmdb_language", s.defaults.TMDbLanguage),
-		OutboundProxy: valueOrDefault(values, "outbound_proxy", s.defaults.OutboundProxy),
-		MediaRoots:    append([]string(nil), s.defaults.MediaRoots...),
+		TMDbAPIKey:     valueOrDefault(values, "tmdb_api_key", s.defaults.TMDbAPIKey),
+		FanartTVAPIKey: valueOrDefault(values, "fanart_tv_api_key", s.defaults.FanartTVAPIKey),
+		TMDbLanguage:   valueOrDefault(values, "tmdb_language", s.defaults.TMDbLanguage),
+		OutboundProxy:  valueOrDefault(values, "outbound_proxy", s.defaults.OutboundProxy),
+		MediaRoots:     append([]string(nil), s.defaults.MediaRoots...),
 	}, nil
 }
 
@@ -83,7 +89,7 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	return View{TMDbAPIKeyConfigured: current.TMDbAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", TMDbLanguage: current.TMDbLanguage, MediaRoots: current.MediaRoots}, nil
+	return View{TMDbAPIKeyConfigured: current.TMDbAPIKey != "", FanartTVAPIKeyConfigured: current.FanartTVAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", TMDbLanguage: current.TMDbLanguage, MediaRoots: current.MediaRoots}, nil
 }
 
 func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
@@ -102,6 +108,11 @@ func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
 	} else if value := strings.TrimSpace(update.TMDbAPIKey); value != "" {
 		current.TMDbAPIKey = value
 	}
+	if update.ClearFanartTVAPIKey {
+		current.FanartTVAPIKey = ""
+	} else if value := strings.TrimSpace(update.FanartTVAPIKey); value != "" {
+		current.FanartTVAPIKey = value
+	}
 	if update.ClearOutboundProxy {
 		current.OutboundProxy = ""
 	} else if value := strings.TrimSpace(update.OutboundProxy); value != "" {
@@ -115,7 +126,7 @@ func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	defer transaction.Rollback()
-	for key, value := range map[string]string{"tmdb_api_key": current.TMDbAPIKey, "tmdb_language": current.TMDbLanguage, "outbound_proxy": current.OutboundProxy} {
+	for key, value := range map[string]string{"tmdb_api_key": current.TMDbAPIKey, "fanart_tv_api_key": current.FanartTVAPIKey, "tmdb_language": current.TMDbLanguage, "outbound_proxy": current.OutboundProxy} {
 		if _, err := transaction.ExecContext(ctx, `INSERT INTO application_settings(key, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value); err != nil {
 			return Snapshot{}, fmt.Errorf("save setting: %w", err)
 		}

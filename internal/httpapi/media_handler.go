@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -16,6 +17,11 @@ import (
 type metadataRequest struct {
 	metadata.Record
 	CandidateID string `json:"candidateId"`
+}
+
+type artworkPlanRequest struct {
+	metadata.Record
+	Selections []metadata.ArtworkSelection `json:"selections"`
 }
 
 func (s *server) listMedia(w http.ResponseWriter, r *http.Request) {
@@ -336,16 +342,80 @@ func (s *server) previewMediaArtworkPlan(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "media_not_found", "Media item not found")
 		return
 	}
-	var body metadataRequest
+	var body artworkPlanRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	body.MediaItemID = id
-	plan, err := s.metadata.PreviewArtwork(r.Context(), body.Record, location.AbsolutePath, location.Writable)
+	var plan metadata.ArtworkPlan
+	if len(body.Selections) > 0 {
+		plan, err = s.metadata.PreviewArtworkSelection(r.Context(), id, body.Selections, location.AbsolutePath, location.Writable)
+	} else {
+		plan, err = s.metadata.PreviewArtwork(r.Context(), body.Record, location.AbsolutePath, location.Writable)
+	}
 	if err != nil {
 		s.logger.Warn("Artwork preview failed", "media_item_id", id, "error", err)
 		writeError(w, http.StatusBadRequest, "artwork_preview_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, plan)
+}
+
+func (s *server) getMediaArtworkCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	items, err := s.metadata.CachedArtworkCandidates(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "artwork_candidates_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *server) scrapeMediaArtworkCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	items, err := s.metadata.ArtworkCandidates(r.Context(), id)
+	if err != nil {
+		s.logger.Warn("Artwork candidates scrape failed", "media_item_id", id, "error", err)
+		writeError(w, http.StatusBadRequest, "artwork_candidates_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *server) getMediaArtworkPreview(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	preview, err := s.metadata.OpenArtworkPreview(r.Context(), id, r.PathValue("candidate"))
+	if err != nil {
+		s.logger.Warn("Artwork preview proxy failed", "media_item_id", id, "error", err)
+		writeError(w, http.StatusBadGateway, "artwork_preview_failed", err.Error())
+		return
+	}
+	defer preview.Body.Close()
+	w.Header().Set("Content-Type", preview.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if preview.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(preview.ContentLength, 10))
+	}
+	_, _ = io.Copy(w, preview.Body)
 }

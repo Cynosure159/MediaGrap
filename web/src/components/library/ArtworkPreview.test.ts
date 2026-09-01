@@ -47,10 +47,11 @@ describe('ArtworkPreview', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('/media/poster.jpg')
-    expect(wrapper.text()).toContain('/media/fanart.jpg')
-    expect(wrapper.text()).toContain(labels.artworkCreate)
-    expect(wrapper.text()).toContain(labels.artworkReplace)
+    expect(document.body.textContent).toContain('/media/poster.jpg')
+    expect(document.body.textContent).toContain('/media/fanart.jpg')
+    expect(document.body.textContent).toContain(labels.artworkCreate)
+    expect(document.body.textContent).toContain(labels.artworkReplace)
+    wrapper.unmount()
   })
 
   it('disables download button if any asset has conflict', () => {
@@ -76,8 +77,9 @@ describe('ArtworkPreview', () => {
       },
     })
 
-    const downloadBtn = wrapper.findAll('button')[2]
-    expect(downloadBtn.attributes('disabled')).toBeDefined()
+    const downloadBtn = document.body.querySelectorAll('button')[2]
+    expect(downloadBtn?.hasAttribute('disabled')).toBe(true)
+    wrapper.unmount()
   })
 
   it('emits apply when download button is clicked', async () => {
@@ -103,8 +105,9 @@ describe('ArtworkPreview', () => {
       },
     })
 
-    const downloadBtn = wrapper.findAll('button')[2]
-    await downloadBtn.trigger('click')
+    const downloadBtn = document.body.querySelectorAll('button')[2]
+    downloadBtn?.click()
     expect(wrapper.emitted('apply')).toHaveLength(1)
+    wrapper.unmount()
   })
 })

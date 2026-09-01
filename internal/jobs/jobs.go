@@ -12,11 +12,12 @@ import (
 
 // State constants for durable jobs
 const (
-	StateQueued    = "queued"
-	StateRunning   = "running"
-	StateSucceeded = "succeeded"
-	StateFailed    = "failed"
-	StateCancelled = "cancelled"
+	StateQueued      = "queued"
+	StateRunning     = "running"
+	StateSucceeded   = "succeeded"
+	StateFailed      = "failed"
+	StateCancelled   = "cancelled"
+	StateInterrupted = "interrupted"
 )
 
 type Job struct {
@@ -28,6 +29,9 @@ type Job struct {
 	ProgressTotal   int    `json:"progressTotal"`
 	Message         string `json:"message"`
 	ErrorMessage    string `json:"errorMessage"`
+	Payload         string `json:"-"`
+	RetryCount      int    `json:"retryCount"`
+	MaxRetries      int    `json:"maxRetries"`
 	CreatedAt       string `json:"createdAt"`
 }
 
@@ -58,7 +62,14 @@ func (s *Service) RegisterHandler(kind string, handler HandlerFunc) {
 }
 
 func (s *Service) Queue(ctx context.Context, kind string, sourceID *int64) (Job, error) {
-	result, err := s.db.ExecContext(ctx, `INSERT INTO jobs(kind, source_id, state) VALUES(?, ?, ?)`, kind, sourceID, StateQueued)
+	return s.QueuePayload(ctx, kind, sourceID, []byte(`{}`))
+}
+
+func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64, payload []byte) (Job, error) {
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO jobs(kind, source_id, state, payload, max_retries) VALUES(?, ?, ?, ?, 2)`, kind, sourceID, StateQueued, string(payload))
 	if err != nil {
 		return Job{}, fmt.Errorf("queue job: %w", err)
 	}
@@ -70,7 +81,7 @@ func (s *Service) Queue(ctx context.Context, kind string, sourceID *int64) (Job,
 }
 
 func (s *Service) List(ctx context.Context) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, created_at FROM jobs ORDER BY id DESC LIMIT 50`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, payload, retry_count, max_retries, created_at FROM jobs ORDER BY id DESC LIMIT 50`)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
@@ -81,7 +92,7 @@ func (s *Service) List(ctx context.Context) ([]Job, error) {
 		var job Job
 		var sourceID sql.NullInt64
 		var message, errorMsg sql.NullString
-		if err := rows.Scan(&job.ID, &job.Kind, &sourceID, &job.State, &job.ProgressCurrent, &job.ProgressTotal, &message, &errorMsg, &job.CreatedAt); err != nil {
+		if err := rows.Scan(&job.ID, &job.Kind, &sourceID, &job.State, &job.ProgressCurrent, &job.ProgressTotal, &message, &errorMsg, &job.Payload, &job.RetryCount, &job.MaxRetries, &job.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan job: %w", err)
 		}
 		if sourceID.Valid {
@@ -102,8 +113,8 @@ func (s *Service) Get(ctx context.Context, id int64) (Job, error) {
 	var job Job
 	var sourceID sql.NullInt64
 	var message, errorMsg sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, created_at FROM jobs WHERE id=?`, id).
-		Scan(&job.ID, &job.Kind, &sourceID, &job.State, &job.ProgressCurrent, &job.ProgressTotal, &message, &errorMsg, &job.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, payload, retry_count, max_retries, created_at FROM jobs WHERE id=?`, id).
+		Scan(&job.ID, &job.Kind, &sourceID, &job.State, &job.ProgressCurrent, &job.ProgressTotal, &message, &errorMsg, &job.Payload, &job.RetryCount, &job.MaxRetries, &job.CreatedAt)
 	if err != nil {
 		return Job{}, errors.New("job not found")
 	}
@@ -120,6 +131,10 @@ func (s *Service) Get(ctx context.Context, id int64) (Job, error) {
 }
 
 func (s *Service) RunWorker(ctx context.Context) {
+	// A process restart cannot safely resume a handler halfway through a file
+	// rename. Mark abandoned work explicitly; queued jobs remain idempotent and
+	// can be retried by the operator or a later recovery policy.
+	_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='interrupted', updated_at=datetime('now'), error_message='worker stopped before completion' WHERE state='running'`)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -135,7 +150,7 @@ func (s *Service) RunWorker(ctx context.Context) {
 func (s *Service) runOne(ctx context.Context) {
 	var id int64
 	var kind string
-	err := s.db.QueryRowContext(ctx, `SELECT id, kind FROM jobs WHERE state='queued' ORDER BY id LIMIT 1`).Scan(&id, &kind)
+	err := s.db.QueryRowContext(ctx, `SELECT id, kind FROM jobs WHERE state='queued' AND (next_run_at IS NULL OR next_run_at <= datetime('now')) ORDER BY id LIMIT 1`).Scan(&id, &kind)
 	if err != nil {
 		return
 	}
@@ -170,7 +185,16 @@ func (s *Service) runOne(ctx context.Context) {
 	}
 
 	if execErr := handler(ctx, job, progressFn); execErr != nil {
-		_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='failed', error_message=?, completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`, execErr.Error(), id)
+		if kind == "artwork_download" && job.RetryCount < job.MaxRetries && !errors.Is(execErr, context.Canceled) {
+			_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', retry_count=retry_count+1, error_message=?, next_run_at=datetime('now', '+5 seconds'), updated_at=datetime('now') WHERE id=?`, execErr.Error(), id)
+			s.logger.Warn("job retry scheduled", "job_id", id, "kind", kind, "retry_count", job.RetryCount+1)
+			return
+		}
+		state := StateFailed
+		if errors.Is(execErr, context.Canceled) {
+			state = StateCancelled
+		}
+		_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state=?, error_message=?, completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`, state, execErr.Error(), id)
 		s.logger.Error("job failed", "job_id", id, "kind", kind, "error", execErr)
 		return
 	}

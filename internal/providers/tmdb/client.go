@@ -93,7 +93,9 @@ func NewClient(logger *slog.Logger, client *http.Client, apiKey string) *Client 
 }
 
 func NewOutboundClient(proxy string) (*http.Client, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 	proxy = strings.TrimSpace(proxy)
 	if proxy == "" {
 		return client, nil

@@ -63,6 +63,20 @@ const emit = defineEmits<{ save: [] }>()
           </select>
         </div>
 
+        <!-- Fanart.tv API Key -->
+        <div class="field-group">
+          <div class="field-header">
+            <label for="fanart-tv-api-key" class="field-label">{{ labels.fanartTvApiKey }}</label>
+            <span class="status-pill" :class="settings?.fanartTvApiKeyConfigured ? 'status-pill--configured' : 'status-pill--unset'">
+              <span class="status-dot" :class="settings?.fanartTvApiKeyConfigured ? 'status-dot--ok' : 'status-dot--neutral'"></span>
+              {{ settings?.fanartTvApiKeyConfigured ? labels.configured : labels.notSet }}
+            </span>
+          </div>
+          <input id="fanart-tv-api-key" v-model="model.fanartTvApiKey" type="password" autocomplete="off" :placeholder="settings?.fanartTvApiKeyConfigured ? labels.apiKeyConfigured : labels.fanartTvApiKeyPlaceholder" />
+          <p class="field-hint">{{ labels.fanartTvApiKeyHelp }}</p>
+          <label class="check-label"><input v-model="model.clearFanartTvApiKey" type="checkbox" class="form-checkbox" /><span>{{ labels.clearFanartTvApiKey }}</span></label>
+        </div>
+
         <!-- Outbound Proxy -->
         <div class="field-group">
           <div class="field-header">

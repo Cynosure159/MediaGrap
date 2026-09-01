@@ -164,11 +164,35 @@ export interface WritePlan {
 }
 
 export interface ArtworkAsset {
-  kind: 'poster' | 'fanart'
+  kind: 'poster' | 'fanart' | 'clearlogo' | 'clearart' | 'discart' | 'banner' | 'landscape'
+  candidateId?: string
+  provider?: string
+  providerAssetId?: string
   sourceUrl: string
+  previewUrl?: string
+  language?: string
+  likes?: number
+  width?: number
+  height?: number
+  mimeType?: string
   targetPath: string
   conflict: boolean
   willReplace: boolean
+}
+
+export interface ArtworkCandidate {
+  id: string
+  mediaItemId: number
+  provider: string
+  providerAssetId: string
+  kind: ArtworkAsset['kind']
+  sourceUrl: string
+  previewUrl: string
+  language: string
+  likes: number
+  width: number
+  height: number
+  mimeType: string
 }
 
 export interface ArtworkPlan {
@@ -181,6 +205,7 @@ export interface ArtworkPlan {
 
 export interface Settings {
   tmdbApiKeyConfigured: boolean
+  fanartTvApiKeyConfigured: boolean
   outboundProxyConfigured: boolean
   tmdbLanguage: string
   mediaRoots: string[]
@@ -189,6 +214,8 @@ export interface Settings {
 export interface SettingsUpdate {
   tmdbApiKey: string
   clearTmdbApiKey: boolean
+  fanartTvApiKey: string
+  clearFanartTvApiKey: boolean
   tmdbLanguage: string
   outboundProxy: string
   clearOutboundProxy: boolean

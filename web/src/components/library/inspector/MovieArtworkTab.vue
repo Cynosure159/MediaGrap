@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import * as api from '@/api/library'
-import type { SidecarAsset } from '@/api/types'
+import type { ArtworkCandidate, SidecarAsset } from '@/api/types'
+import ArtworkSelectionDialog from '../ArtworkSelectionDialog.vue'
+import ArtworkPreview from '../ArtworkPreview.vue'
+import { useArtwork } from '@/composables/useArtwork'
 
 const props = defineProps<{
   itemId: number
   sidecars: SidecarAsset[]
   posterUrl: string
   backdropUrl: string
+  csrfToken: string
+  writable: boolean
   labels: Record<string, string>
 }>()
+const emit = defineEmits<{ applied: [] }>()
 
 interface ResolvedAsset extends SidecarAsset {
   url: string
@@ -28,6 +34,52 @@ const localArtwork = computed<ResolvedAsset[]>(() =>
       }
     })
 )
+
+const artworkKinds: ArtworkCandidate['kind'][] = ['poster', 'fanart', 'clearlogo', 'clearart', 'discart', 'banner', 'landscape']
+const artworkKeywords: Record<ArtworkCandidate['kind'], string[]> = {
+  poster: ['poster', 'cover', 'folder'],
+  fanart: ['fanart', 'backdrop', 'background'],
+  clearlogo: ['clearlogo', 'logo'],
+  clearart: ['clearart'],
+  discart: ['discart', 'disc'],
+  banner: ['banner'],
+  landscape: ['landscape', 'keyart'],
+}
+
+function artworkNameMatches(filename: string, keywords: string[]) {
+  const name = filename.replace(/\.[^/.]+$/, '').toLowerCase()
+  return keywords.some(keyword => name === keyword || name.includes(keyword))
+}
+
+const existingArtworkKinds = computed<Partial<Record<ArtworkCandidate['kind'], boolean>>>(() =>
+  Object.fromEntries(artworkKinds.map(kind => [kind, localArtwork.value.some(asset => artworkNameMatches(asset.filename, artworkKeywords[kind]))]))
+)
+
+const { groups, selected, plan, error, isLoading, isApplying, load, scrape, select, preview, apply, closePlan } = useArtwork(
+  () => props.itemId,
+  () => props.csrfToken,
+  kind => existingArtworkKinds.value[kind] === true,
+)
+const isCandidateDialogOpen = ref(false)
+onMounted(() => load())
+watch(() => props.itemId, () => load())
+
+async function openCandidateDialog() {
+  isCandidateDialogOpen.value = true
+  await scrape()
+}
+
+async function previewSelectedArtwork() {
+  await preview()
+  if (plan.value) isCandidateDialogOpen.value = false
+}
+
+async function handleApply() {
+  await apply()
+	if (plan.value?.state === 'queued') {
+    emit('applied')
+  }
+}
 
 function findArtworkUrl(keywords: string[]): string | undefined {
   const match = localArtwork.value.find(asset => {
@@ -69,13 +121,24 @@ const resolvedBannerUrl = computed(() => {
           </svg>
           {{ labels.uploadCustomImage || 'Upload Custom' }}
         </button>
-        <button class="btn btn-primary" type="button">
+        <button class="btn btn-primary" type="button" :disabled="isLoading || !props.writable" @click="openCandidateDialog">
           <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
             <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
           </svg>
           {{ labels.scrapeFanart || 'Scrape All Artwork' }}
         </button>
       </div>
+    </div>
+
+    <div v-if="error && !isCandidateDialogOpen && !plan" class="artwork-error" role="alert">{{ error }}</div>
+    <div class="artwork-entry-card">
+      <div>
+        <strong>{{ labels.artworkCandidates }}</strong>
+        <span>{{ groups.length ? `${groups.length} ${labels.artworkGroups || 'groups'} · ${Object.values(selected).filter(Boolean).length} ${labels.artworkSelected}` : (labels.artworkNoCandidates || 'No artwork candidates loaded.') }}</span>
+      </div>
+      <button class="btn btn-outline" type="button" :disabled="isLoading || !props.writable" @click="openCandidateDialog">
+        {{ labels.artworkRefresh || labels.scrapeFanart || 'Open artwork picker' }}
+      </button>
     </div>
 
     <!-- Artwork Bento Grid -->
@@ -206,6 +269,29 @@ const resolvedBannerUrl = computed(() => {
         </figure>
       </div>
     </section>
+    <ArtworkPreview
+      v-if="plan"
+      :plan="plan"
+      :applying="isApplying"
+      :error="error"
+      :labels="labels"
+      @apply="handleApply"
+      @close="closePlan"
+    />
+    <ArtworkSelectionDialog
+      v-if="isCandidateDialogOpen"
+      :groups="groups"
+      :selected="selected"
+      :labels="labels"
+      :loading="isLoading"
+      :writable="writable"
+      :error="error"
+      :existing-kinds="existingArtworkKinds"
+      @close="isCandidateDialogOpen = false"
+      @scrape="scrape"
+      @select="select"
+      @preview="previewSelectedArtwork"
+    />
   </section>
 </template>
 
@@ -215,6 +301,15 @@ const resolvedBannerUrl = computed(() => {
   flex-direction: column;
   gap: 16px;
   width: 100%;
+}
+.artwork-error { padding: 8px 10px; border: 1px solid var(--error, #ffb4ab); border-radius: 5px; background: color-mix(in srgb, var(--error, #ffb4ab) 12%, transparent); color: var(--error, #ffb4ab); font-size: 12px; }
+.artwork-entry-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid var(--outline-variant, #2e3447); border-radius: var(--radius-lg, .5rem); background: var(--surface-container, #191f31); }
+.artwork-entry-card > div { display: grid; gap: 4px; min-width: 0; }
+.artwork-entry-card strong { color: var(--on-surface, #dce1fb); font-size: 13px; }
+.artwork-entry-card span { overflow: hidden; color: var(--on-surface-variant, #c7c4d7); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .artwork-entry-card { align-items: stretch; flex-direction: column; }
 }
 
 .workshop-header {
