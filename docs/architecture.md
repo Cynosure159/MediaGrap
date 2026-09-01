@@ -26,33 +26,30 @@ Desktop / mobile PWA
                           TMDb / Fanart.tv / future APIs
 ```
 
-## Suggested repository layout
+## Implemented repository layout
 
 ```text
 cmd/mediagrap/             application entry point
 internal/
   app/                     composition, lifecycle, configuration
-  auth/                    users, sessions, password policy
-  library/                 sources, scan/index, media identity
-  metadata/                canonical models, merge/edit policy
-  nfo/                     Kodi XML read/write and compatibility
-  artwork/                 selection, download, transform/cache
-  files/                   change sets, rename/move, safe writes
-  jobs/                    durable queue, leases, progress, events
-  providers/               provider contracts and registrations
-  adapters/
-    sqlite/                persistence and migrations
-    filesystem/            OS/container filesystem implementation
-    tmdb/                  TMDb adapter
-    fanarttv/              Fanart.tv adapter
-  httpapi/                 routes, handlers, middleware, SSE
-web/                       Vue/TypeScript PWA source
-migrations/                embedded database migrations
-deploy/                    Docker and Compose assets
+  auth/                    users, sessions, password policy, CSRF
+  library/                 sources, scan/index, media identity, repository
+  metadata/                canonical models, merge/edit policy, repository
+  nfo/                     Kodi XML read/write and safe file writing
+  artwork/                 selection, safe download, SSRF check, cache
+  files/                   two-stage safe write engine (Plan/Apply)
+  jobs/                    durable queue, runner, workers, progress
+  providers/
+    tmdb/                  TMDb provider adapter
+  platform/
+    database/              SQLite persistence, WAL, embedded migrations
+  settings/                application key-value settings
+  httpapi/                 routes, handlers, middleware (auth/logging), embedded UI
+web/                       Vue 3 / TypeScript PWA source
 docs/                      all human-facing documentation
 ```
 
-Packages under `internal/` should expose behavior-oriented interfaces at the point of use. Provider-specific DTOs remain inside their adapter.
+Packages under `internal/` expose behavior-oriented interfaces at the point of use. Provider-specific DTOs remain inside their adapter.
 
 ## Component responsibilities
 

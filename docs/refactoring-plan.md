@@ -191,13 +191,15 @@ import { useMetadataEditor } from '@/composables/useMetadataEditor'
 
 ---
 
-## 5. 实施路线图与阶段规划
+## 5. 实施路线图与阶段规划 (全部已完成)
 
-- **Phase A: 代码规范化与清理** (展开压缩单行代码、统一 API Client 与后端响应样板)
-- **Phase B: 后端路由与 Handler 拆分** (消除 `phase_*.go`、升级 Go 1.22 原生路由 `PathValue`、测试全绿)
-- **Phase C: 前端 Inspector 解耦** (拆分 `MovieInspector` 为 5 个 Tab 子面板、抽离弹窗、拆解 Composables)
-- **Phase D: 领域子系统抽离** (抽离 `internal/files` 安全写引擎与 `internal/artwork` 海报下载管理)
-- **Phase E: 质量门禁与端到端回归** (全量测试、编译、静态分析与端到端验证)
+> 详细实施跟踪与阶段对账详见 [重构实施全景对账方案 (v2)](./refactoring-plan-v2.md)。
+
+- [x] **Phase A: 代码规范化与清理** (展开压缩单行代码、统一 API Client 与后端响应样板)
+- [x] **Phase B: 后端路由与 Handler 拆分** (消除 `phase_*.go`、升级 Go 1.22 原生路由 `PathValue`、测试全绿)
+- [x] **Phase C: 前端 Inspector 解耦** (拆分 `MovieInspector` 与 `TVShowInspector` 为独立 Tab 子面板与原子组件)
+- [x] **Phase D: 领域子系统抽离** (抽离 `internal/files` 安全写引擎、`internal/artwork`、`internal/jobs`、`internal/nfo`、`internal/providers/tmdb`)
+- [x] **Phase E: 质量门禁与端到端回归** (全量 80+ Go 测试与 33+ 前端测试通过、0 竞态、生产构建打包验证)
 
 ---
 
