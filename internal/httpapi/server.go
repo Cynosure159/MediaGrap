@@ -138,18 +138,28 @@ func (s *server) systemInfo(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *server) systemSummary(writer http.ResponseWriter, request *http.Request) {
+	var sourceCount, mediaCount, showCount int
+	var queuedJobs, runningJobs, failedJobs int
+	ctx := request.Context()
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sources`).Scan(&sourceCount)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items WHERE missing=0`).Scan(&mediaCount)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tv_shows`).Scan(&showCount)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='queued'`).Scan(&queuedJobs)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='running'`).Scan(&runningJobs)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='failed'`).Scan(&failedJobs)
+
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"status": "ready",
 		"library": map[string]int{
-			"sources": 0,
-			"items":   0,
+			"sources": sourceCount,
+			"items":   mediaCount,
+			"shows":   showCount,
 		},
 		"jobs": map[string]int{
-			"queued":  0,
-			"running": 0,
-			"failed":  0,
+			"queued":  queuedJobs,
+			"running": runningJobs,
+			"failed":  failedJobs,
 		},
-		"phase": "foundation",
 	})
 }
 
