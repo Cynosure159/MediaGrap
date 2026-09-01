@@ -5,6 +5,7 @@ import MediaCatalog from './MediaCatalog.vue'
 import MovieInspector from './MovieInspector.vue'
 import TVShowCatalog from './TVShowCatalog.vue'
 import TVShowInspector from './TVShowInspector.vue'
+import type { TVSelection } from '@/api/library'
 
 const props = defineProps<{
   csrfToken: string
@@ -19,7 +20,7 @@ const emit = defineEmits<{
 
 const query = shallowRef('')
 const selectedMovieId = shallowRef<number | null>(null)
-const selectedShowId = shallowRef<number | null>(null)
+const selectedTVSelection = shallowRef<TVSelection | null>(null)
 
 const { sourceItems, mediaItems, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
 const activeJobs = computed(() => jobItems.value.filter(job => job.state === 'queued' || job.state === 'running'))
@@ -53,7 +54,7 @@ onMounted(async () => {
     </div>
 
     <!-- Main Workspace Split Pane -->
-    <div v-else class="split-pane-layout" :class="{ 'mobile-show-detail': (props.mediaKind === 'shows' ? selectedShowId : selectedMovieId) !== null }">
+    <div v-else class="split-pane-layout" :class="{ 'mobile-show-detail': (props.mediaKind === 'shows' ? selectedTVSelection : selectedMovieId) !== null }">
       <!-- Movies Mode -->
       <template v-if="props.mediaKind !== 'shows'">
         <MediaCatalog
@@ -78,18 +79,18 @@ onMounted(async () => {
       <template v-else>
         <TVShowCatalog
           :items="tvShowItems"
-          :selected-id="selectedShowId"
+          :selected="selectedTVSelection"
           :active-job="activeJobs[0]"
           :labels="labels"
           @search="search"
-          @select="selectedShowId = $event"
+          @select="selectedTVSelection = $event"
           @scan="scanActiveSource"
         />
         <TVShowInspector
-          :show-id="selectedShowId"
+          :selection="selectedTVSelection"
           :csrf-token="csrfToken"
           :labels="labels"
-          @close="selectedShowId = null"
+          @close="selectedTVSelection = null"
         />
       </template>
     </div>

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"mime"
 	"net/http"
 	"os"
@@ -58,7 +59,12 @@ func (s *server) getTVShow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if found {
-			metadata, origin = fromNFO, "nfo"
+			metadata, err = s.metadata.SaveTV(r.Context(), fromNFO)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", "Unable to cache local TV metadata")
+				return
+			}
+			origin = "nfo"
 		} else {
 			origin = "empty"
 		}
@@ -129,6 +135,80 @@ func (s *server) selectTVShowCandidate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, record)
 }
 
+func (s *server) scrapeTVSeason(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	showID, seasonNumber, detail, root, ok := s.tvScrapeTarget(w, r)
+	if !ok {
+		return
+	}
+	inputs := tvSeasonNFOInputs(root, detail, seasonNumber)
+	if len(inputs) == 0 {
+		writeError(w, http.StatusNotFound, "season_not_found", "TV season not found")
+		return
+	}
+	record, err := s.metadata.ScrapeTVSeasonAndWrite(r.Context(), showID, seasonNumber, inputs, detail.Writable, s.library.Allowed)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "tv_season_scrape_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *server) scrapeTVEpisode(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	showID, seasonNumber, detail, root, ok := s.tvScrapeTarget(w, r)
+	if !ok {
+		return
+	}
+	episodeID, err := strconv.ParseInt(r.PathValue("episode"), 10, 64)
+	if err != nil || episodeID < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_episode", "Invalid TV episode id")
+		return
+	}
+	for _, episode := range detail.Episodes {
+		if episode.ID != episodeID || episode.SeasonNumber != seasonNumber {
+			continue
+		}
+		input := tvEpisodeNFOInput(root, episode)
+		record, scrapeErr := s.metadata.ScrapeTVEpisodeAndWrite(r.Context(), showID, seasonNumber, episode.EpisodeStart, input, detail.Writable, s.library.Allowed)
+		if scrapeErr != nil {
+			writeError(w, http.StatusBadRequest, "tv_episode_scrape_failed", scrapeErr.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, record)
+		return
+	}
+	writeError(w, http.StatusNotFound, "episode_not_found", "TV episode not found")
+}
+
+func (s *server) tvScrapeTarget(w http.ResponseWriter, r *http.Request) (int64, int, library.TVShowDetail, string, bool) {
+	showID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || showID < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_show", "Invalid TV show id")
+		return 0, 0, library.TVShowDetail{}, "", false
+	}
+	seasonNumber, err := strconv.Atoi(r.PathValue("season"))
+	if err != nil || seasonNumber < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_season", "Invalid TV season number")
+		return 0, 0, library.TVShowDetail{}, "", false
+	}
+	detail, err := s.library.TVShow(r.Context(), showID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return 0, 0, library.TVShowDetail{}, "", false
+	}
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return 0, 0, library.TVShowDetail{}, "", false
+	}
+	return showID, seasonNumber, detail, root, true
+}
+
 func (s *server) getTVArtwork(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
 		return
@@ -185,6 +265,87 @@ func (s *server) getTVArtwork(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
 	}
 	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
+}
+
+// getTVNFORaw returns only the selected show's, season's, or episode's local
+// NFO. It deliberately has no filesystem path parameter.
+func (s *server) getTVNFORaw(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	showID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || showID < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_show", "Invalid TV show id")
+		return
+	}
+	detail, err := s.library.TVShow(r.Context(), showID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return
+	}
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return
+	}
+	kind := r.URL.Query().Get("kind")
+	target := ""
+	switch kind {
+	case "show":
+		target = filepath.Join(root, detail.Show.RelativePath, "tvshow.nfo")
+	case "season":
+		season, parseErr := strconv.Atoi(r.URL.Query().Get("season"))
+		if parseErr != nil || season < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_season", "Invalid TV season number")
+			return
+		}
+		for _, episode := range detail.Episodes {
+			if episode.SeasonNumber == season {
+				target = filepath.Join(filepath.Dir(filepath.Join(root, episode.RelativePath)), "season.nfo")
+				break
+			}
+		}
+	case "episode":
+		episodeID, parseErr := strconv.ParseInt(r.URL.Query().Get("episode"), 10, 64)
+		if parseErr != nil || episodeID < 1 {
+			writeError(w, http.StatusBadRequest, "invalid_episode", "Invalid TV episode id")
+			return
+		}
+		for _, episode := range detail.Episodes {
+			if episode.ID == episodeID {
+				absolute := filepath.Join(root, episode.RelativePath)
+				target = strings.TrimSuffix(absolute, filepath.Ext(absolute)) + ".nfo"
+				break
+			}
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_nfo_kind", "Invalid TV NFO kind")
+		return
+	}
+	if target == "" || !s.library.Allowed(target) {
+		writeError(w, http.StatusNotFound, "nfo_not_found", "TV NFO not found")
+		return
+	}
+	relativeTarget, relErr := filepath.Rel(root, target)
+	if relErr != nil {
+		writeError(w, http.StatusBadRequest, "nfo_read_failed", "Invalid TV NFO target")
+		return
+	}
+	info, err := os.Lstat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, http.StatusOK, map[string]any{"exists": false, "targetPath": relativeTarget, "content": ""})
+		return
+	}
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		writeError(w, http.StatusBadRequest, "nfo_read_failed", "TV NFO is not a safe regular file")
+		return
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "nfo_not_found", "TV NFO not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exists": true, "targetPath": relativeTarget, "content": string(content)})
 }
 
 func (s *server) tvSourceRoot(ctx context.Context, sourceID int64) (string, error) {
@@ -263,4 +424,28 @@ func tvNFOInputs(root string, detail library.TVShowDetail) []metadata.TVNFOInput
 		inputs = append(inputs, metadata.TVNFOInput{MediaItemID: episode.ID, Kind: "episode", SeasonNumber: episode.SeasonNumber, EpisodeNumber: episode.EpisodeStart, TargetPath: strings.TrimSuffix(absolute, filepath.Ext(absolute)) + ".nfo"})
 	}
 	return inputs
+}
+
+func tvSeasonNFOInputs(root string, detail library.TVShowDetail, seasonNumber int) []metadata.TVNFOInput {
+	inputs := make([]metadata.TVNFOInput, 0)
+	seenMedia := make(map[int64]struct{})
+	for _, episode := range detail.Episodes {
+		if episode.SeasonNumber != seasonNumber {
+			continue
+		}
+		if len(inputs) == 0 {
+			inputs = append(inputs, metadata.TVNFOInput{MediaItemID: episode.ID, Kind: "season", SeasonNumber: seasonNumber, TargetPath: filepath.Join(filepath.Dir(filepath.Join(root, episode.RelativePath)), "season.nfo")})
+		}
+		if _, exists := seenMedia[episode.ID]; exists {
+			continue
+		}
+		seenMedia[episode.ID] = struct{}{}
+		inputs = append(inputs, tvEpisodeNFOInput(root, episode))
+	}
+	return inputs
+}
+
+func tvEpisodeNFOInput(root string, episode library.TVEpisode) metadata.TVNFOInput {
+	absolute := filepath.Join(root, episode.RelativePath)
+	return metadata.TVNFOInput{MediaItemID: episode.ID, Kind: "episode", SeasonNumber: episode.SeasonNumber, EpisodeNumber: episode.EpisodeStart, TargetPath: strings.TrimSuffix(absolute, filepath.Ext(absolute)) + ".nfo"}
 }

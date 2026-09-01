@@ -7,7 +7,7 @@ describe('TVShowCatalog', () => {
     const wrapper = mount(TVShowCatalog, {
       props: {
         items: [],
-        selectedId: null,
+        selected: null,
         activeJob: undefined,
         labels: { refresh: 'Refresh', tvShows: 'TV shows' },
       },

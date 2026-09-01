@@ -225,6 +225,99 @@ func (s *Service) SelectTVAndWrite(ctx context.Context, showID int64, providerID
 	return record, nil
 }
 
+// ScrapeTVSeasonAndWrite refreshes only one indexed season. It retains show and
+// other-season metadata, then writes only that season's NFO and episode NFOs.
+func (s *Service) ScrapeTVSeasonAndWrite(ctx context.Context, showID int64, seasonNumber int, inputs []TVNFOInput, writable bool, allowed func(string) bool) (TVRecord, error) {
+	provider, ok := s.provider.(TVProvider)
+	if !ok {
+		return TVRecord{}, errors.New("TV metadata provider is unavailable")
+	}
+	record, err := s.TVRecord(ctx, showID)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	if record.Title == "" || record.ProviderID == "" {
+		return TVRecord{}, errors.New("match the TV show before scraping an individual season")
+	}
+	s.logger.Info("TMDb TV season scrape started", "show_id", showID, "season_number", seasonNumber)
+	remote, err := provider.TVSeason(ctx, record.ProviderID, seasonNumber)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	record.Episodes = mergeTVEpisodes(record.Episodes, remote, func(item TVEpisodeDetails) bool { return item.SeasonNumber == seasonNumber })
+	saved, err := s.SaveTV(ctx, record)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	plans, err := s.PreviewTVNFO(ctx, saved, inputs, writable)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	for _, plan := range plans {
+		if _, err := s.Apply(ctx, plan.ID, allowed); err != nil {
+			return TVRecord{}, err
+		}
+	}
+	s.logger.Info("TMDb TV season scrape completed", "show_id", showID, "season_number", seasonNumber, "plan_count", len(plans))
+	return saved, nil
+}
+
+// ScrapeTVEpisodeAndWrite refreshes a single indexed episode without changing
+// the rest of the show. The owning show must already be matched to TMDb.
+func (s *Service) ScrapeTVEpisodeAndWrite(ctx context.Context, showID int64, seasonNumber int, episodeNumber int, input TVNFOInput, writable bool, allowed func(string) bool) (TVRecord, error) {
+	provider, ok := s.provider.(TVProvider)
+	if !ok {
+		return TVRecord{}, errors.New("TV metadata provider is unavailable")
+	}
+	record, err := s.TVRecord(ctx, showID)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	if record.Title == "" || record.ProviderID == "" {
+		return TVRecord{}, errors.New("match the TV show before scraping an individual episode")
+	}
+	remote, err := provider.TVSeason(ctx, record.ProviderID, seasonNumber)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	var selected *TVEpisodeDetails
+	for index := range remote {
+		if remote[index].SeasonNumber == seasonNumber && remote[index].EpisodeNumber == episodeNumber {
+			selected = &remote[index]
+			break
+		}
+	}
+	if selected == nil {
+		return TVRecord{}, fmt.Errorf("TMDb episode S%02dE%02d is unavailable", seasonNumber, episodeNumber)
+	}
+	record.Episodes = mergeTVEpisodes(record.Episodes, []TVEpisodeDetails{*selected}, func(item TVEpisodeDetails) bool {
+		return item.SeasonNumber == seasonNumber && item.EpisodeNumber == episodeNumber
+	})
+	saved, err := s.SaveTV(ctx, record)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	plans, err := s.PreviewTVNFO(ctx, saved, []TVNFOInput{input}, writable)
+	if err != nil {
+		return TVRecord{}, err
+	}
+	if _, err := s.Apply(ctx, plans[0].ID, allowed); err != nil {
+		return TVRecord{}, err
+	}
+	s.logger.Info("TMDb TV episode scrape completed", "show_id", showID, "season_number", seasonNumber, "episode_number", episodeNumber)
+	return saved, nil
+}
+
+func mergeTVEpisodes(existing, replacement []TVEpisodeDetails, remove func(TVEpisodeDetails) bool) []TVEpisodeDetails {
+	merged := make([]TVEpisodeDetails, 0, len(existing)+len(replacement))
+	for _, item := range existing {
+		if !remove(item) {
+			merged = append(merged, item)
+		}
+	}
+	return append(merged, replacement...)
+}
+
 func (s *Service) TVRecord(ctx context.Context, showID int64) (TVRecord, error) {
 	var record TVRecord
 	var year, votes sql.NullInt64

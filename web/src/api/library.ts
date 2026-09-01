@@ -6,6 +6,7 @@ import type {
 TVShow,
 TVShowDetail,
 TVMetadata,
+TVSelection,
   Job,
   Metadata,
   Candidate,
@@ -155,6 +156,18 @@ export const selectTVShowCandidate = (csrf: string, id: number, candidateId: str
     body: JSON.stringify({ candidateId }),
   })
 
+export const scrapeTVSeason = (csrf: string, showId: number, seasonNumber: number) =>
+  request<TVMetadata>(`/api/v1/tv/shows/${showId}/seasons/${seasonNumber}/scrape`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const scrapeTVEpisode = (csrf: string, showId: number, seasonNumber: number, episodeId: number) =>
+  request<TVMetadata>(`/api/v1/tv/shows/${showId}/seasons/${seasonNumber}/episodes/${episodeId}/scrape`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
 export const previewTVNfoPlans = (csrf: string, id: number) =>
   request<{ items: WritePlan[] }>(`/api/v1/tv/shows/${id}/nfo-plans`, {
     method: 'POST',
@@ -163,6 +176,13 @@ export const previewTVNfoPlans = (csrf: string, id: number) =>
 
 export const tvArtworkUrl = (showId: number, artworkId: string) =>
   `/api/v1/tv/shows/${showId}/artwork/${encodeURIComponent(artworkId)}`
+
+export const tvNfoRaw = (showId: number, selection: TVSelection) => {
+  const params = new URLSearchParams({ kind: selection.kind })
+  if (selection.kind === 'season') params.set('season', String(selection.seasonNumber))
+  if (selection.kind === 'episode') params.set('episode', String(selection.episodeId))
+  return request<{ exists: boolean; targetPath: string; content: string }>(`/api/v1/tv/shows/${showId}/nfo?${params}`)
+}
 
 // Jobs
 export const jobs = () =>

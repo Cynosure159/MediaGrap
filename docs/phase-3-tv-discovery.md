@@ -26,12 +26,19 @@ The scanner still skips symbolic links and only reads filesystem metadata. It do
 
 - GET /api/v1/tv/shows?q= returns indexed TV shows with season and episode counts.
 - GET /api/v1/tv/shows/{id} returns the read-only episode list.
+- The TV catalog is an expandable show → season → episode tree. Selecting any
+  level scopes the inspector to that show, season, or episode.
 
 The library now has separate Movie and TV shows tabs. Desktop retains the catalog/detail layout; on mobile, selecting a show replaces the catalog until the user closes the detail panel.
 
+## Implemented follow-up work
+
+- TMDb show matching and Kodi show/season/episode NFO writes are available.
+- After a show has a TMDb association, a season or a single episode can be
+  scraped independently. Only its SQLite metadata and its corresponding NFO
+  targets are replaced; artwork and video files are unchanged.
+
 ## Deferred Phase 3 work
 
-- TMDb TV matching and details, including the configured metadata language.
-- Kodi show, season, and episode NFO parse/write previews.
 - Season/episode artwork downloads.
 - Missing-episode reporting, batch selection, persisted scrape jobs, cancellation, and retry-only-failed behavior.

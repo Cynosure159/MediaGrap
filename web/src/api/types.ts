@@ -51,6 +51,11 @@ export interface TVEpisode extends MediaItem {
   episodeEnd: number
 }
 
+export type TVSelection =
+  | { kind: 'show'; showId: number }
+  | { kind: 'season'; showId: number; seasonNumber: number }
+  | { kind: 'episode'; showId: number; seasonNumber: number; episodeId: number }
+
 export interface TVShowDetail {
   show: TVShow
   episodes: TVEpisode[]

@@ -8,7 +8,7 @@ import ScraperModal from './ScraperModal.vue'
 import TVArtworkPanel from './TVArtworkPanel.vue'
 
 const props = defineProps<{
-  showId: number | null
+  selection: api.TVSelection | null
   csrfToken: string
   labels: Record<string, string>
 }>()
@@ -28,6 +28,40 @@ const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
 const xmlCopied = shallowRef(false)
+const showId = computed(() => props.selection?.showId ?? null)
+const selectedUnitEpisode = computed(() => {
+  const selection = props.selection
+  if (selection?.kind !== 'episode') return null
+  return detail.value?.episodes.find(item => item.id === selection.episodeId) ?? null
+})
+const selectedUnitSeasonEpisodes = computed(() => props.selection?.kind === 'season' ? (seasonsMap.value.get(props.selection.seasonNumber) ?? []) : [])
+const selectedUnitTitle = computed(() => {
+  if (props.selection?.kind === 'season') return `${props.labels.season} ${props.selection.seasonNumber}`
+  if (selectedUnitEpisode.value) return `${formatEpisodeCode(selectedUnitEpisode.value)} · ${episodeTitle(selectedUnitEpisode.value)}`
+  return draft.title || detail.value?.show.titleHint || ''
+})
+const selectedUnitOverview = computed(() => selectedUnitEpisode.value ? (remoteEpisode(selectedUnitEpisode.value)?.overview || props.labels.noOverview || '') : draft.overview)
+const selectedUnitPath = computed(() => selectedUnitEpisode.value?.relativePath || detail.value?.show.relativePath || '')
+const selectedUnitSize = computed(() => selectedUnitEpisode.value?.fileSize ?? (props.selection?.kind === 'season' ? selectedUnitSeasonEpisodes.value.reduce((total, item) => total + item.fileSize, 0) : totalFileSize.value))
+const scopedEpisodes = computed(() => {
+  if (props.selection?.kind === 'season') return selectedUnitSeasonEpisodes.value
+  if (selectedUnitEpisode.value) return [selectedUnitEpisode.value]
+  return detail.value?.episodes ?? []
+})
+const scopedArtwork = computed(() => {
+  const assets = detail.value?.artwork ?? []
+  if (props.selection?.kind === 'show') return assets
+  if (props.selection?.kind === 'season') {
+    const directories = new Set(scopedEpisodes.value.map(item => item.relativePath.slice(0, item.relativePath.lastIndexOf('/'))))
+    return assets.filter(asset => directories.has(asset.relativePath.slice(0, asset.relativePath.lastIndexOf('/'))))
+  }
+  const episode = selectedUnitEpisode.value
+  if (!episode) return []
+  const basePath = episode.relativePath.slice(0, episode.relativePath.lastIndexOf('.'))
+  return assets.filter(asset => asset.relativePath.startsWith(`${basePath}.`))
+})
+const scopedCastList = computed<DisplayCastMember[]>(() => props.selection?.kind === 'show' ? castList.value : [])
+const nfoRaw = shallowRef({ exists: false, targetPath: '', content: '' })
 
 const patternInput = shallowRef('${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumber}E${episodeNumber} - [${resolution}]')
 const availableTokens = [
@@ -162,11 +196,23 @@ ${genresXml}
 
 async function copyXml() {
   try {
-    await navigator.clipboard.writeText(nfoXmlContent.value)
+    await navigator.clipboard.writeText(nfoRaw.value.content || nfoXmlContent.value)
     xmlCopied.value = true
     setTimeout(() => { xmlCopied.value = false }, 2000)
   } catch {
     // fallback
+  }
+}
+
+async function loadNfoRaw(selection = props.selection) {
+  if (!selection) {
+    nfoRaw.value = { exists: false, targetPath: '', content: '' }
+    return
+  }
+  try {
+    nfoRaw.value = await api.tvNfoRaw(selection.showId, selection)
+  } catch {
+    nfoRaw.value = { exists: false, targetPath: '', content: '' }
   }
 }
 
@@ -202,7 +248,7 @@ async function loadDetail(id: number) {
   }
 }
 
-watch(() => props.showId, id => {
+watch(showId, id => {
   isEditing.value = false
   if (id) {
     activeTab.value = 'overview'
@@ -212,6 +258,8 @@ watch(() => props.showId, id => {
   }
 }, { immediate: true })
 
+watch(() => props.selection, () => { void loadNfoRaw() }, { immediate: true })
+
 function cancelEditing() {
   if (detail.value) {
     applyMetadataToDraft(detail.value.metadata, detail.value.show.titleHint, detail.value.show.yearHint)
@@ -220,11 +268,12 @@ function cancelEditing() {
 }
 
 async function handleCandidateSelect(candidate: api.Candidate) {
-  if (!props.showId) return
+  if (!showId.value) return
   try {
-    const newMeta = await api.selectTVShowCandidate(props.csrfToken, props.showId, candidate.id)
+    const newMeta = await api.selectTVShowCandidate(props.csrfToken, showId.value, candidate.id)
     applyMetadataToDraft(newMeta)
-    await loadDetail(props.showId)
+    await loadDetail(showId.value)
+    await loadNfoRaw()
     isEditing.value = false
     showScraperModal.value = false
     emit('metadataSaved')
@@ -234,13 +283,37 @@ async function handleCandidateSelect(candidate: api.Candidate) {
   }
 }
 
-async function handleSaveAndWrite() {
-  if (!props.showId || !detail.value) return
+async function handleScrape() {
+  if (!props.selection || !showId.value) return
+  if (props.selection.kind === 'show') {
+    showScraperModal.value = true
+    return
+  }
   isSaving.value = true
   error.value = null
   try {
-    await api.previewTVNfoPlans(props.csrfToken, props.showId)
-    await loadDetail(props.showId)
+    if (props.selection.kind === 'season') {
+      await api.scrapeTVSeason(props.csrfToken, showId.value, props.selection.seasonNumber)
+    } else {
+      await api.scrapeTVEpisode(props.csrfToken, showId.value, props.selection.seasonNumber, props.selection.episodeId)
+    }
+    await loadDetail(showId.value)
+    await loadNfoRaw()
+    emit('metadataSaved')
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function handleSaveAndWrite() {
+  if (!showId.value || !detail.value) return
+  isSaving.value = true
+  error.value = null
+  try {
+    await api.previewTVNfoPlans(props.csrfToken, showId.value)
+    await loadDetail(showId.value)
     isEditing.value = false
     emit('metadataSaved')
   } catch (caught) {
@@ -266,7 +339,7 @@ async function handleSaveAndWrite() {
       @toggle-edit="isEditing = !isEditing"
       @cancel-edit="cancelEditing"
       @save-edit="handleSaveAndWrite"
-      @scrape="showScraperModal = true"
+      @scrape="handleScrape"
       @toggle-lock="isLocked = !isLocked"
       @close="emit('close')"
     />
@@ -297,7 +370,7 @@ async function handleSaveAndWrite() {
         <div class="hero-banner">
           <div class="title-cluster">
             <template v-if="!isEditing">
-              <h1 class="main-title">{{ draft.title || detail.show.titleHint }}</h1>
+              <h1 class="main-title">{{ selectedUnitTitle }}</h1>
               <h2 v-if="draft.originalTitle && draft.originalTitle !== draft.title" class="sub-title">
                 {{ draft.originalTitle }}
               </h2>
@@ -309,7 +382,7 @@ async function handleSaveAndWrite() {
           </div>
 
           <div class="meta-strip">
-            <span class="meta-item font-code">{{ draft.year ?? detail.show.yearHint ?? labels.tvSeries }}</span>
+            <span class="meta-item font-code">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (draft.year ?? detail.show.yearHint ?? labels.tvSeries) }}</span>
             <span class="meta-dot"></span>
             <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
             <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
@@ -409,8 +482,8 @@ async function handleSaveAndWrite() {
 
               <div class="meta-card meta-card-full">
                 <span class="card-label-caps">STORAGE PATH / 目录路径</span>
-                <div class="meta-val font-code" :title="detail.show.relativePath">
-                  {{ detail.show.relativePath }}
+                <div class="meta-val font-code" :title="selectedUnitPath">
+                  {{ selectedUnitPath }}
                 </div>
               </div>
             </div>
@@ -421,7 +494,7 @@ async function handleSaveAndWrite() {
                   <span class="card-label-caps">{{ labels.plotSummary || '剧情简介' }}</span>
                 </div>
                 <p v-if="!isEditing" class="plot-paragraph">
-                  {{ draft.overview || labels.noOverview || '暂无剧情简介。' }}
+                  {{ selectedUnitOverview || labels.noOverview || '暂无剧情简介。' }}
                 </p>
                 <textarea
                   v-else
@@ -440,24 +513,24 @@ async function handleSaveAndWrite() {
                 </svg>
               </div>
               <div class="file-details">
-                <p class="file-path font-code" :title="detail.show.relativePath">{{ detail.show.relativePath }}</p>
+                <p class="file-path font-code" :title="selectedUnitPath">{{ selectedUnitPath }}</p>
                 <div class="file-specs">
                   <span class="dot dot-ok"></span>
-                  <span class="status-txt">{{ detail.show.seasonCount }} {{ labels.seasons }} · {{ detail.show.episodeCount }} {{ labels.episodes }}</span>
+                  <span class="status-txt">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (props.selection?.kind === 'season' ? `${selectedUnitSeasonEpisodes.length} ${labels.episodes}` : `${detail.show.seasonCount} ${labels.seasons} · ${detail.show.episodeCount} ${labels.episodes}`) }}</span>
                   <span class="meta-sep">|</span>
                   <span class="stream-summary font-code">Video: 1080p AVC • Audio: AAC 2.0</span>
                 </div>
               </div>
               <div class="file-size-divider"></div>
               <div class="file-size-box">
-                <span class="size-val font-code">{{ formatFileSize(totalFileSize) }}</span>
+                <span class="size-val font-code">{{ formatFileSize(selectedUnitSize) }}</span>
                 <span class="size-lbl font-code">{{ labels.fileSize || 'TOTAL SIZE' }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="seasons-container">
+        <div v-if="props.selection?.kind !== 'episode'" class="seasons-container">
           <div class="seasons-header-title">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
               <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
@@ -466,7 +539,7 @@ async function handleSaveAndWrite() {
           </div>
 
           <section
-            v-for="[seasonNum, episodes] in seasonsMap"
+            v-for="[seasonNum, episodes] in (props.selection?.kind === 'season' ? [[props.selection.seasonNumber, selectedUnitSeasonEpisodes]] : seasonsMap)"
             :key="seasonNum"
             class="season-card"
           >
@@ -522,8 +595,8 @@ async function handleSaveAndWrite() {
         </div>
 
         <div class="artwork-layout-grid">
-          <div class="art-col-primary">
-            <div class="art-card">
+          <div v-if="props.selection?.kind === 'show'" class="art-col-primary">
+            <div v-if="props.selection?.kind === 'show'" class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
@@ -568,7 +641,7 @@ async function handleSaveAndWrite() {
           </div>
 
           <div class="art-col-wide">
-            <div class="art-card">
+            <div v-if="props.selection?.kind === 'show'" class="art-card">
               <div class="art-card-header">
                 <div class="header-title">
                   <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="title-icon">
@@ -601,9 +674,9 @@ async function handleSaveAndWrite() {
                   </svg>
                   <span>Local Indexed Assets</span>
                 </div>
-                <span class="item-count font-code">{{ detail.artwork.length }} files</span>
+                <span class="item-count font-code">{{ scopedArtwork.length }} files</span>
               </div>
-              <TVArtworkPanel :show-id="detail.show.id" :assets="detail.artwork" :labels="labels" />
+              <TVArtworkPanel :show-id="detail.show.id" :assets="scopedArtwork" :labels="labels" />
             </div>
           </div>
         </div>
@@ -613,11 +686,11 @@ async function handleSaveAndWrite() {
         <div class="workshop-header">
           <div class="header-left">
             <h2>{{ labels.castAndCrew || 'Cast & Crew Workshop' }}</h2>
-            <span class="sub-label">Series creators, regular cast and guest stars</span>
+            <span class="sub-label">{{ props.selection?.kind === 'show' ? 'Series creators, regular cast and guest stars' : 'No cast fields exist in Kodi season and episode NFOs.' }}</span>
           </div>
         </div>
 
-        <div v-if="castList.length === 0" class="cast-empty">
+        <div v-if="scopedCastList.length === 0" class="cast-empty">
           <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48" opacity="0.2">
             <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
           </svg>
@@ -625,7 +698,7 @@ async function handleSaveAndWrite() {
         </div>
 
         <div v-else class="cast-grid">
-          <div v-for="person in castList" :key="person.id" class="cast-card">
+          <div v-for="person in scopedCastList" :key="person.id" class="cast-card">
             <div class="cast-avatar">
               <img v-if="person.avatar" :src="person.avatar" :alt="person.name" class="avatar-img" />
               <span v-else class="avatar-placeholder font-code">{{ person.name.charAt(0) }}</span>
@@ -642,7 +715,7 @@ async function handleSaveAndWrite() {
         <div class="workshop-header">
           <div class="header-left">
             <h2>{{ labels.nfoXmlEditor || 'Kodi NFO Raw XML' }}</h2>
-            <span class="sub-label">Deterministic UTF-8 Kodi tvshow.nfo specification</span>
+            <span class="sub-label">{{ nfoRaw.exists ? nfoRaw.targetPath : 'No local NFO exists for the selected item.' }}</span>
           </div>
           <div class="workshop-actions">
             <button class="btn btn-outline" type="button" @click="copyXml">
@@ -651,7 +724,7 @@ async function handleSaveAndWrite() {
               </svg>
               {{ xmlCopied ? (labels.copied || 'Copied!') : (labels.copy || 'Copy XML') }}
             </button>
-            <button class="btn btn-success" :disabled="!detail.writable || isSaving" type="button" @click="handleSaveAndWrite">
+            <button class="btn btn-success" :disabled="!detail.writable || isSaving || props.selection?.kind !== 'show'" type="button" @click="handleSaveAndWrite">
               <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
                 <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
               </svg>
@@ -662,10 +735,10 @@ async function handleSaveAndWrite() {
 
         <div class="xml-editor-canvas">
           <div class="xml-canvas-header">
-            <div class="file-tag font-code">tvshow.nfo</div>
+            <div class="file-tag font-code">{{ nfoRaw.targetPath.split('/').pop() || 'NFO' }}</div>
             <div class="encoding-tag font-code">UTF-8 • XML v1.0 • Kodi v20/v21</div>
           </div>
-          <pre class="xml-code font-code"><code>{{ nfoXmlContent }}</code></pre>
+          <pre class="xml-code font-code"><code>{{ nfoRaw.content || nfoXmlContent }}</code></pre>
         </div>
       </section>
 
@@ -706,11 +779,11 @@ async function handleSaveAndWrite() {
         <div class="structure-card">
           <div class="card-header-bar">
             <span class="header-title">Current File & Sidecar Assets</span>
-            <span class="item-count font-code">{{ detail.episodes.length }} episodes</span>
+            <span class="item-count font-code">{{ scopedEpisodes.length }} episodes</span>
           </div>
 
           <div class="file-audit-list">
-            <div v-for="ep in detail.episodes" :key="ep.id" class="audit-item">
+            <div v-for="ep in scopedEpisodes" :key="ep.id" class="audit-item">
               <span class="spec-badge video-badge font-code">{{ formatEpisodeCode(ep) }}</span>
               <span class="audit-path font-code">{{ ep.relativePath }}</span>
               <span class="audit-status text-ok font-code">{{ ep.sidecars.length }} sidecars</span>
