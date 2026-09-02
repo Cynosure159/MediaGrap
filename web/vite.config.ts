@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       manifest: {
         name: 'MediaGrap',
         short_name: 'MediaGrap',
@@ -15,7 +15,7 @@ export default defineConfig({
         theme_color: '#0c1324',
         background_color: '#0c1324',
         display: 'standalone',
-        start_url: '/',
+        start_url: '/movies',
         icons: [
           {
             src: 'pwa-192.svg',

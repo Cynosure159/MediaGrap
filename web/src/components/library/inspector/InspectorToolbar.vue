@@ -1,5 +1,7 @@
 <script setup lang="ts">
-export type InspectorTab = 'overview' | 'artwork' | 'cast' | 'nfo' | 'files'
+import type { InspectorTab } from '@/router'
+
+export type { InspectorTab }
 
 defineProps<{
   activeTab: InspectorTab

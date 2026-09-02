@@ -13,12 +13,14 @@ import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   itemId: number | null
+  activeTab?: InspectorTab
   csrfToken: string
   labels: Record<string, string>
 }>()
 
 const emit = defineEmits<{
   close: []
+  selectTab: [tab: InspectorTab]
   metadataSaved: []
 }>()
 
@@ -29,7 +31,8 @@ const detail = shallowRef<{
   writable: boolean
 } | null>(null)
 
-const activeTab = shallowRef<InspectorTab>('overview')
+const localActiveTab = shallowRef<InspectorTab>('overview')
+const activeTab = computed(() => props.activeTab ?? localActiveTab.value)
 const showScraperModal = shallowRef(false)
 const showNfoPreview = shallowRef(false)
 const writePlan = shallowRef<api.WritePlan | null>(null)
@@ -38,6 +41,7 @@ const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
+let detailRequestSequence = 0
 const {
   inspection,
   namingPreview,
@@ -138,29 +142,39 @@ function buildMetadataPayload(): api.Metadata {
 }
 
 async function loadDetail(id: number) {
+  const requestSequence = ++detailRequestSequence
   isLoading.value = true
   error.value = null
   try {
     const result = await api.mediaDetail(id)
+    if (requestSequence !== detailRequestSequence || props.itemId !== id) return
     detail.value = result
     applyMetadataToDraft(result.metadata, result.item.titleHint, result.item.yearHint)
     if (result.item.posterUrl) draft.posterUrl = result.item.posterUrl
   } catch (caught) {
+    if (requestSequence !== detailRequestSequence) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadMedia
   } finally {
-    isLoading.value = false
+    if (requestSequence === detailRequestSequence) isLoading.value = false
   }
 }
 
 watch(() => props.itemId, id => {
   isEditing.value = false
   if (id) {
-    activeTab.value = 'overview'
+    if (props.activeTab === undefined) localActiveTab.value = 'overview'
     loadDetail(id)
   } else {
+    detailRequestSequence += 1
+    isLoading.value = false
     detail.value = null
   }
 }, { immediate: true })
+
+function selectTab(tab: InspectorTab) {
+  localActiveTab.value = tab
+  emit('selectTab', tab)
+}
 
 function cancelEditing() {
   if (detail.value) {
@@ -245,7 +259,7 @@ async function handleApplyNfo() {
       :is-scraping="false"
       :is-locked="isLocked"
       :labels="labels"
-      @select-tab="activeTab = $event"
+      @select-tab="selectTab"
       @toggle-edit="isEditing = !isEditing"
       @cancel-edit="cancelEditing"
       @save-edit="handleSaveAndWrite"

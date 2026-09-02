@@ -49,6 +49,20 @@ describe('useLibrary', () => {
     expect(library.isLoading.value).toBe(false)
   })
 
+  it('keeps successful library sections available when one request fails', async () => {
+    vi.mocked(api.sources).mockResolvedValueOnce({ items: [{ id: 1, name: 'TV', rootPath: '/tv', enabled: true, itemCount: 1, writable: true, scanMode: 'incremental', scheduleEnabled: false, scheduleIntervalMinutes: 1440 }] })
+    vi.mocked(api.media).mockRejectedValueOnce(new Error('Movies unavailable'))
+    vi.mocked(api.tvShows).mockResolvedValueOnce({ items: [{ id: 201, sourceId: 1, relativePath: 'Show', titleHint: 'Show', yearHint: 2024, episodeCount: 1, seasonCount: 1 }] })
+    vi.mocked(api.jobs).mockResolvedValueOnce({ items: [] })
+
+    const library = useLibrary(() => 'test-csrf')
+    await library.refresh()
+
+    expect(library.sourceItems.value).toHaveLength(1)
+    expect(library.tvShowItems.value).toHaveLength(1)
+    expect(library.error.value).toBe('Movies unavailable')
+  })
+
   it('calls createSource and triggers refresh', async () => {
     vi.mocked(api.addSource).mockResolvedValueOnce({ id: 2, name: 'TV', rootPath: '/tv', enabled: true, itemCount: 0, writable: true, scanMode: 'incremental', scheduleEnabled: false, scheduleIntervalMinutes: 1440 })
     vi.mocked(api.sources).mockResolvedValueOnce({ items: [] })

@@ -2,7 +2,7 @@
 export interface NavigationItem {
   id: string
   label: string
-  icon: 'movie' | 'tv' | 'sources' | 'jobs' | 'settings'
+  icon: 'movie' | 'tv' | 'jobs' | 'settings'
   spinning?: boolean
   disabled?: boolean
 }
@@ -48,11 +48,6 @@ const emit = defineEmits<{
         <!-- TV Shows Icon -->
         <svg v-else-if="item.icon === 'tv'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
           <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
-        </svg>
-
-        <!-- Sources / Folders Icon -->
-        <svg v-else-if="item.icon === 'sources'" class="rail-svg" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
         </svg>
 
         <!-- Background Jobs Icon -->

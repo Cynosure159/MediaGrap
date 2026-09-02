@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowReactive, shallowRef } from 'vue'
+import { computed, shallowReactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
 import type { Job, TVSelection, TVShow, TVShowDetail } from '@/api/library'
 import TVShowTreeItem from './TVShowTreeItem.vue'
@@ -33,20 +33,34 @@ const filteredItems = computed(() => {
     : props.items
 })
 
-async function toggleShow(showId: number) {
-  if (expandedShowIds.has(showId)) {
-    expandedShowIds.delete(showId)
-    return
-  }
+async function ensureShowExpanded(showId: number) {
   expandedShowIds.add(showId)
   if (detailsByShowId.has(showId) || loadingShowIds.has(showId)) return
   loadingShowIds.add(showId)
   try {
     detailsByShowId.set(showId, await api.tvShowDetail(showId))
+  } catch {
+    // The inspector owns the visible error state for a stale/deleted URL selection.
   } finally {
     loadingShowIds.delete(showId)
   }
 }
+
+async function toggleShow(showId: number) {
+  if (expandedShowIds.has(showId)) {
+    expandedShowIds.delete(showId)
+    return
+  }
+  await ensureShowExpanded(showId)
+}
+
+watch(
+  () => props.selected?.showId,
+  showId => {
+    if (showId !== undefined) void ensureShowExpanded(showId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

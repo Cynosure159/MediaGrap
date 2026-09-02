@@ -1,20 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from 'vue'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import * as api from '@/api/library'
 import AuthPanel from '@/components/auth/AuthPanel.vue'
 import AppSidebar, { type NavigationItem } from '@/components/app/AppSidebar.vue'
-import LibraryWorkspace from '@/components/library/LibraryWorkspace.vue'
-import SettingsPage from '@/components/settings/SettingsPage.vue'
-import OperationsPage from '@/components/operations/OperationsPage.vue'
 import { useLocale } from '@/composables/useLocale'
-import { useTheme, type Theme } from '@/composables/useTheme'
+import { useTheme } from '@/composables/useTheme'
+import type { MainSection } from '@/router'
 
 const mode = shallowRef<'loading' | 'setup' | 'login' | 'library'>('loading')
 const session = shallowRef<api.Session | null>(null)
 const error = shallowRef<string | null>(null)
-const activeSection = shallowRef<'movies' | 'shows' | 'sources' | 'jobs' | 'settings'>('movies')
 const { locale, t, setLocale, toggleLocale } = useLocale()
 const { theme, setTheme } = useTheme()
+const route = useRoute()
+const router = useRouter()
+
+const activeSection = computed<MainSection>(() => {
+  const section = route.meta.section
+  return section === 'shows' || section === 'jobs' || section === 'settings' ? section : 'movies'
+})
 
 async function applyServerPreferences() {
 	try {
@@ -29,10 +34,15 @@ async function applyServerPreferences() {
 const navigationItems = computed<NavigationItem[]>(() => [
   { id: 'movies', label: t.value.movies, icon: 'movie' },
   { id: 'shows', label: t.value.tvShows, icon: 'tv' },
-  { id: 'sources', label: t.value.sources, icon: 'sources' },
   { id: 'jobs', label: t.value.jobs, icon: 'jobs' },
   { id: 'settings', label: t.value.settings, icon: 'settings' }
 ])
+
+function selectSection(id: string) {
+  if (id === 'movies' || id === 'shows' || id === 'jobs' || id === 'settings') {
+    void router.push({ name: id })
+  }
+}
 
 async function initialize() {
   try {
@@ -87,38 +97,25 @@ onMounted(initialize)
       :active-section="activeSection"
       :username="session.user.username"
       :labels="t"
-      @select-section="activeSection = $event as any"
+      @select-section="selectSection"
       @toggle-locale="toggleLocale"
     />
 
     <!-- 2. Main Content Area Offset by 64px -->
     <div class="app-main-content">
-      <!-- Library Workspace (Movies / TV Shows) -->
-      <LibraryWorkspace
-        v-if="activeSection === 'movies' || activeSection === 'shows'"
-        :media-kind="activeSection"
-        :csrf-token="session.csrfToken"
-        :username="session.user.username"
-        :labels="t"
-        @toggle-locale="toggleLocale"
-      />
-
-      <OperationsPage
-        v-else-if="activeSection === 'jobs'"
-        :csrf-token="session.csrfToken"
-        :labels="t"
-      />
-
-      <!-- Settings / Sources Page -->
-      <SettingsPage
-        v-else
-        :csrf-token="session.csrfToken"
-        :locale="locale"
-		:theme="theme"
-        :labels="t"
-        @change-locale="setLocale"
-		@change-theme="setTheme"
-      />
+      <RouterView v-slot="{ Component }">
+        <component
+          :is="Component"
+          :csrf-token="session.csrfToken"
+          :username="session.user.username"
+          :labels="t"
+          :locale="locale"
+          :theme="theme"
+          @toggle-locale="toggleLocale"
+          @change-locale="setLocale"
+          @change-theme="setTheme"
+        />
+      </RouterView>
     </div>
   </div>
 </template>

@@ -6,21 +6,31 @@ import MovieInspector from './MovieInspector.vue'
 import TVShowCatalog from './TVShowCatalog.vue'
 import TVShowInspector from './TVShowInspector.vue'
 import type { TVSelection } from '@/api/library'
+import type { InspectorTab } from '@/router'
 
 const props = defineProps<{
   csrfToken: string
   username: string
   labels: Record<string, string>
   mediaKind?: 'movies' | 'shows'
+  selectedMovieId?: number | null
+  selectedTvSelection?: TVSelection | null
+  activeTab?: InspectorTab
 }>()
 
 const emit = defineEmits<{
   toggleLocale: []
+  selectMovie: [id: number]
+  selectTvSelection: [selection: TVSelection]
+  selectTab: [tab: InspectorTab]
+  closeSelection: []
 }>()
 
 const query = shallowRef('')
-const selectedMovieId = shallowRef<number | null>(null)
-const selectedTVSelection = shallowRef<TVSelection | null>(null)
+const selectedMovieId = computed(() => props.selectedMovieId ?? null)
+const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
+const activeTab = computed(() => props.activeTab ?? 'overview')
+const hasSelection = computed(() => props.mediaKind === 'shows' ? selectedTvSelection.value !== null : selectedMovieId.value !== null)
 
 const { sourceItems, mediaItems, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
 const activeJobs = computed(() => jobItems.value.filter(job => job.state === 'queued' || job.state === 'running'))
@@ -43,7 +53,7 @@ onMounted(async () => {
 <template>
   <div class="workspace-shell">
     <!-- If no sources exist -->
-    <div v-if="!hasSources" class="source-onboarding">
+    <div v-if="!hasSources && !hasSelection" class="source-onboarding">
       <div class="onboarding-card">
         <svg class="onboard-icon" viewBox="0 0 24 24" fill="currentColor">
           <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
@@ -54,7 +64,7 @@ onMounted(async () => {
     </div>
 
     <!-- Main Workspace Split Pane -->
-    <div v-else class="split-pane-layout" :class="{ 'mobile-show-detail': (props.mediaKind === 'shows' ? selectedTVSelection : selectedMovieId) !== null }">
+    <div v-else class="split-pane-layout" :class="{ 'mobile-show-detail': (props.mediaKind === 'shows' ? selectedTvSelection : selectedMovieId) !== null }">
       <!-- Movies Mode -->
       <template v-if="props.mediaKind !== 'shows'">
         <MediaCatalog
@@ -63,14 +73,16 @@ onMounted(async () => {
           :active-job="activeJobs[0]"
           :labels="labels"
           @search="search"
-          @select="selectedMovieId = $event"
+          @select="emit('selectMovie', $event)"
           @scan="scanActiveSource"
         />
         <MovieInspector
           :item-id="selectedMovieId"
+          :active-tab="activeTab"
           :csrf-token="csrfToken"
           :labels="labels"
-          @close="selectedMovieId = null"
+          @select-tab="emit('selectTab', $event)"
+          @close="emit('closeSelection')"
           @metadata-saved="refresh(query)"
         />
       </template>
@@ -79,18 +91,20 @@ onMounted(async () => {
       <template v-else>
         <TVShowCatalog
           :items="tvShowItems"
-          :selected="selectedTVSelection"
+          :selected="selectedTvSelection"
           :active-job="activeJobs[0]"
           :labels="labels"
           @search="search"
-          @select="selectedTVSelection = $event"
+          @select="emit('selectTvSelection', $event)"
           @scan="scanActiveSource"
         />
         <TVShowInspector
-          :selection="selectedTVSelection"
+          :selection="selectedTvSelection"
+          :active-tab="activeTab"
           :csrf-token="csrfToken"
           :labels="labels"
-          @close="selectedTVSelection = null"
+          @select-tab="emit('selectTab', $event)"
+          @close="emit('closeSelection')"
         />
       </template>
     </div>

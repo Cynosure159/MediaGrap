@@ -12,17 +12,20 @@ import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   selection: api.TVSelection | null
+  activeTab?: InspectorTab
   csrfToken: string
   labels: Record<string, string>
 }>()
 
 const emit = defineEmits<{
   close: []
+  selectTab: [tab: InspectorTab]
   metadataSaved: []
 }>()
 
 const detail = shallowRef<api.TVShowDetail | null>(null)
-const activeTab = shallowRef<InspectorTab>('overview')
+const localActiveTab = shallowRef<InspectorTab>('overview')
+const activeTab = computed(() => props.activeTab ?? localActiveTab.value)
 const showScraperModal = shallowRef(false)
 const selectedEpisodeId = shallowRef<number | null>(null)
 const isEditing = shallowRef(false)
@@ -30,6 +33,8 @@ const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
+let detailRequestSequence = 0
+let nfoRequestSequence = 0
 
 const showId = computed(() => props.selection?.showId ?? null)
 const inspectionEpisodeId = computed(() =>
@@ -303,14 +308,18 @@ ${genresXml}
 })
 
 async function loadNfoRaw(selection = props.selection) {
+  const requestSequence = ++nfoRequestSequence
   if (!selection) {
     nfoRaw.value = { exists: false, targetPath: '', content: '' }
     return
   }
   try {
-    nfoRaw.value = await api.tvNfoRaw(selection.showId, selection)
+    const result = await api.tvNfoRaw(selection.showId, selection)
+    if (requestSequence === nfoRequestSequence) nfoRaw.value = result
   } catch {
-    nfoRaw.value = { exists: false, targetPath: '', content: '' }
+    if (requestSequence === nfoRequestSequence) {
+      nfoRaw.value = { exists: false, targetPath: '', content: '' }
+    }
   }
 }
 
@@ -339,33 +348,46 @@ function applyMetadataToDraft(meta: Partial<api.TVMetadata>, fallbackTitle = '',
 }
 
 async function loadDetail(id: number) {
+  const requestSequence = ++detailRequestSequence
   isLoading.value = true
   error.value = null
   try {
     const result = await api.tvShowDetail(id)
+    if (requestSequence !== detailRequestSequence || props.selection?.showId !== id) return
     detail.value = result
     applyMetadataToDraft(result.metadata, result.show.titleHint, result.show.yearHint)
     if (result.episodes.length) {
       selectedEpisodeId.value = result.episodes[0].id
     }
   } catch (caught) {
+    if (requestSequence !== detailRequestSequence) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadShow
   } finally {
-    isLoading.value = false
+    if (requestSequence === detailRequestSequence) isLoading.value = false
   }
 }
 
 watch(showId, id => {
   isEditing.value = false
   if (id) {
-    activeTab.value = 'overview'
+    if (props.activeTab === undefined) localActiveTab.value = 'overview'
     loadDetail(id)
   } else {
+    detailRequestSequence += 1
+    isLoading.value = false
     detail.value = null
   }
 }, { immediate: true })
 
-watch(() => props.selection, () => { void loadNfoRaw() }, { immediate: true })
+watch(() => props.selection, selection => {
+  if (selection?.kind === 'episode') selectedEpisodeId.value = selection.episodeId
+  void loadNfoRaw()
+}, { immediate: true, deep: true })
+
+function selectTab(tab: InspectorTab) {
+  localActiveTab.value = tab
+  emit('selectTab', tab)
+}
 
 function cancelEditing() {
   if (detail.value) {
@@ -442,7 +464,7 @@ async function handleSaveAndWrite() {
       :is-scraping="false"
       :is-locked="isLocked"
       :labels="labels"
-      @select-tab="activeTab = $event"
+      @select-tab="selectTab"
       @toggle-edit="isEditing = !isEditing"
       @cancel-edit="cancelEditing"
       @save-edit="handleSaveAndWrite"
@@ -470,6 +492,14 @@ async function handleSaveAndWrite() {
     <div v-else-if="isLoading" class="loading-state">
       <div class="loading-spinner"></div>
       <p>{{ labels.loading }}</p>
+    </div>
+
+    <div v-else-if="error && showId" class="error-state">
+      <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v4M12 16h.01" />
+      </svg>
+      <p>{{ labels.errorLoadShow || 'Unable to load TV show details.' }}</p>
     </div>
 
     <div v-else-if="detail" class="inspector-content">
@@ -590,7 +620,8 @@ async function handleSaveAndWrite() {
 }
 
 .no-selection-state,
-.loading-state {
+.loading-state,
+.error-state {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -598,6 +629,18 @@ async function handleSaveAndWrite() {
   justify-content: center;
   gap: 16px;
   color: var(--outline, #908fa0);
+}
+
+.error-state {
+  color: #ff8f8f;
+  text-align: center;
+  padding: 24px;
+}
+
+.error-icon {
+  width: 42px;
+  height: 42px;
+  opacity: 0.8;
 }
 
 .no-sel-icon {

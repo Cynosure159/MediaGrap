@@ -50,22 +50,24 @@ export function useLibrary(csrfToken: () => string) {
   async function refresh(query = '') {
     isLoading.value = true
     error.value = null
-    try {
-      const [sourceResult, mediaResult, tvResult, jobResult] = await Promise.all([
-        api.sources(),
-        api.media(query),
-        api.tvShows(query),
-        api.jobs(),
-      ])
-      sourceItems.value = sourceResult.items
-      mediaItems.value = mediaResult.items
-      tvShowItems.value = tvResult.items
-      jobItems.value = jobResult.items
-    } catch (caught) {
-      error.value = caught instanceof Error ? caught.message : 'Unable to load the library'
-    } finally {
-      isLoading.value = false
+    const results = await Promise.allSettled([
+      api.sources(),
+      api.media(query),
+      api.tvShows(query),
+      api.jobs(),
+    ])
+
+    const [sourceResult, mediaResult, tvResult, jobResult] = results
+    if (sourceResult.status === 'fulfilled') sourceItems.value = sourceResult.value.items
+    if (mediaResult.status === 'fulfilled') mediaItems.value = mediaResult.value.items
+    if (tvResult.status === 'fulfilled') tvShowItems.value = tvResult.value.items
+    if (jobResult.status === 'fulfilled') jobItems.value = jobResult.value.items
+
+    const failed = results.find(result => result.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      error.value = failed.reason instanceof Error ? failed.reason.message : 'Unable to load the library'
     }
+    isLoading.value = false
   }
 
   async function createSource(name: string, rootPath: string) {
