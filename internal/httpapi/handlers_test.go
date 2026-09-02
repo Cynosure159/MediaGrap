@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mediagrap/mediagrap/internal/auth"
@@ -103,6 +104,50 @@ func TestSystemSummaryEndpoint(t *testing.T) {
 	rec := tc.doRequest(req, false, false)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestOperationsStatusRequiresAuthentication(t *testing.T) {
+	tc := setupTestContext(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/operations/status", nil)
+	rec := tc.doRequest(req, false, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	tc.createAdminSession(t)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/operations/status", nil)
+	rec = tc.doRequest(req, true, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestJobCancelRetryAndAuditEndpoints(t *testing.T) {
+	tc := setupTestContext(t)
+	tc.createAdminSession(t)
+	jobResult, err := tc.db.ExecContext(t.Context(), `INSERT INTO jobs(kind,state,payload) VALUES('scan','queued','{}')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID, _ := jobResult.LastInsertId()
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/jobs/%d/cancel", jobID), nil)
+	rec := tc.doRequest(req, true, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel status %d: %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/jobs/%d/retry", jobID), nil)
+	rec = tc.doRequest(req, true, true)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("retry status %d: %s", rec.Code, rec.Body.String())
+	}
+	_, err = tc.db.ExecContext(t.Context(), `INSERT INTO audit_entries(action,target_path,detail) VALUES('nfo.apply','/media/Movie/Movie.nfo','Applied successfully')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/audit-entries", nil)
+	rec = tc.doRequest(req, true, false)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"target":"Movie/Movie.nfo"`) {
+		t.Fatalf("unexpected audit response %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

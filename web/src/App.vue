@@ -5,6 +5,7 @@ import AuthPanel from '@/components/auth/AuthPanel.vue'
 import AppSidebar, { type NavigationItem } from '@/components/app/AppSidebar.vue'
 import LibraryWorkspace from '@/components/library/LibraryWorkspace.vue'
 import SettingsPage from '@/components/settings/SettingsPage.vue'
+import OperationsPage from '@/components/operations/OperationsPage.vue'
 import { useLocale } from '@/composables/useLocale'
 
 const mode = shallowRef<'loading' | 'setup' | 'login' | 'library'>('loading')
@@ -86,6 +87,12 @@ onMounted(initialize)
         :username="session.user.username"
         :labels="t"
         @toggle-locale="toggleLocale"
+      />
+
+      <OperationsPage
+        v-else-if="activeSection === 'jobs'"
+        :csrf-token="session.csrfToken"
+        :labels="t"
       />
 
       <!-- Settings / Sources Page -->

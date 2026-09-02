@@ -19,6 +19,11 @@ type BuildInfo struct {
 	BuiltAt string
 }
 
+type RuntimePaths struct {
+	ConfigDir string
+	CacheDir  string
+}
+
 type server struct {
 	logger          *slog.Logger
 	db              *sql.DB
@@ -27,6 +32,7 @@ type server struct {
 	library         LibraryService
 	metadata        MetadataService
 	settingsService SettingsService
+	runtime         RuntimePaths
 }
 
 func NewServer(
@@ -37,6 +43,7 @@ func NewServer(
 	libraryService LibraryService,
 	metadataService MetadataService,
 	settingsService SettingsService,
+	runtime ...RuntimePaths,
 ) http.Handler {
 	application := &server{
 		logger:          logger,
@@ -47,6 +54,9 @@ func NewServer(
 		metadata:        metadataService,
 		settingsService: settingsService,
 	}
+	if len(runtime) > 0 {
+		application.runtime = runtime[0]
+	}
 
 	mux := http.NewServeMux()
 
@@ -55,6 +65,7 @@ func NewServer(
 	mux.HandleFunc("GET /readyz", application.ready)
 	mux.HandleFunc("GET /api/v1/system/info", application.systemInfo)
 	mux.HandleFunc("GET /api/v1/system/summary", application.systemSummary)
+	mux.HandleFunc("GET /api/v1/operations/status", application.operationsStatus)
 
 	// Auth & Setup
 	mux.HandleFunc("GET /api/v1/setup/status", application.setupStatus)
@@ -109,6 +120,10 @@ func NewServer(
 
 	// Jobs
 	mux.HandleFunc("GET /api/v1/jobs", application.listJobs)
+	mux.HandleFunc("GET /api/v1/jobs/events", application.streamJobEvents)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", application.cancelJob)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/retry", application.retryJob)
+	mux.HandleFunc("GET /api/v1/audit-entries", application.listAuditEntries)
 
 	// Frontend SPA
 	mux.Handle("/", application.frontend())

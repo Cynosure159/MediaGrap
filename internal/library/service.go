@@ -56,6 +56,7 @@ type Sidecar struct {
 	Kind         string `json:"kind"`
 }
 type Job = jobs.Job
+type JobEvent = jobs.Event
 type Page struct {
 	Items    []MediaItem `json:"items"`
 	Total    int         `json:"total"`
@@ -218,6 +219,18 @@ func (s *Service) ListJobs(ctx context.Context) ([]Job, error) {
 
 func (s *Service) Job(ctx context.Context, id int64) (Job, error) {
 	return s.jobs.Get(ctx, id)
+}
+
+func (s *Service) CancelJob(ctx context.Context, id int64) (Job, error) {
+	return s.jobs.Cancel(ctx, id)
+}
+
+func (s *Service) RetryJob(ctx context.Context, id int64) (Job, error) {
+	return s.jobs.Retry(ctx, id)
+}
+
+func (s *Service) JobEventsAfter(ctx context.Context, cursor int64, limit int) ([]JobEvent, error) {
+	return s.jobs.EventsAfter(ctx, cursor, limit)
 }
 
 func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize int) (Page, error) {

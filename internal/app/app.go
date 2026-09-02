@@ -72,7 +72,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 		db.Close()
 		return nil, err
 	}
-	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService, settingsService)
+	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService, settingsService, httpapi.RuntimePaths{ConfigDir: config.ConfigDir, CacheDir: config.CacheDir})
 	return &Application{
 		config: config,
 		logger: logger,

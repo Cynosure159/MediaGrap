@@ -6,7 +6,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 
 项目目标是在保留 tinyMediaManager、MediaElch 一类工具核心能力的同时，降低服务端常驻资源占用，并提供更适合浏览器、移动设备和容器环境的操作体验。
 
-> 当前状态：已完成 Phase 2 电影刮削与安全写入、Phase 3 首个电视剧发现/写入切片，以及 Phase 4 电影工作台的首批切片。Phase 4D 现已提供可选且带缓存的 ffprobe 数据、真实文件/Sidecar 审计和仅预览的电影命名 Dry-Run。
+> 当前状态：已完成 Phase 2 电影刮削与安全写入、Phase 3 首个电视剧发现/写入切片，以及 Phase 4 电影工作台的首批切片。Phase 4D 已提供 ffprobe 缓存、真实文件/Sidecar 审计和只读命名 Dry-Run；Phase 5A 首个切片新增可取消/重试持久化作业、SSE 更新、审计历史和系统状态。
 
 ## 核心目标
 
@@ -136,6 +136,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - [Phase 1 只读媒体发现](docs/phase-1-discovery.md)
 - [Phase 2 刮削与安全写入](docs/phase-2-scrape-and-safe-write.md)
 - [Phase 3 电视剧发现](docs/phase-3-tv-discovery.md)
+- [Phase 5A 作业与运维可见性](docs/phase-5a-operations.md)
 - [设置说明](docs/settings.md)
 - [ADR 0001：基础技术栈](docs/adr/0001-foundation-stack.md)
 

@@ -144,3 +144,55 @@ func TestWorkerCancellation(t *testing.T) {
 		t.Fatal("worker did not exit upon context cancellation")
 	}
 }
+
+func TestCancelQueuedJobAndRetry(t *testing.T) {
+	service := newTestJobsService(t)
+	job, err := service.Queue(t.Context(), "test_job", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := service.Cancel(t.Context(), job.ID)
+	if err != nil || cancelled.State != StateCancelled {
+		t.Fatalf("cancel queued job: %+v err=%v", cancelled, err)
+	}
+	retried, err := service.Retry(t.Context(), job.ID)
+	if err != nil || retried.State != StateQueued || retried.RetryCount != 1 {
+		t.Fatalf("retry cancelled job: %+v err=%v", retried, err)
+	}
+	events, err := service.EventsAfter(t.Context(), 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[0].State != StateQueued || events[1].State != StateCancelled || events[2].State != StateQueued {
+		t.Fatalf("unexpected job events: %+v", events)
+	}
+}
+
+func TestCancelRunningJobPropagatesContext(t *testing.T) {
+	service := newTestJobsService(t)
+	started := make(chan struct{})
+	service.RegisterHandler("blocking_job", func(ctx context.Context, _ Job, _ func(int, string)) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	job, err := service.Queue(t.Context(), "blocking_job", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { service.runOne(t.Context()); close(done) }()
+	<-started
+	if _, err := service.Cancel(t.Context(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("running handler did not receive cancellation")
+	}
+	current, err := service.Get(t.Context(), job.ID)
+	if err != nil || current.State != StateCancelled {
+		t.Fatalf("unexpected cancelled state: %+v err=%v", current, err)
+	}
+}

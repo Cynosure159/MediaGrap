@@ -6,7 +6,7 @@ MediaGrap is a lightweight, self-hosted media metadata scraper and library manag
 
 The project aims to retain the essential workflows found in tools such as tinyMediaManager and MediaElch while reducing server-side resource usage and providing a better browser, mobile, and container experience.
 
-> Current status: Phase 2 movie scraping and safe writes, the first Phase 3 TV discovery/write slice, and the first Phase 4 movie-workshop slices are implemented. Phase 4D now provides optional cached ffprobe data, real file/Sidecar audit, and preview-only movie naming Dry-Runs.
+> Current status: Phase 2 movie scraping and safe writes, the first Phase 3 TV discovery/write slice, and the first Phase 4 movie-workshop slices are implemented. Phase 4D provides cached ffprobe data, real file/Sidecar audit, and preview-only naming Dry-Runs. The first Phase 5A slice adds cancellable/retryable durable jobs, SSE updates, audit history, and system status.
 
 ## Goals
 
@@ -136,6 +136,7 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [Phase 1 read-only discovery](docs/phase-1-discovery.md)
 - [Phase 2 scrape and safe write](docs/phase-2-scrape-and-safe-write.md)
 - [Phase 3 TV discovery](docs/phase-3-tv-discovery.md)
+- [Phase 5A jobs and operations visibility](docs/phase-5a-operations.md)
 - [Settings](docs/settings.md)
 - [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
 

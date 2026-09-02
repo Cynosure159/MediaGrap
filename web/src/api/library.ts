@@ -17,6 +17,8 @@ TVSelection,
   ArtworkCandidate,
   Settings,
   SettingsUpdate,
+  AuditEntry,
+  OperationsStatus,
 } from './types'
 
 export * from './types'
@@ -225,6 +227,24 @@ export const tvNfoRaw = (showId: number, selection: TVSelection) => {
 // Jobs
 export const jobs = () =>
   request<{ items: Job[] }>('/api/v1/jobs')
+
+export const cancelJob = (csrf: string, id: number) =>
+  request<Job>(`/api/v1/jobs/${id}/cancel`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const retryJob = (csrf: string, id: number) =>
+  request<Job>(`/api/v1/jobs/${id}/retry`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const auditEntries = () =>
+  request<{ items: AuditEntry[] }>('/api/v1/audit-entries')
+
+export const operationsStatus = () =>
+  request<OperationsStatus>('/api/v1/operations/status')
 
 // Settings
 export const settings = () =>

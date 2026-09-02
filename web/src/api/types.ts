@@ -187,6 +187,32 @@ export interface Job {
   message: string
   errorMessage: string
   createdAt?: string
+  startedAt?: string
+  completedAt?: string
+  updatedAt?: string
+  retryCount?: number
+  maxRetries?: number
+}
+
+export interface AuditEntry {
+  id: number
+  action: string
+  mediaItemId?: number
+  target: string
+  detail: string
+  outcome: 'previewed' | 'applied' | 'recorded' | string
+  backup: string
+  recoverability: 'atomic_replace_only' | 'not_applicable' | string
+  createdAt: string
+}
+
+export interface OperationsStatus {
+  application: { name: string; version: string; commit: string; builtAt: string }
+  database: { ready: boolean; latestMigration: string; sizeBytes: number; walMode: boolean }
+  cache: { path: string; available: boolean; writable: boolean; usedBytes: number }
+  mounts: Array<{ id: number; name: string; available: boolean; writable: boolean; itemCount: number }>
+  providers: Array<{ id: string; configured: boolean; status: string }>
+  network: { proxyConfigured: boolean }
 }
 
 export interface Metadata {
