@@ -20,6 +20,7 @@ TVSelection,
   AuditEntry,
   OperationsStatus,
   ConnectionTest,
+  RenamePlan,
 } from './types'
 
 export * from './types'
@@ -273,4 +274,36 @@ export const testConnection = (csrf: string, target: ConnectionTest['target']) =
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ target }),
+  })
+
+export const previewMediaRename = (csrf: string, id: number, pattern: string) =>
+  request<RenamePlan>(`/api/v1/media/${id}/rename-plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ pattern }),
+  })
+
+export const previewTVRename = (
+  csrf: string,
+  showId: number,
+  pattern: string,
+  scope?: { seasonNumber?: number; episodeId?: number },
+) =>
+  request<RenamePlan>(`/api/v1/tv/shows/${showId}/rename-plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      pattern,
+      seasonNumber: scope?.seasonNumber,
+      episodeId: scope?.episodeId,
+    }),
+  })
+
+export const getRenamePlan = (id: string) =>
+  request<RenamePlan>(`/api/v1/rename-plans/${id}`)
+
+export const applyRenamePlan = (csrf: string, id: string) =>
+  request<any>(`/api/v1/rename-plans/${id}/apply`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
   })

@@ -122,6 +122,7 @@ func NewService(db *sql.DB, roots []string) *Service {
 	logger := slog.Default()
 	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger), prober: ffprobeRunner{path: "ffprobe"}}
 	s.registerScanJobHandler()
+	s.registerRenameJobHandler()
 	return s
 }
 
@@ -130,6 +131,7 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 		s.logger = logger
 		s.jobs = jobs.NewService(s.db, logger)
 		s.registerScanJobHandler()
+		s.registerRenameJobHandler()
 	}
 }
 

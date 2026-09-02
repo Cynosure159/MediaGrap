@@ -30,4 +30,75 @@ describe('MovieFileAuditTab', () => {
     expect(wrapper.text()).toContain('audit_symlink')
     expect(wrapper.find('.audit-row--warning').exists()).toBe(true)
   })
+
+  it('renders rename plan and emits apply-rename when confirmed', async () => {
+    const renamePlan = {
+      id: 'plan-123',
+      mediaItemId: 7,
+      pattern: '${title} (${year})/${title} (${year})',
+      state: 'previewed' as const,
+      hasConflicts: false,
+      warnings: [],
+      createdAt: '2026-09-02T16:00:00Z',
+      items: [
+        {
+          kind: 'directory',
+          currentPath: 'Movie',
+          plannedPath: 'Movie (2024)',
+          operation: 'rename_dir' as const,
+          conflict: false,
+          status: 'pending',
+        },
+        {
+          kind: 'video',
+          currentPath: 'Movie/Movie.mkv',
+          plannedPath: 'Movie (2024)/Movie (2024).mkv',
+          operation: 'rename' as const,
+          conflict: false,
+          status: 'pending',
+        },
+      ],
+    }
+
+    const wrapper = mount(MovieFileAuditTab, {
+      props: {
+        item,
+        labels,
+        inspection,
+        inspectionLoading: false,
+        inspectionError: null,
+        renamePlan,
+        previewLoading: false,
+        isApplying: false,
+      },
+    })
+
+    expect(wrapper.text()).toContain('Movie (2024)')
+    expect(wrapper.text()).toContain('noConflictsDetected')
+    expect(wrapper.find('.sticky-action-bar').exists()).toBe(true)
+
+    await wrapper.find('.btn-success').trigger('click')
+    expect(wrapper.emitted('applyRename')).toBeTruthy()
+  })
+
+  it('updates pattern when preset is changed', async () => {
+    const wrapper = mount(MovieFileAuditTab, {
+      props: {
+        item,
+        labels,
+        inspection,
+        inspectionLoading: false,
+        inspectionError: null,
+        previewLoading: false,
+      },
+    })
+
+    const select = wrapper.find('.preset-select')
+    await select.setValue('plex')
+    expect((wrapper.find('.pattern-input').element as HTMLInputElement).value).toBe('${title} (${year})/${title} (${year})')
+
+    await wrapper.find('.btn-primary').trigger('click')
+    expect(wrapper.emitted('previewRename')?.[0]).toEqual(['${title} (${year})/${title} (${year})'])
+  })
 })
+

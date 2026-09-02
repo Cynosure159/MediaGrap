@@ -119,6 +119,12 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/write-plans/{id}/apply", application.applyWritePlan)
 	mux.HandleFunc("GET /api/v1/artwork-plans/{id}", application.getArtworkPlan)
 	mux.HandleFunc("POST /api/v1/artwork-plans/{id}/apply", application.applyArtworkPlan)
+	
+	// Rename Plans
+	mux.HandleFunc("POST /api/v1/media/{id}/rename-plans", application.previewMediaRenamePlan)
+	mux.HandleFunc("POST /api/v1/tv/shows/{id}/rename-plans", application.previewTVRenamePlan)
+	mux.HandleFunc("GET /api/v1/rename-plans/{id}", application.getRenamePlan)
+	mux.HandleFunc("POST /api/v1/rename-plans/{id}/apply", application.applyRenamePlan)
 
 	// Jobs
 	mux.HandleFunc("GET /api/v1/jobs", application.listJobs)

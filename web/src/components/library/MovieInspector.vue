@@ -45,11 +45,15 @@ let detailRequestSequence = 0
 const {
   inspection,
   namingPreview,
+  renamePlan,
   isLoading: isInspectionLoading,
   isPreviewing: isNamingPreviewLoading,
+  isApplying,
   error: inspectionError,
   previewNaming,
-} = useMediaInspection(() => props.itemId)
+  previewRename,
+  applyRename,
+} = useMediaInspection(() => props.itemId, () => props.csrfToken)
 
 const draft = reactive<MovieDraft>({
   title: '',
@@ -356,8 +360,12 @@ async function handleApplyNfo() {
         :inspection-loading="isInspectionLoading"
         :inspection-error="inspectionError"
         :naming-preview="namingPreview"
+        :rename-plan="renamePlan"
         :preview-loading="isNamingPreviewLoading"
+        :is-applying="isApplying"
         @preview-naming="previewNaming"
+        @preview-rename="previewRename"
+        @apply-rename="applyRename"
       />
     </div>
 

@@ -345,3 +345,25 @@ export interface SettingsUpdate {
   theme: 'dark' | 'light' | 'system'
   locale: 'en' | 'zh-CN'
 }
+
+export interface RenamePlanItem {
+  kind: string
+  currentPath: string
+  plannedPath: string
+  operation: 'keep' | 'rename' | 'rename_dir' | 'conflict'
+  conflict: boolean
+  status: string
+}
+
+export interface RenamePlan {
+  id: string
+  mediaItemId?: number
+  tvShowId?: number
+  pattern: string
+  state: 'previewed' | 'applied' | 'partial' | 'failed' | 'cancelled'
+  items: ReadonlyArray<RenamePlanItem>
+  warnings: ReadonlyArray<string>
+  hasConflicts: boolean
+  createdAt: string
+  appliedAt?: string
+}

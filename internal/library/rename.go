@@ -1,0 +1,778 @@
+package library
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/mediagrap/mediagrap/internal/jobs"
+)
+
+type RenamePlan struct {
+	ID           string           `json:"id"`
+	MediaItemID  *int64           `json:"mediaItemId,omitempty"`
+	TVShowID     *int64           `json:"tvShowId,omitempty"`
+	Pattern      string           `json:"pattern"`
+	State        string           `json:"state"` // previewed, applied, partial, failed, cancelled
+	Items        []RenamePlanItem `json:"items"`
+	Warnings     []string         `json:"warnings"`
+	HasConflicts bool             `json:"hasConflicts"`
+	CreatedAt    string           `json:"createdAt"`
+	AppliedAt    string           `json:"appliedAt,omitempty"`
+}
+
+type RenamePlanItem struct {
+	Kind        string `json:"kind"`        // video, nfo, image, subtitle, directory
+	CurrentPath string `json:"currentPath"` // source-relative path
+	PlannedPath string `json:"plannedPath"` // source-relative planned path
+	Operation   string `json:"operation"`   // keep, rename, rename_dir, conflict
+	Conflict    bool   `json:"conflict"`
+	Status      string `json:"status"`      // pending, success, failed, skipped
+}
+
+func (s *Service) PreviewRenamePlan(ctx context.Context, mediaID int64, pattern string) (RenamePlan, error) {
+	location, err := s.LocateMedia(ctx, mediaID)
+	if err != nil {
+		return RenamePlan{}, err
+	}
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return RenamePlan{}, errors.New("pattern cannot be empty")
+	}
+
+	// Load metadata record for token values.
+	var titleStr, originalTitleStr string
+	var yearPtr *int
+	{
+		var metaTitle, metaOrigTitle sql.NullString
+		var metaYear sql.NullInt64
+		err := s.db.QueryRowContext(ctx, `SELECT title, original_title, year FROM media_metadata WHERE media_item_id=?`, mediaID).Scan(&metaTitle, &metaOrigTitle, &metaYear)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return RenamePlan{}, err
+		}
+		if metaTitle.Valid && metaTitle.String != "" {
+			titleStr = metaTitle.String
+		} else {
+			titleStr = location.Item.TitleHint
+		}
+		if metaOrigTitle.Valid {
+			originalTitleStr = metaOrigTitle.String
+		}
+		if metaYear.Valid {
+			v := int(metaYear.Int64)
+			yearPtr = &v
+		} else {
+			yearPtr = location.Item.YearHint
+		}
+	}
+
+	inspection, err := s.InspectMedia(ctx, mediaID)
+	if err != nil {
+		return RenamePlan{}, err
+	}
+
+	videoCodec, audioCodec, resolution := "", "", ""
+	if len(inspection.Video) > 0 {
+		videoCodec = strings.ToUpper(inspection.Video[0].Codec)
+		resolution = resolutionLabel(inspection.Video[0].Width, inspection.Video[0].Height)
+	}
+	if len(inspection.Audio) > 0 {
+		audioCodec = strings.ToUpper(inspection.Audio[0].Codec)
+	}
+
+	yearStr := ""
+	if yearPtr != nil {
+		yearStr = strconv.Itoa(*yearPtr)
+	}
+
+	tokens := map[string]string{
+		"title":         titleStr,
+		"originalTitle": originalTitleStr,
+		"year":          yearStr,
+		"resolution":    resolution,
+		"videoCodec":    videoCodec,
+		"audioCodec":    audioCodec,
+		"edition":       "",
+		"imdbId":        "",
+	}
+
+	unknown := ""
+	unavailable := ""
+	stem := namingTokenPattern.ReplaceAllStringFunc(pattern, func(token string) string {
+		name := namingTokenPattern.FindStringSubmatch(token)[1]
+		value, ok := tokens[name]
+		if !ok {
+			unknown = name
+			return token
+		}
+		if value == "" {
+			unavailable = name
+		}
+		return value
+	})
+
+	if unknown != "" {
+		return RenamePlan{}, fmt.Errorf("unsupported naming token %q", unknown)
+	}
+	if unavailable != "" {
+		return RenamePlan{}, fmt.Errorf("naming token %q has no available value", unavailable)
+	}
+
+	parts := strings.Split(stem, "/")
+	for i := range parts {
+		parts[i] = sanitizeFilename(parts[i])
+	}
+	stem = strings.Join(parts, "/")
+	
+	dirTemplate := ""
+	fileTemplate := stem
+	if idx := strings.LastIndex(stem, "/"); idx != -1 {
+		dirTemplate = stem[:idx]
+		fileTemplate = stem[idx+1:]
+	}
+
+	if fileTemplate == "" {
+		return RenamePlan{}, errors.New("naming pattern produced an empty filename")
+	}
+	
+	var items []RenamePlanItem
+	var warnings []string
+	
+	rootPath := ""
+	s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, location.Item.SourceID).Scan(&rootPath)
+	
+	sourceRelPath := location.Item.RelativePath
+	sourceRelDir := filepath.Dir(sourceRelPath)
+	plannedRelDir := sourceRelDir
+	
+	if dirTemplate != "" {
+		newRelDir := filepath.Join(filepath.Dir(sourceRelDir), dirTemplate)
+		newRelDir = filepath.Clean(newRelDir)
+		if newRelDir == "." || newRelDir == "/" || strings.HasPrefix(newRelDir, "..") {
+			return RenamePlan{}, errors.New("invalid directory pattern")
+		}
+		plannedRelDir = newRelDir
+		
+		if sourceRelDir != plannedRelDir {
+			items = append(items, RenamePlanItem{
+				Kind:        "directory",
+				CurrentPath: sourceRelDir,
+				PlannedPath: plannedRelDir,
+				Operation:   "rename_dir",
+				Status:      "pending",
+			})
+		}
+	}
+	
+	currentMediaBase := strings.TrimSuffix(filepath.Base(sourceRelPath), filepath.Ext(sourceRelPath))
+	hasConflicts := false
+	
+	var checkConflict = func(plannedPath string) bool {
+		targetAbs := filepath.Join(rootPath, plannedPath)
+		if _, err := os.Stat(targetAbs); err == nil {
+			// exists
+			// if it is one of the source files, it's not a conflict
+			sourceAbs := ""
+			for _, f := range inspection.Files {
+				if filepath.Join(rootPath, f.RelativePath) == targetAbs {
+					sourceAbs = targetAbs
+					break
+				}
+			}
+			if sourceAbs == "" && (dirTemplate == "" || plannedRelDir == sourceRelDir) {
+				return true
+			}
+		}
+		return false
+	}
+	
+	plannedPaths := make(map[string]bool)
+	
+	for _, file := range inspection.Files {
+		currentName := filepath.Base(file.RelativePath)
+		plannedName := currentName
+		if file.Kind == "video" {
+			plannedName = fileTemplate + filepath.Ext(currentName)
+		} else if strings.HasPrefix(currentName, currentMediaBase) {
+			suffix := currentName[len(currentMediaBase):]
+			plannedName = fileTemplate + suffix
+		}
+		
+		relPath := file.RelativePath
+		// find path relative to sourceRelDir
+		relToDir, err := filepath.Rel(sourceRelDir, relPath)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not re-root %s", relPath))
+			continue
+		}
+		
+		plannedRelPath := filepath.Join(plannedRelDir, relToDir)
+		if plannedName != currentName {
+			plannedRelPath = filepath.Join(plannedRelDir, filepath.Dir(relToDir), plannedName)
+		}
+		
+		op := "rename"
+		conflict := false
+		
+		if strings.EqualFold(file.RelativePath, plannedRelPath) {
+			op = "keep"
+		} else {
+			if checkConflict(plannedRelPath) {
+				op = "conflict"
+				conflict = true
+				hasConflicts = true
+			} else {
+				lowerPlanned := strings.ToLower(plannedRelPath)
+				if plannedPaths[lowerPlanned] {
+					op = "conflict"
+					conflict = true
+					hasConflicts = true
+				} else {
+					plannedPaths[lowerPlanned] = true
+				}
+			}
+		}
+		
+		items = append(items, RenamePlanItem{
+			Kind:        file.Kind,
+			CurrentPath: file.RelativePath,
+			PlannedPath: plannedRelPath,
+			Operation:   op,
+			Conflict:    conflict,
+			Status:      "pending",
+		})
+	}
+	
+	itemsBytes, _ := json.Marshal(items)
+	warnBytes, _ := json.Marshal(warnings)
+	
+	planID := uuid.New().String()
+	
+	_, err = s.db.ExecContext(ctx, 
+		`INSERT INTO rename_plans (id, media_item_id, pattern, state, items_json, warnings_json, has_conflicts) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		planID, mediaID, pattern, "previewed", string(itemsBytes), string(warnBytes), hasConflicts)
+		
+	if err != nil {
+		return RenamePlan{}, err
+	}
+	
+	return RenamePlan{
+		ID:           planID,
+		MediaItemID:  &mediaID,
+		Pattern:      pattern,
+		State:        "previewed",
+		Items:        items,
+		Warnings:     warnings,
+		HasConflicts: hasConflicts,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (s *Service) PreviewTVRenamePlan(ctx context.Context, showID int64, seasonNumber *int, episodeID *int64, pattern string) (RenamePlan, error) {
+	showDetail, err := s.TVShow(ctx, showID)
+	if err != nil {
+		return RenamePlan{}, err
+	}
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return RenamePlan{}, errors.New("pattern cannot be empty")
+	}
+
+	rootPath := s.sourceRoot(ctx, showDetail.Show.SourceID)
+
+	var showTitle, showOrigTitle sql.NullString
+	var showYear sql.NullInt64
+	_ = s.db.QueryRowContext(ctx, `SELECT title, original_title, year FROM tv_metadata WHERE show_id=?`, showID).Scan(&showTitle, &showOrigTitle, &showYear)
+	showTitleVal := showDetail.Show.TitleHint
+	if showTitle.Valid && showTitle.String != "" {
+		showTitleVal = showTitle.String
+	}
+	showYearVal := ""
+	if showYear.Valid {
+		showYearVal = strconv.Itoa(int(showYear.Int64))
+	} else if showDetail.Show.YearHint != nil {
+		showYearVal = strconv.Itoa(*showDetail.Show.YearHint)
+	}
+
+	episodeMetaMap := make(map[string]string)
+	rows, err := s.db.QueryContext(ctx, `SELECT season_number, episode_number, title FROM tv_episode_metadata WHERE show_id=?`, showID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var sn, en int
+			var epTitle string
+			if rows.Scan(&sn, &en, &epTitle) == nil && epTitle != "" {
+				episodeMetaMap[fmt.Sprintf("%d:%d", sn, en)] = epTitle
+			}
+		}
+	}
+
+	var targetEpisodes []TVEpisode
+	for _, ep := range showDetail.Episodes {
+		if episodeID != nil && ep.ID != *episodeID {
+			continue
+		}
+		if seasonNumber != nil && ep.SeasonNumber != *seasonNumber {
+			continue
+		}
+		targetEpisodes = append(targetEpisodes, ep)
+	}
+	if len(targetEpisodes) == 0 {
+		return RenamePlan{}, errors.New("no episodes matched the selected scope")
+	}
+
+	var items []RenamePlanItem
+	var warnings []string
+	hasConflicts := false
+	plannedPaths := make(map[string]bool)
+	seenDirs := make(map[string]bool)
+
+	for _, ep := range targetEpisodes {
+		epTitleVal := episodeMetaMap[fmt.Sprintf("%d:%d", ep.SeasonNumber, ep.EpisodeStart)]
+		if epTitleVal == "" {
+			epTitleVal = ep.TitleHint
+		}
+
+		resVal, vCodecVal, aCodecVal := "", "", ""
+		if inspection, inspectErr := s.InspectMedia(ctx, ep.ID); inspectErr == nil {
+			if len(inspection.Video) > 0 {
+				vCodecVal = strings.ToUpper(inspection.Video[0].Codec)
+				resVal = resolutionLabel(inspection.Video[0].Width, inspection.Video[0].Height)
+			}
+			if len(inspection.Audio) > 0 {
+				aCodecVal = strings.ToUpper(inspection.Audio[0].Codec)
+			}
+		}
+
+		tokens := map[string]string{
+			"showTitle":        showTitleVal,
+			"seasonNumber":     strconv.Itoa(ep.SeasonNumber),
+			"seasonNumberPad":  fmt.Sprintf("%02d", ep.SeasonNumber),
+			"episodeNumber":    strconv.Itoa(ep.EpisodeStart),
+			"episodeNumberPad": fmt.Sprintf("%02d", ep.EpisodeStart),
+			"episodeTitle":     epTitleVal,
+			"year":             showYearVal,
+			"resolution":       resVal,
+			"videoCodec":       vCodecVal,
+			"audioCodec":       aCodecVal,
+		}
+
+		unknown := ""
+		stem := namingTokenPattern.ReplaceAllStringFunc(pattern, func(token string) string {
+			name := namingTokenPattern.FindStringSubmatch(token)[1]
+			value, ok := tokens[name]
+			if !ok {
+				unknown = name
+				return token
+			}
+			return value
+		})
+
+		if unknown != "" {
+			return RenamePlan{}, fmt.Errorf("unsupported naming token %q", unknown)
+		}
+
+		parts := strings.Split(stem, "/")
+		for i := range parts {
+			parts[i] = sanitizeFilename(parts[i])
+		}
+		stem = strings.Join(parts, "/")
+
+		dirTemplate := ""
+		fileTemplate := stem
+		if idx := strings.LastIndex(stem, "/"); idx != -1 {
+			dirTemplate = stem[:idx]
+			fileTemplate = stem[idx+1:]
+		}
+
+		if fileTemplate == "" {
+			return RenamePlan{}, errors.New("naming pattern produced an empty filename")
+		}
+
+		sourceRelPath := ep.RelativePath
+		sourceRelDir := filepath.Dir(sourceRelPath)
+		plannedRelDir := sourceRelDir
+		if dirTemplate != "" {
+			plannedRelDir = filepath.Clean(dirTemplate)
+		}
+
+		if dirTemplate != "" && sourceRelDir != plannedRelDir && !seenDirs[plannedRelDir] {
+			seenDirs[plannedRelDir] = true
+			items = append(items, RenamePlanItem{
+				Kind:        "directory",
+				CurrentPath: sourceRelDir,
+				PlannedPath: plannedRelDir,
+				Operation:   "rename_dir",
+				Status:      "pending",
+			})
+		}
+
+		currentVideoBase := strings.TrimSuffix(filepath.Base(sourceRelPath), filepath.Ext(sourceRelPath))
+		plannedVideoName := fileTemplate + filepath.Ext(sourceRelPath)
+		plannedVideoPath := filepath.Join(plannedRelDir, plannedVideoName)
+
+		videoOp := "rename"
+		videoConflict := false
+		if strings.EqualFold(sourceRelPath, plannedVideoPath) {
+			videoOp = "keep"
+		} else {
+			targetAbs := filepath.Join(rootPath, plannedVideoPath)
+			if _, statErr := os.Stat(targetAbs); statErr == nil && targetAbs != filepath.Join(rootPath, sourceRelPath) {
+				videoOp = "conflict"
+				videoConflict = true
+				hasConflicts = true
+			} else {
+				lower := strings.ToLower(plannedVideoPath)
+				if plannedPaths[lower] {
+					videoOp = "conflict"
+					videoConflict = true
+					hasConflicts = true
+				} else {
+					plannedPaths[lower] = true
+				}
+			}
+		}
+
+		items = append(items, RenamePlanItem{
+			Kind:        "video",
+			CurrentPath: sourceRelPath,
+			PlannedPath: plannedVideoPath,
+			Operation:   videoOp,
+			Conflict:    videoConflict,
+			Status:      "pending",
+		})
+
+		for _, sidecar := range ep.Sidecars {
+			sidecarName := filepath.Base(sidecar.RelativePath)
+			sidecarBase := strings.TrimSuffix(sidecarName, filepath.Ext(sidecarName))
+			plannedSidecarName := sidecarName
+			if strings.HasPrefix(sidecarBase, currentVideoBase) {
+				suffix := sidecarBase[len(currentVideoBase):]
+				plannedSidecarName = fileTemplate + suffix + filepath.Ext(sidecarName)
+			}
+			plannedSidecarPath := filepath.Join(plannedRelDir, plannedSidecarName)
+
+			scOp := "rename"
+			scConflict := false
+			if strings.EqualFold(sidecar.RelativePath, plannedSidecarPath) {
+				scOp = "keep"
+			} else {
+				targetAbs := filepath.Join(rootPath, plannedSidecarPath)
+				if _, statErr := os.Stat(targetAbs); statErr == nil && targetAbs != filepath.Join(rootPath, sidecar.RelativePath) {
+					scOp = "conflict"
+					scConflict = true
+					hasConflicts = true
+				} else {
+					lower := strings.ToLower(plannedSidecarPath)
+					if plannedPaths[lower] {
+						scOp = "conflict"
+						scConflict = true
+						hasConflicts = true
+					} else {
+						plannedPaths[lower] = true
+					}
+				}
+			}
+
+			items = append(items, RenamePlanItem{
+				Kind:        sidecar.Kind,
+				CurrentPath: sidecar.RelativePath,
+				PlannedPath: plannedSidecarPath,
+				Operation:   scOp,
+				Conflict:    scConflict,
+				Status:      "pending",
+			})
+		}
+	}
+
+	itemsBytes, _ := json.Marshal(items)
+	warnBytes, _ := json.Marshal(warnings)
+	planID := uuid.New().String()
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO rename_plans (id, tv_show_id, pattern, state, items_json, warnings_json, has_conflicts) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		planID, showID, pattern, "previewed", string(itemsBytes), string(warnBytes), hasConflicts)
+	if err != nil {
+		return RenamePlan{}, err
+	}
+
+	return RenamePlan{
+		ID:           planID,
+		TVShowID:     &showID,
+		Pattern:      pattern,
+		State:        "previewed",
+		Items:        items,
+		Warnings:     warnings,
+		HasConflicts: hasConflicts,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (s *Service) GetRenamePlan(ctx context.Context, planID string) (RenamePlan, error) {
+	var p RenamePlan
+	var itemsJSON, warningsJSON string
+	var hasConflicts int
+	var mediaItemID, tvShowID sql.NullInt64
+	var appliedAt sql.NullString
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, media_item_id, tv_show_id, pattern, state, items_json, warnings_json, has_conflicts, created_at, COALESCE(applied_at,'') FROM rename_plans WHERE id=?`, planID).
+		Scan(&p.ID, &mediaItemID, &tvShowID, &p.Pattern, &p.State, &itemsJSON, &warningsJSON, &hasConflicts, &p.CreatedAt, &appliedAt)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RenamePlan{}, errors.New("plan not found")
+		}
+		return RenamePlan{}, err
+	}
+
+	if mediaItemID.Valid {
+		p.MediaItemID = &mediaItemID.Int64
+	}
+	if tvShowID.Valid {
+		p.TVShowID = &tvShowID.Int64
+	}
+	if appliedAt.Valid && appliedAt.String != "" {
+		p.AppliedAt = appliedAt.String
+	}
+	_ = json.Unmarshal([]byte(itemsJSON), &p.Items)
+	_ = json.Unmarshal([]byte(warningsJSON), &p.Warnings)
+	p.HasConflicts = hasConflicts != 0
+	if p.Items == nil {
+		p.Items = []RenamePlanItem{}
+	}
+	if p.Warnings == nil {
+		p.Warnings = []string{}
+	}
+
+	return p, nil
+}
+
+func isCrossDevice(src, dst string) (bool, error) {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return false, err
+	}
+	dstDir := filepath.Dir(dst)
+	dstInfo, err := os.Stat(dstDir)
+	if err != nil {
+		return false, err
+	}
+	srcSys, ok1 := srcInfo.Sys().(*syscall.Stat_t)
+	dstSys, ok2 := dstInfo.Sys().(*syscall.Stat_t)
+	if ok1 && ok2 {
+		return srcSys.Dev != dstSys.Dev, nil
+	}
+	return false, nil
+}
+
+func copyFile(src, dst string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	if _, err := io.Copy(d, s); err != nil {
+		return err
+	}
+	return d.Sync()
+}
+
+func (s *Service) ApplyRenamePlan(ctx context.Context, planID string, progressFn func(int, string)) error {
+	plan, err := s.GetRenamePlan(ctx, planID)
+	if err != nil {
+		return err
+	}
+
+	if plan.State != "previewed" {
+		return errors.New("plan is not in previewed state")
+	}
+	if plan.HasConflicts {
+		return errors.New("plan has conflicts")
+	}
+
+	var sourceID int64
+	if plan.MediaItemID != nil {
+		location, locErr := s.LocateMedia(ctx, *plan.MediaItemID)
+		if locErr != nil {
+			return locErr
+		}
+		sourceID = location.Item.SourceID
+	} else if plan.TVShowID != nil {
+		showDetail, showErr := s.TVShow(ctx, *plan.TVShowID)
+		if showErr != nil {
+			return showErr
+		}
+		sourceID = showDetail.Show.SourceID
+	} else {
+		return errors.New("invalid plan without media or TV show reference")
+	}
+
+	rootPath := s.sourceRoot(ctx, sourceID)
+	failedCount := 0
+
+	// Handle directory renames first
+	for i := range plan.Items {
+		if plan.Items[i].Operation == "rename_dir" {
+			dirItem := &plan.Items[i]
+			src := filepath.Join(rootPath, dirItem.CurrentPath)
+			dst := filepath.Join(rootPath, dirItem.PlannedPath)
+
+			if !resolvedParentWithinRoot(rootPath, dst) {
+				dirItem.Status = "failed"
+				failedCount++
+				continue
+			}
+			if _, statErr := os.Stat(dst); statErr == nil && src != dst {
+				dirItem.Status = "failed"
+				failedCount++
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				dirItem.Status = "failed"
+				failedCount++
+				continue
+			}
+			if err := os.Rename(src, dst); err != nil {
+				dirItem.Status = "failed"
+				failedCount++
+				continue
+			}
+			dirItem.Status = "success"
+
+			// Adjust current paths for any files inside this renamed directory
+			for j := range plan.Items {
+				if plan.Items[j].Operation != "rename_dir" {
+					if strings.HasPrefix(plan.Items[j].CurrentPath, dirItem.CurrentPath+"/") || plan.Items[j].CurrentPath == dirItem.CurrentPath {
+						plan.Items[j].CurrentPath = strings.Replace(plan.Items[j].CurrentPath, dirItem.CurrentPath, dirItem.PlannedPath, 1)
+					}
+				}
+			}
+		}
+	}
+
+	processed := 0
+	for i := range plan.Items {
+		item := &plan.Items[i]
+		if item.Operation == "rename_dir" || item.Operation == "keep" {
+			if item.Operation == "keep" {
+				item.Status = "success"
+			}
+			continue
+		}
+		if item.Status == "failed" {
+			continue
+		}
+
+		src := filepath.Join(rootPath, item.CurrentPath)
+		dst := filepath.Join(rootPath, item.PlannedPath)
+
+		if !resolvedParentWithinRoot(rootPath, dst) {
+			item.Status = "failed"
+			failedCount++
+			continue
+		}
+
+		if _, statErr := os.Stat(src); statErr != nil {
+			item.Status = "failed"
+			failedCount++
+			continue
+		}
+		if _, statErr := os.Stat(dst); statErr == nil && src != dst {
+			item.Status = "failed"
+			failedCount++
+			continue
+		}
+
+		_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+
+		cross, _ := isCrossDevice(src, dst)
+		if cross {
+			tempDst := dst + ".tmp"
+			if err := copyFile(src, tempDst); err != nil {
+				item.Status = "failed"
+				failedCount++
+				continue
+			}
+			sInfo, _ := os.Stat(src)
+			dInfo, _ := os.Stat(tempDst)
+			if sInfo.Size() != dInfo.Size() {
+				_ = os.Remove(tempDst)
+				item.Status = "failed"
+				failedCount++
+				continue
+			}
+			_ = os.Rename(tempDst, dst)
+			_ = os.Remove(src)
+		} else {
+			if err := os.Rename(src, dst); err != nil {
+				item.Status = "failed"
+				failedCount++
+				continue
+			}
+		}
+
+		item.Status = "success"
+		processed++
+		if progressFn != nil {
+			progressFn(processed, fmt.Sprintf("Renamed %s", item.Kind))
+		}
+
+		if item.Kind == "video" {
+			var mediaItemID int64
+			err := s.db.QueryRowContext(ctx, `SELECT id FROM media_items WHERE source_id=? AND relative_path=?`, sourceID, item.CurrentPath).Scan(&mediaItemID)
+			if err == nil {
+				_, _ = s.db.ExecContext(ctx, `UPDATE media_items SET relative_path=? WHERE id=?`, item.PlannedPath, mediaItemID)
+				s.recordSidecars(ctx, mediaItemID, rootPath, item.PlannedPath)
+			}
+		}
+
+		var targetMediaID any = nil
+		if plan.MediaItemID != nil {
+			targetMediaID = *plan.MediaItemID
+		}
+		detail := fmt.Sprintf("Renamed from %s to %s", item.CurrentPath, item.PlannedPath)
+		_, _ = s.db.ExecContext(ctx,
+			`INSERT INTO audit_entries(action, media_item_id, target_path, detail, outcome, recoverability) VALUES (?, ?, ?, ?, ?, ?)`,
+			"file_rename", targetMediaID, item.PlannedPath, detail, "success", "none")
+	}
+
+	newState := "applied"
+	if failedCount > 0 {
+		newState = "partial"
+	}
+
+	itemsBytes, _ := json.Marshal(plan.Items)
+	_, _ = s.db.ExecContext(ctx,
+		`UPDATE rename_plans SET state=?, items_json=?, applied_at=datetime('now') WHERE id=?`,
+		newState, string(itemsBytes), planID)
+
+	return nil
+}
+
+func (s *Service) registerRenameJobHandler() {
+	s.jobs.RegisterHandler("rename_execute", func(ctx context.Context, job jobs.Job, progress func(int, string)) error {
+		var payload struct {
+			PlanID string `json:"planId"`
+		}
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+			return err
+		}
+		return s.ApplyRenamePlan(ctx, payload.PlanID, progress)
+	})
+}

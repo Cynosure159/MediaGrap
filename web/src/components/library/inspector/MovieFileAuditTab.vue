@@ -1,23 +1,48 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { MediaInspection, MediaItem, NamingPreview } from '@/api/types'
+import type { MediaInspection, MediaItem, NamingPreview, RenamePlan } from '@/api/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   item: MediaItem
   labels: Record<string, string>
   inspection: MediaInspection | null
   inspectionLoading: boolean
   inspectionError: string | null
-  namingPreview: NamingPreview | null
+  namingPreview?: NamingPreview | null
+  renamePlan?: RenamePlan | null
   previewLoading: boolean
+  isApplying?: boolean
+}>(), {
+  namingPreview: null,
+  renamePlan: null,
+  isApplying: false,
+})
+
+const emit = defineEmits<{ 
+  previewNaming: [pattern: string]
+  previewRename: [pattern: string]
+  applyRename: []
 }>()
 
-const emit = defineEmits<{ previewNaming: [pattern: string] }>()
-const patternInput = shallowRef('${title} (${year})')
-const availableTokens = ['${title}', '${originalTitle}', '${year}', '${resolution}', '${videoCodec}', '${audioCodec}']
-const hasConflicts = computed(() => props.namingPreview?.items.some(item => item.conflict) ?? false)
+function triggerPreview() {
+  emit('previewRename', patternInput.value)
+  emit('previewNaming', patternInput.value)
+}
 
-function appendToken(token: string) { patternInput.value += token }
+const patternInput = shallowRef('${title} (${year})')
+const selectedPreset = shallowRef('kodi')
+const availableTokens = ['${title}', '${originalTitle}', '${year}', '${resolution}', '${videoCodec}', '${audioCodec}', '${edition}', '${imdbId}']
+const hasConflicts = computed(() => props.renamePlan?.hasConflicts ?? false)
+
+function onPresetChange() {
+  if (selectedPreset.value === 'kodi') patternInput.value = '${title} (${year})'
+  else if (selectedPreset.value === 'plex') patternInput.value = '${title} (${year})/${title} (${year})'
+}
+
+function appendToken(token: string) { 
+  patternInput.value += token
+  selectedPreset.value = 'custom'
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -106,23 +131,47 @@ function formatModifiedAt(value: string): string {
     </div>
 
     <div class="rename-engine-card">
-      <div class="card-header-bar"><span class="header-title">{{ labels.namingPattern }}</span><span class="preset-tag font-code">{{ labels.previewOnly }}</span></div>
+      <div class="card-header-bar">
+        <span class="header-title">{{ labels.namingPattern }}</span>
+        <select v-model="selectedPreset" class="preset-select font-code" @change="onPresetChange">
+          <option value="kodi">{{ labels.presetKodi }}</option>
+          <option value="plex">{{ labels.presetPlex }}</option>
+          <option value="custom">{{ labels.presetCustom }}</option>
+        </select>
+      </div>
       <div class="card-body">
         <label class="field-label font-code" for="movie-naming-pattern">{{ labels.patternTemplate }}</label>
         <div class="pattern-action-row">
           <input id="movie-naming-pattern" v-model="patternInput" type="text" class="pattern-input font-code" />
-          <button class="btn btn-primary" :disabled="previewLoading" type="button" @click="emit('previewNaming', patternInput)">{{ previewLoading ? labels.previewing : labels.runDryRun }}</button>
+          <button class="btn btn-primary" :disabled="previewLoading" type="button" @click="triggerPreview">{{ previewLoading ? labels.previewing : labels.dryRunSimulation }}</button>
         </div>
         <div class="tokens-list" :aria-label="labels.availableTokens">
           <button v-for="token in availableTokens" :key="token" class="token-pill font-code" type="button" @click="appendToken(token)">{{ token }}</button>
         </div>
       </div>
-      <div v-if="namingPreview" class="rename-preview">
-        <div class="preview-summary" :class="{ 'preview-summary--conflict': hasConflicts }">{{ hasConflicts ? labels.namingConflictsFound : labels.namingPreviewSafe }}</div>
-        <div v-for="entry in namingPreview.items" :key="entry.currentPath" class="rename-row">
-          <span class="operation-tag font-code" :class="`operation-tag--${entry.operation}`">{{ entry.operation.toUpperCase() }}</span>
+      <div v-if="renamePlan" class="rename-preview">
+        <div class="preview-summary" :class="{ 'preview-summary--conflict': hasConflicts }">{{ hasConflicts ? labels.conflictsDetected : labels.noConflictsDetected }}</div>
+        <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
+          <span class="operation-tag font-code" :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`">{{ entry.operation === 'rename' ? labels.renameFile || 'RENAME FILE' : (entry.operation === 'rename_dir' ? labels.renameDir || 'RENAME DIR' : entry.operation.toUpperCase()) }}</span>
           <div class="rename-paths font-code"><span class="current-path">{{ entry.currentPath }}</span><span class="path-arrow">→</span><span class="planned-path">{{ entry.plannedPath }}</span></div>
         </div>
+      </div>
+      <div v-else-if="namingPreview" class="rename-preview">
+        <div class="preview-summary" :class="{ 'preview-summary--conflict': namingPreview.items.some(i => i.conflict) }">{{ namingPreview.items.some(i => i.conflict) ? labels.namingConflictsFound : labels.namingPreviewSafe }}</div>
+        <div v-for="entry in namingPreview.items" :key="entry.currentPath" class="rename-row">
+          <span class="operation-tag font-code" :class="`operation-tag--${entry.operation.toLowerCase()}`">{{ entry.operation.toUpperCase() }}</span>
+          <div class="rename-paths font-code"><span class="current-path">{{ entry.currentPath }}</span><span class="path-arrow">→</span><span class="planned-path">{{ entry.plannedPath }}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="renamePlan && !hasConflicts" class="sticky-action-bar">
+      <div class="action-bar-left">
+        <span class="spec-pill spec-pill--success"><span class="dot-ok"></span>{{ labels.noConflictsDetected }}</span>
+      </div>
+      <div class="action-bar-right">
+        <button class="btn btn-outline" :disabled="previewLoading || isApplying" type="button" @click="triggerPreview">{{ labels.dryRunSimulation }}</button>
+        <button class="btn btn-success" :disabled="isApplying" type="button" @click="emit('applyRename')">{{ isApplying ? labels.loading : labels.executeRename }}</button>
       </div>
     </div>
   </section>
@@ -162,10 +211,16 @@ function formatModifiedAt(value: string): string {
 .preview-summary { padding: 8px 14px; background: color-mix(in srgb, var(--secondary) 8%, transparent); color: var(--secondary); font-size: 11px; }
 .preview-summary--conflict { background: color-mix(in srgb, var(--error) 8%, transparent); color: var(--error); }
 .rename-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); }
-.operation-tag { min-width: 54px; color: var(--outline); font-size: 9px; }.operation-tag--rename { color: var(--secondary); }.operation-tag--conflict { color: var(--error); }
+.operation-tag { min-width: 54px; border-radius: 4px; padding: 2px 6px; font-size: 9px; text-align: center; font-weight: 600; }
+.operation-tag--keep { background: var(--surface-container-high); color: var(--on-surface-variant); }
+.operation-tag--rename, .operation-tag--rename_file, .operation-tag--rename_dir { background: color-mix(in srgb, var(--secondary) 10%, transparent); color: var(--secondary); }
+.operation-tag--conflict { background: color-mix(in srgb, var(--error) 10%, transparent); color: var(--error); }
 .rename-paths { display: grid; min-width: 0; flex: 1; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; font-size: 10px; }
 .current-path, .planned-path { overflow-wrap: anywhere; }.current-path { color: var(--on-surface-variant); }.planned-path { color: var(--on-surface); }.path-arrow { color: var(--outline); }
 .audit-alert { border: 1px solid var(--error); border-radius: 4px; padding: 8px 12px; color: var(--error); font-size: 12px; }
+.preset-select { border: 1px solid var(--outline-variant); border-radius: 4px; padding: 2px 6px; background: var(--surface-container-lowest); color: var(--on-surface); font-size: 10px; }
+.sticky-action-bar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-top: 1px solid var(--outline-variant); background: var(--surface-container); z-index: 10; margin-top: 16px; border-radius: var(--radius-lg); }
+.action-bar-right { display: flex; gap: 8px; }
 @media (max-width: 900px) { .stream-groups { grid-template-columns: 1fr; } }
-@media (max-width: 700px) { .workshop-header, .pattern-action-row { align-items: stretch; flex-direction: column; }.rename-paths { grid-template-columns: 1fr; }.path-arrow { transform: rotate(90deg); } }
+@media (max-width: 700px) { .workshop-header, .pattern-action-row, .sticky-action-bar { align-items: stretch; flex-direction: column; gap: 12px; }.rename-paths { grid-template-columns: 1fr; }.path-arrow { transform: rotate(90deg); } }
 </style>

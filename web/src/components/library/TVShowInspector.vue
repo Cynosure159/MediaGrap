@@ -44,7 +44,7 @@ const {
   inspection,
   isLoading: isInspectionLoading,
   error: inspectionError,
-} = useMediaInspection(() => inspectionEpisodeId.value)
+} = useMediaInspection(() => inspectionEpisodeId.value, () => props.csrfToken)
 
 const selectedUnitEpisode = computed(() => {
   const selection = props.selection
@@ -565,11 +565,15 @@ async function handleSaveAndWrite() {
 
       <TVFileAuditTab
         v-else-if="activeTab === 'files'"
+        :show-id="showId"
         :episodes="scopedEpisodes"
+        :all-episodes="detail.episodes"
+        :selection="selection"
         :inspection="inspection"
         :inspection-loading="isInspectionLoading"
         :inspection-error="inspectionError"
         :labels="labels"
+        :csrf-token="csrfToken"
       />
     </div>
 
