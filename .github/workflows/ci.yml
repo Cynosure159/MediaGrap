@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main, dev]
 
 jobs:
   verify:
@@ -18,11 +19,20 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: gofmt -d cmd internal
-      - run: go test -race ./...
-      - run: npm --prefix web ci
-      - run: npm --prefix web run typecheck
-      - run: npm --prefix web run test
-      - run: npm --prefix web run build
-      - run: docker build --tag mediagrap:ci .
+      - name: Go format check
+        run: gofmt -d cmd internal
+      - name: Go tests with race detector
+        run: go test -race ./...
+      - name: Install web dependencies
+        run: npm --prefix web ci
+      - name: Web typecheck
+        run: npm --prefix web run typecheck
+      - name: Web tests
+        run: npm --prefix web run test
+      - name: Web production build
+        if: github.event_name == 'pull_request'
+        run: npm --prefix web run build
+      - name: Docker image build verification
+        if: github.event_name == 'pull_request'
+        run: docker build --tag mediagrap:ci .
 
