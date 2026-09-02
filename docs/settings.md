@@ -6,9 +6,11 @@ The authenticated **Settings** page keeps operational configuration out of the m
 
 - A TMDb v3 API key can be supplied and changed at runtime. The API never returns the saved value; it only reports whether one is configured.
 - An optional Fanart.tv project API key can be supplied and changed at runtime. It is used for movie artwork candidates and is never returned; the API only reports whether one is configured.
-- TMDb search and detail requests use the selected information language. The first choices include `zh-CN`, `zh-TW`, `en-US`, `ja-JP`, and `ko-KR`; the API accepts any valid TMDb-style language code such as `de-DE`.
-- An optional HTTP/HTTPS outbound proxy applies to TMDb requests immediately after saving. Proxy values are not returned in the API response.
+- TMDb search and detail requests use the selected information language. A separate fallback language fills missing translated title/overview fields on detail requests.
+- An optional HTTP, HTTPS, `socks5://`, or `socks5h://` outbound proxy applies to provider and artwork requests immediately after saving. Proxy values and credentials are never returned.
+- Comma-separated `NO_PROXY` host/domain/IP rules bypass the configured proxy. The API reports only whether rules exist.
 - The same proxy and TMDb language preference apply to Fanart.tv artwork requests.
+- Authenticated connection tests are limited to fixed TMDb/Fanart.tv endpoints. The server persists only target, result, HTTP status, duration, a redacted message, and timestamp; arbitrary test URLs are not accepted.
 
 Settings are stored in the SQLite database on the `/config` volume. Protect that volume as application-sensitive data. Environment variables remain useful for first-run defaults and non-interactive deployment:
 
@@ -17,7 +19,9 @@ Settings are stored in the SQLite database on the `/config` volume. Protect that
 | `MEDIAGRAP_TMDB_API_KEY` | First-run TMDb v3 API key fallback. |
 | `MEDIAGRAP_FANARTTV_API_KEY` | First-run Fanart.tv project API key fallback. |
 | `MEDIAGRAP_TMDB_LANGUAGE` | First-run TMDb information language; defaults to `en-US`. |
-| `MEDIAGRAP_OUTBOUND_PROXY` | First-run HTTP/HTTPS outbound-proxy fallback. |
+| `MEDIAGRAP_FALLBACK_LANGUAGE` | First-run metadata fallback language; defaults to `en-US`. |
+| `MEDIAGRAP_OUTBOUND_PROXY` | First-run HTTP/HTTPS/SOCKS5 outbound-proxy fallback. |
+| `MEDIAGRAP_NO_PROXY` | First-run proxy bypass rules; falls back to standard `NO_PROXY`. |
 | `MEDIAGRAP_FFPROBE_PATH` | Optional ffprobe executable; defaults to `ffprobe`. Set `off` to disable media stream probing. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | Standard environment proxy behavior when no MediaGrap proxy is configured. |
 
@@ -31,12 +35,18 @@ Configure one logical source at the common mounted parent directory, normally `/
 
 Removing a media source removes only its MediaGrap configuration and indexed database records. It does not modify, move, or delete any mounted media files.
 
+Each source has a persisted scan policy:
+
+- `incremental` indexes new and changed files without marking unseen records missing;
+- `full` first marks existing records missing, then reconciles everything found on disk;
+- schedules use a 15-minute to 7-day interval, survive restarts in SQLite, avoid duplicate queued/running scans, and expose last/next run times in system status.
+
 ## Media inspection
 
 Movie Overview and File Audit request media-stream information from the optional backend ffprobe adapter. A successful result is cached in SQLite until the media file size or modification time changes. The filesystem audit does not require ffprobe and continues to report real file size, MIME type, permissions, XML validity, read-only state, and symlink warnings when probing is unavailable.
 
 The standard image bundles a statically linked, metadata-only ffprobe at `/usr/bin/ffprobe` and sets `MEDIAGRAP_FFPROBE_PATH` automatically. It probes local files only and covers the scanner's supported containers; unsupported formats are reported as unavailable. Set `MEDIAGRAP_FFPROBE_PATH=off` only when deliberately disabling probing. The UI never installs packages and never executes a host “open file/folder” command.
 
-## Interface language
+## Interface preferences
 
-The display-language selection is stored locally in the current browser/PWA. It changes the English/Chinese interface immediately and does not affect TMDb data language; configure that separately in Provider settings.
+Display language and theme (`dark`, `light`, or `system`) are persisted per authenticated user and cached locally for immediate rendering. They do not affect TMDb data language; configure that separately in Provider settings.

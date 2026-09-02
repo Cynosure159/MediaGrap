@@ -3,18 +3,19 @@ import { onMounted, shallowRef } from 'vue'
 import { useLibrary } from '@/composables/useLibrary'
 import { useSettings } from '@/composables/useSettings'
 import type { Locale } from '@/composables/useLocale'
+import type { Theme } from '@/composables/useTheme'
 import SettingsInterfaceForm from './SettingsInterfaceForm.vue'
 import SettingsProviderForm from './SettingsProviderForm.vue'
 import SettingsSources from './SettingsSources.vue'
 
-const props = defineProps<{ csrfToken: string; labels: Record<string, string>; locale: Locale }>()
-const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
+const props = defineProps<{ csrfToken: string; labels: Record<string, string>; locale: Locale; theme: Theme }>()
+const emit = defineEmits<{ changeLocale: [locale: Locale]; changeTheme: [theme: Theme] }>()
 const sourceName = shallowRef('Media')
 const sourcePath = shallowRef('/media')
 const sourceFeedback = shallowRef<{ kind: 'success' | 'error'; message: string } | null>(null)
 const isSaving = shallowRef(false)
-const { sourceItems, refresh, createSource, removeSource, scan } = useLibrary(() => props.csrfToken)
-const { settings, error, isLoading, providerForm, load, saveProvider } = useSettings(() => props.csrfToken)
+const { sourceItems, refresh, createSource, removeSource, saveSourcePolicy, scan } = useLibrary(() => props.csrfToken)
+const { settings, error, isLoading, providerForm, connectionTests, testingTarget, load, saveProvider, runConnectionTest } = useSettings(() => props.csrfToken)
 
 async function initialize() { await Promise.all([load(), refresh()]) }
 async function save() { isSaving.value = true; try { await saveProvider() } finally { isSaving.value = false } }
@@ -81,7 +82,10 @@ onMounted(initialize)
             :settings="settings"
             :labels="labels"
             :saving="isSaving"
+			:connection-tests="connectionTests"
+			:testing-target="testingTarget"
             @save="save"
+			@test="runConnectionTest"
           />
         </div>
         <div class="settings-col">
@@ -95,11 +99,16 @@ onMounted(initialize)
             @add="addSource"
             @scan="scan"
             @delete="deleteSource"
+			@save-policy="saveSourcePolicy"
           />
           <SettingsInterfaceForm
             :locale="locale"
             :labels="labels"
+			v-model:model="providerForm"
+			:saving="isSaving"
             @change-locale="emit('changeLocale', $event)"
+			@change-theme="emit('changeTheme', $event)"
+			@save="save"
           />
         </div>
       </div>

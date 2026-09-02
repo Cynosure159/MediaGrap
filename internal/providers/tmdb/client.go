@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -68,12 +69,13 @@ type TVEpisodeDetails struct {
 }
 
 type Client struct {
-	logger   *slog.Logger
-	endpoint string
-	mu       sync.RWMutex
-	client   *http.Client
-	apiKey   string
-	language string
+	logger           *slog.Logger
+	endpoint         string
+	mu               sync.RWMutex
+	client           *http.Client
+	apiKey           string
+	language         string
+	fallbackLanguage string
 }
 
 func NewClient(logger *slog.Logger, client *http.Client, apiKey string) *Client {
@@ -84,30 +86,190 @@ func NewClient(logger *slog.Logger, client *http.Client, apiKey string) *Client 
 		client = http.DefaultClient
 	}
 	return &Client{
-		logger:   logger,
-		endpoint: "https://api.themoviedb.org/3",
-		client:   client,
-		apiKey:   strings.TrimSpace(apiKey),
-		language: "en-US",
+		logger:           logger,
+		endpoint:         "https://api.themoviedb.org/3",
+		client:           client,
+		apiKey:           strings.TrimSpace(apiKey),
+		language:         "en-US",
+		fallbackLanguage: "en-US",
 	}
 }
 
-func NewOutboundClient(proxy string) (*http.Client, error) {
+func NewOutboundClient(proxy string, noProxy ...string) (*http.Client, error) {
 	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
 	proxy = strings.TrimSpace(proxy)
 	if proxy == "" {
+		client.Transport = &http.Transport{Proxy: proxyFromEnvironmentWithOverride(strings.Join(noProxy, ","))}
 		return client, nil
 	}
 	proxyURL, err := url.Parse(proxy)
 	if err != nil {
 		return nil, fmt.Errorf("invalid outbound proxy: %w", err)
 	}
-	client.Transport = &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
+	if proxyURL.Hostname() == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https" && proxyURL.Scheme != "socks5" && proxyURL.Scheme != "socks5h") {
+		return nil, errors.New("invalid outbound proxy URL")
+	}
+	bypass := strings.Join(noProxy, ",")
+	if proxyURL.Scheme == "socks5" || proxyURL.Scheme == "socks5h" {
+		client.Transport = &http.Transport{DialContext: socks5DialContext(proxyURL, bypass)}
+	} else {
+		client.Transport = &http.Transport{Proxy: func(request *http.Request) (*url.URL, error) {
+			if bypassProxy(request.URL.Hostname(), request.URL.Port(), bypass) {
+				return nil, nil
+			}
+			return proxyURL, nil
+		}}
 	}
 	return client, nil
+}
+
+func proxyFromEnvironmentWithOverride(noProxy string) func(*http.Request) (*url.URL, error) {
+	return func(request *http.Request) (*url.URL, error) {
+		if bypassProxy(request.URL.Hostname(), request.URL.Port(), noProxy) {
+			return nil, nil
+		}
+		return http.ProxyFromEnvironment(request)
+	}
+}
+
+func bypassProxy(host, port, value string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	for _, raw := range strings.Split(value, ",") {
+		entry := strings.ToLower(strings.TrimSpace(raw))
+		if entry == "" {
+			continue
+		}
+		if entry == "*" {
+			return true
+		}
+		entryHost, entryPort := entry, ""
+		if parsedHost, parsedPort, err := net.SplitHostPort(entry); err == nil {
+			entryHost, entryPort = parsedHost, parsedPort
+		}
+		entryHost = strings.TrimPrefix(entryHost, ".")
+		if entryPort != "" && entryPort != port {
+			continue
+		}
+		if host == entryHost || strings.HasSuffix(host, "."+entryHost) {
+			return true
+		}
+	}
+	return false
+}
+
+func socks5DialContext(proxyURL *url.URL, noProxy string) func(context.Context, string, string) (net.Conn, error) {
+	proxyAddress := proxyURL.Host
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		if bypassProxy(host, port, noProxy) {
+			return (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, network, address)
+		}
+		conn, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp", proxyAddress)
+		if err != nil {
+			return nil, err
+		}
+		if deadline, ok := ctx.Deadline(); ok {
+			_ = conn.SetDeadline(deadline)
+		}
+		if err = socks5Handshake(conn, proxyURL, host, port); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		_ = conn.SetDeadline(time.Time{})
+		return conn, nil
+	}
+}
+
+func socks5Handshake(conn net.Conn, proxyURL *url.URL, host, port string) error {
+	if len(host) > 255 {
+		return errors.New("SOCKS5 destination hostname is too long")
+	}
+	methods := []byte{0x00}
+	if proxyURL.User != nil {
+		methods = append(methods, 0x02)
+	}
+	if _, err := conn.Write(append([]byte{0x05, byte(len(methods))}, methods...)); err != nil {
+		return err
+	}
+	reply := make([]byte, 2)
+	if _, err := io.ReadFull(conn, reply); err != nil || reply[0] != 0x05 || reply[1] == 0xff {
+		return errors.New("SOCKS5 proxy authentication negotiation failed")
+	}
+	if reply[1] == 0x02 {
+		password, _ := proxyURL.User.Password()
+		username := proxyURL.User.Username()
+		if len(username) > 255 || len(password) > 255 {
+			return errors.New("SOCKS5 proxy credentials are too long")
+		}
+		request := append([]byte{0x01, byte(len(username))}, []byte(username)...)
+		request = append(request, byte(len(password)))
+		request = append(request, []byte(password)...)
+		if _, err := conn.Write(request); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(conn, reply); err != nil || reply[1] != 0x00 {
+			return errors.New("SOCKS5 proxy authentication failed")
+		}
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return errors.New("invalid SOCKS5 destination port")
+	}
+	request := []byte{0x05, 0x01, 0x00, 0x03, byte(len(host))}
+	request = append(request, []byte(host)...)
+	request = append(request, byte(portNumber>>8), byte(portNumber))
+	if _, err := conn.Write(request); err != nil {
+		return err
+	}
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(conn, header); err != nil || header[0] != 0x05 || header[1] != 0x00 {
+		return errors.New("SOCKS5 proxy connection failed")
+	}
+	length := 0
+	switch header[3] {
+	case 0x01:
+		length = 4
+	case 0x04:
+		length = 16
+	case 0x03:
+		size := make([]byte, 1)
+		if _, err := io.ReadFull(conn, size); err != nil {
+			return err
+		}
+		length = int(size[0])
+	default:
+		return errors.New("invalid SOCKS5 proxy response")
+	}
+	_, err = io.CopyN(io.Discard, conn, int64(length+2))
+	return err
+}
+
+func (c *Client) Ping(ctx context.Context) (int, error) {
+	apiKey, _, endpoint, err := c.configured()
+	if err != nil {
+		return 0, err
+	}
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/configuration?api_key="+url.QueryEscape(apiKey), nil)
+	if err != nil {
+		return 0, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, errors.New("TMDb connection failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return response.StatusCode, fmt.Errorf("TMDb returned HTTP %d", response.StatusCode)
+	}
+	return response.StatusCode, nil
 }
 
 func (c *Client) SetEndpoint(endpoint string) {
@@ -117,6 +279,10 @@ func (c *Client) SetEndpoint(endpoint string) {
 }
 
 func (c *Client) Configure(client *http.Client, apiKey, language string) {
+	c.ConfigureAdvanced(client, apiKey, language, "en-US")
+}
+
+func (c *Client) ConfigureAdvanced(client *http.Client, apiKey, language, fallbackLanguage string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client != nil {
@@ -126,7 +292,12 @@ func (c *Client) Configure(client *http.Client, apiKey, language string) {
 	if strings.TrimSpace(language) != "" {
 		c.language = strings.TrimSpace(language)
 	}
+	if strings.TrimSpace(fallbackLanguage) != "" {
+		c.fallbackLanguage = strings.TrimSpace(fallbackLanguage)
+	}
 }
+
+func (c *Client) fallback() string { c.mu.RLock(); defer c.mu.RUnlock(); return c.fallbackLanguage }
 
 func (c *Client) HTTPClient() *http.Client {
 	c.mu.RLock()
@@ -185,6 +356,13 @@ func (c *Client) Movie(ctx context.Context, id string) (MovieDetails, error) {
 	params := url.Values{"api_key": {apiKey}, "language": {language}, "append_to_response": {"credits,release_dates"}}
 	if err := c.get(ctx, "/movie/"+url.PathEscape(id), params, &result); err != nil {
 		return MovieDetails{}, err
+	}
+	if fallback := c.fallback(); strings.TrimSpace(result.Overview) == "" && fallback != "" && fallback != language {
+		var translated tmdbMovie
+		fallbackParams := url.Values{"api_key": {apiKey}, "language": {fallback}, "append_to_response": {"credits,release_dates"}}
+		if c.get(ctx, "/movie/"+url.PathEscape(id), fallbackParams, &translated) == nil {
+			fillMovieTranslation(&result, translated)
+		}
 	}
 	genres := make([]string, 0, len(result.Genres))
 	for _, genre := range result.Genres {
@@ -250,6 +428,13 @@ func (c *Client) TV(ctx context.Context, id string) (TVDetails, error) {
 	params := url.Values{"api_key": {apiKey}, "language": {language}, "append_to_response": {"credits"}}
 	if err := c.get(ctx, "/tv/"+url.PathEscape(id), params, &result); err != nil {
 		return TVDetails{}, err
+	}
+	if fallback := c.fallback(); strings.TrimSpace(result.Overview) == "" && fallback != "" && fallback != language {
+		var translated tmdbTV
+		fallbackParams := url.Values{"api_key": {apiKey}, "language": {fallback}, "append_to_response": {"credits"}}
+		if c.get(ctx, "/tv/"+url.PathEscape(id), fallbackParams, &translated) == nil {
+			fillTVTranslation(&result, translated)
+		}
 	}
 	genres := make([]string, 0, len(result.Genres))
 	for _, genre := range result.Genres {
@@ -361,6 +546,18 @@ type tmdbMovie struct {
 	} `json:"release_dates"`
 }
 
+func fillMovieTranslation(target *tmdbMovie, fallback tmdbMovie) {
+	if strings.TrimSpace(target.Title) == "" {
+		target.Title = fallback.Title
+	}
+	if strings.TrimSpace(target.OriginalTitle) == "" {
+		target.OriginalTitle = fallback.OriginalTitle
+	}
+	if strings.TrimSpace(target.Overview) == "" {
+		target.Overview = fallback.Overview
+	}
+}
+
 func (m tmdbMovie) candidate() Candidate {
 	var year *int
 	if len(m.ReleaseDate) >= 4 {
@@ -405,6 +602,18 @@ type tmdbTV struct {
 			ProfilePath string `json:"profile_path"`
 		} `json:"cast"`
 	} `json:"credits"`
+}
+
+func fillTVTranslation(target *tmdbTV, fallback tmdbTV) {
+	if strings.TrimSpace(target.Name) == "" {
+		target.Name = fallback.Name
+	}
+	if strings.TrimSpace(target.OriginalName) == "" {
+		target.OriginalName = fallback.OriginalName
+	}
+	if strings.TrimSpace(target.Overview) == "" {
+		target.Overview = fallback.Overview
+	}
 }
 
 func (v tmdbTV) candidate() Candidate {

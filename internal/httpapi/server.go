@@ -77,12 +77,14 @@ func NewServer(
 	// Settings
 	mux.HandleFunc("GET /api/v1/settings", application.getSettings)
 	mux.HandleFunc("PUT /api/v1/settings", application.updateSettings)
+	mux.HandleFunc("POST /api/v1/settings/connection-tests", application.testConnection)
 
 	// Sources
 	mux.HandleFunc("GET /api/v1/sources", application.listSources)
 	mux.HandleFunc("POST /api/v1/sources", application.createSource)
 	mux.HandleFunc("DELETE /api/v1/sources/{id}", application.deleteSource)
 	mux.HandleFunc("POST /api/v1/sources/{id}/scans", application.scanSource)
+	mux.HandleFunc("PUT /api/v1/sources/{id}/policy", application.updateSourcePolicy)
 
 	// Media (Movies)
 	mux.HandleFunc("GET /api/v1/media", application.listMedia)

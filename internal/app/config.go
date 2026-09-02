@@ -17,17 +17,19 @@ const (
 )
 
 type Config struct {
-	ConfigDir      string
-	CacheDir       string
-	Listen         string
-	LogFormat      string
-	LogLevel       string
-	MediaRoots     []string
-	TMDbAPIKey     string
-	FanartTVAPIKey string
-	TMDbLanguage   string
-	OutboundProxy  string
-	FFprobePath    string
+	ConfigDir        string
+	CacheDir         string
+	Listen           string
+	LogFormat        string
+	LogLevel         string
+	MediaRoots       []string
+	TMDbAPIKey       string
+	FanartTVAPIKey   string
+	TMDbLanguage     string
+	FallbackLanguage string
+	OutboundProxy    string
+	NoProxy          string
+	FFprobePath      string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -57,7 +59,9 @@ func LoadConfig(args []string) (Config, error) {
 	config.TMDbAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_TMDB_API_KEY"))
 	config.FanartTVAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_FANARTTV_API_KEY"))
 	config.TMDbLanguage = envOrDefault("MEDIAGRAP_TMDB_LANGUAGE", "en-US")
+	config.FallbackLanguage = envOrDefault("MEDIAGRAP_FALLBACK_LANGUAGE", "en-US")
 	config.OutboundProxy = strings.TrimSpace(os.Getenv("MEDIAGRAP_OUTBOUND_PROXY"))
+	config.NoProxy = envOrDefault("MEDIAGRAP_NO_PROXY", os.Getenv("NO_PROXY"))
 	config.FFprobePath = envOrDefault("MEDIAGRAP_FFPROBE_PATH", "ffprobe")
 	if strings.EqualFold(config.FFprobePath, "off") || strings.EqualFold(config.FFprobePath, "disabled") {
 		config.FFprobePath = ""

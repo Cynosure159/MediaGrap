@@ -14,9 +14,9 @@ describe('useOperations', () => {
     vi.mocked(api.auditEntries).mockResolvedValue({ items: [] })
     vi.mocked(api.operationsStatus).mockResolvedValue({
       application: { name: 'MediaGrap', version: 'v1', commit: 'abc', builtAt: '' },
-      database: { ready: true, latestMigration: '0012', sizeBytes: 1, walMode: true },
+      database: { ready: true, latestMigration: '0012', sizeBytes: 1, walMode: true, journalMode: 'wal' },
       cache: { path: 'cache', available: true, writable: true, usedBytes: 0 },
-      mounts: [], providers: [], network: { proxyConfigured: false },
+      mounts: [], providers: [], network: { proxyConfigured: false, noProxyConfigured: false }, connectionTests: {},
     })
     const operations = useOperations(() => 'csrf')
     await operations.refreshAll()

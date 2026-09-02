@@ -39,7 +39,7 @@ onUnmounted(operations.disconnect)
           @retry="runAction(() => operations.retry($event))"
         />
         <div class="side-stack">
-          <SystemStatusPanel :status="operations.status.value" :labels="labels" />
+		  <SystemStatusPanel :status="operations.status.value" :labels="labels" :testing-target="operations.testingTarget.value" @test="runAction(() => operations.testConnection($event))" />
           <AuditCenter :entries="operations.audits.value" :labels="labels" />
         </div>
       </div>

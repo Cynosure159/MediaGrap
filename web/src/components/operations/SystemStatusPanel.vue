@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { OperationsStatus } from '@/api/types'
+import type { ConnectionTest, OperationsStatus } from '@/api/types'
 
-defineProps<{ status: OperationsStatus | null; labels: Record<string, string> }>()
+defineProps<{ status: OperationsStatus | null; labels: Record<string, string>; testingTarget: string | null }>()
+const emit = defineEmits<{ test: [target: ConnectionTest['target']] }>()
 
 function bytes(value: number): string {
   if (value < 1024) return `${value} B`
@@ -22,7 +23,7 @@ function bytes(value: number): string {
       <article class="status-block">
         <span>{{ labels.database }}</span>
         <strong :class="status.database.ready ? 'ok' : 'bad'">{{ status.database.ready ? labels.ready : labels.unavailable }}</strong>
-        <small class="font-code">{{ status.database.latestMigration }} · {{ bytes(status.database.sizeBytes) }}</small>
+		<small class="font-code">{{ status.database.latestMigration }} · {{ status.database.journalMode.toUpperCase() }} · {{ bytes(status.database.sizeBytes) }}</small>
       </article>
       <article class="status-block">
         <span>{{ labels.cache }}</span>
@@ -32,6 +33,7 @@ function bytes(value: number): string {
       <article class="status-block">
         <span>{{ labels.outboundProxy }}</span>
         <strong>{{ status.network.proxyConfigured ? labels.configured : labels.notConfigured }}</strong>
+		<small>{{ status.network.noProxyConfigured ? 'NO_PROXY' : '—' }}</small>
       </article>
     </div>
     <div v-if="status" class="status-section">
@@ -47,7 +49,10 @@ function bytes(value: number): string {
       <div v-for="provider in status.providers" :key="provider.id" class="status-line">
         <span><i class="status-dot" :class="provider.configured ? 'status-dot--success' : 'status-dot--warning'"></i>{{ provider.id }}</span>
         <code>{{ labels[`providerStatus_${provider.status}`] || provider.status }}</code>
+		<button type="button" class="btn btn-outline btn-sm" :disabled="testingTarget !== null || !provider.configured" @click="emit('test', provider.id as ConnectionTest['target'])">{{ testingTarget === provider.id ? labels.testingConnection : labels.testConnection }}</button>
       </div>
+	  <div v-if="status.network.proxyConfigured" class="status-line"><span>{{ labels.outboundProxy }}</span><button type="button" class="btn btn-outline btn-sm" :disabled="testingTarget !== null" @click="emit('test', 'proxy')">{{ testingTarget === 'proxy' ? labels.testingConnection : labels.testProxy }}</button></div>
+	  <div v-for="(test, target) in status.connectionTests" :key="target" class="test-line"><code>{{ target }}</code><span :class="`test-${test.status}`">{{ labels[`connection_${test.status}`] }} · {{ test.durationMs }} ms · {{ test.testedAt || '—' }}</span></div>
     </div>
   </section>
 </template>
@@ -66,5 +71,7 @@ h2, h3, p { margin: 0; } h2 { color: var(--on-surface); font-size: 1rem; }
 .status-line { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .35rem 0; color: var(--on-surface); font-size: .72rem; }
 .status-line span { display: inline-flex; align-items: center; gap: .45rem; } .status-line code { color: var(--outline); font-size: .64rem; }
 .empty-state { color: var(--outline); font-size: .72rem; }
+.test-line { display: grid; grid-template-columns: 6rem 1fr; gap: .5rem; padding: .3rem 0; color: var(--outline); font-size: .64rem; }
+.test-reachable { color: var(--secondary); } .test-failed { color: var(--error); } .test-not_configured { color: var(--tertiary); }
 @media (max-width: 480px) { .status-grid { grid-template-columns: 1fr; } }
 </style>

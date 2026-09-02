@@ -28,7 +28,15 @@ The current safe-write engine provides same-directory temporary files and atomic
 - configured media-source availability, writability, and indexed item count;
 - whether TMDb, Fanart.tv, and the outbound proxy are configured, without returning credentials or proxy values.
 
-Provider status in this slice means configuration readiness, not a synthetic claim that a live upstream request succeeded. Explicit, rate-limited connection tests and their redacted result history remain a later Phase 5A increment.
+Provider rows distinguish configuration readiness from real connectivity. Authenticated fixed-target tests for TMDb, Fanart.tv, and the configured proxy persist a redacted latest result with HTTP status and duration. System status also reads the active SQLite journal mode instead of assuming WAL and exposes each source's scan policy and schedule timestamps.
+
+## Completed settings
+
+- Primary and fallback metadata language are persisted; TMDb detail requests fill missing translated title/overview fields from the fallback language.
+- One outbound HTTP/HTTPS/SOCKS5 proxy plus explicit `NO_PROXY` rules is shared by provider and artwork traffic.
+- Source policies support full or incremental scans and restart-safe interval schedules. Duplicate scheduled scans are suppressed while a source already has queued/running work.
+- Theme and interface language are stored per authenticated user; browser storage remains only an immediate-render cache.
+- Credentials, proxy URLs, proxy credentials, and NO_PROXY contents are write-only from the API perspective.
 
 ## UI
 
@@ -42,8 +50,5 @@ At mobile widths the sections become a single-column flow above the existing bot
 
 ## Remaining Phase 5A work
 
-- Persisted source scan strategies and schedules, plus a restart-safe scheduler.
-- Metadata fallback language and a fully tested HTTP/HTTPS/SOCKS5/NO_PROXY policy with a redacted connection-test endpoint.
-- Server-side per-user theme and interface-language preferences.
 - Backup creation/retention and restore operations once their file safety plan/apply boundary is implemented.
 - Parent/child batch jobs and retrying only failed children for TV batch operations.

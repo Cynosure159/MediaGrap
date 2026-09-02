@@ -87,3 +87,25 @@ func TestSearchTVAndDetails(t *testing.T) {
 		t.Fatalf("unexpected episodes: %+v", episodes)
 	}
 }
+
+func TestOutboundProxyHonorsNoProxyAndSupportsSOCKS5(t *testing.T) {
+	client, err := NewOutboundClient("http://proxy.local:7890", "localhost,.lan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := client.Transport.(*http.Transport)
+	bypassed, err := transport.Proxy(httptest.NewRequest(http.MethodGet, "https://nas.lan/status", nil))
+	if err != nil || bypassed != nil {
+		t.Fatalf("expected NO_PROXY bypass, proxy=%v err=%v", bypassed, err)
+	}
+	proxied, err := transport.Proxy(httptest.NewRequest(http.MethodGet, "https://api.themoviedb.org/3/configuration", nil))
+	if err != nil || proxied == nil || proxied.Host != "proxy.local:7890" {
+		t.Fatalf("expected HTTP proxy, proxy=%v err=%v", proxied, err)
+	}
+	if _, err := NewOutboundClient("socks5://user:pass@proxy.local:1080", "localhost"); err != nil {
+		t.Fatalf("SOCKS5 proxy rejected: %v", err)
+	}
+	if _, err := NewOutboundClient("ftp://proxy.local:21"); err == nil {
+		t.Fatal("expected unsupported proxy scheme to fail")
+	}
+}

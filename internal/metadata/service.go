@@ -142,6 +142,14 @@ type Service struct {
 	logger        *slog.Logger
 }
 
+type ConnectionTest struct {
+	Target     string `json:"target"`
+	Status     string `json:"status"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	DurationMS int64  `json:"durationMs"`
+	Message    string `json:"message"`
+}
+
 type artworkJobQueue interface {
 	QueuePayload(context.Context, string, *int64, []byte) (jobs.Job, error)
 	RegisterJobHandler(string, func(context.Context, jobs.Job, func(int, string)) error)
@@ -192,6 +200,57 @@ func (s *Service) ConfigureFanart(apiKey, language, proxy string) error {
 	s.artworkClient = client
 	s.artworkMu.Unlock()
 	return nil
+}
+
+func (s *Service) ConfigureProviders(apiKey, fanartAPIKey, language, fallbackLanguage, proxy, noProxy string) error {
+	client, err := NewOutboundClient(proxy, noProxy)
+	if err != nil {
+		return err
+	}
+	provider, ok := s.provider.(*TMDb)
+	if !ok {
+		return errors.New("TMDb provider is unavailable")
+	}
+	provider.ConfigureAdvanced(client, apiKey, language, fallbackLanguage)
+	s.artworkMu.Lock()
+	s.artworkClient = client
+	s.artworkMu.Unlock()
+	if s.fanart != nil {
+		s.fanart.Configure(client, fanartAPIKey, language)
+	} else if strings.TrimSpace(fanartAPIKey) != "" {
+		return errors.New("Fanart.tv provider is unavailable")
+	}
+	return nil
+}
+
+func (s *Service) TestConnection(ctx context.Context, target string) ConnectionTest {
+	started := time.Now()
+	result := ConnectionTest{Target: target, Status: "failed"}
+	var err error
+	switch target {
+	case "tmdb", "proxy":
+		provider, ok := s.provider.(*TMDb)
+		if !ok {
+			err = errors.New("TMDb provider is unavailable")
+		} else {
+			result.HTTPStatus, err = provider.Ping(ctx)
+		}
+	case "fanart_tv":
+		if s.fanart == nil {
+			err = errors.New("Fanart.tv provider is unavailable")
+		} else {
+			result.HTTPStatus, err = s.fanart.Ping(ctx)
+		}
+	default:
+		err = errors.New("unsupported connection test target")
+	}
+	result.DurationMS = time.Since(started).Milliseconds()
+	if err == nil {
+		result.Status, result.Message = "reachable", "Connection succeeded"
+	} else {
+		result.Message = err.Error()
+	}
+	return result
 }
 
 func (s *Service) SetJobService(queue artworkJobQueue) {

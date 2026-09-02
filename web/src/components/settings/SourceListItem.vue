@@ -1,15 +1,15 @@
 <script setup lang="ts">
+import { reactive } from 'vue'
 import type { Source } from '@/api/library'
-
-defineProps<{
-  source: Source
-  labels: Record<string, string>
-}>()
 
 const emit = defineEmits<{
   (e: 'scan', id: number): void
   (e: 'delete', id: number): void
+	(e: 'savePolicy', id: number, policy: Pick<Source, 'scanMode' | 'scheduleEnabled' | 'scheduleIntervalMinutes'>): void
 }>()
+
+const props = defineProps<{ source: Source; labels: Record<string, string> }>()
+const policy = reactive({ scanMode: props.source.scanMode, scheduleEnabled: props.source.scheduleEnabled, scheduleIntervalMinutes: props.source.scheduleIntervalMinutes })
 </script>
 
 <template>
@@ -66,10 +66,20 @@ const emit = defineEmits<{
             {{ source.itemCount }} {{ labels.indexed }}
           </span>
         </div>
+		<div class="source-policy">
+		  <label>{{ labels.scanStrategy }}
+			<select v-model="policy.scanMode" class="policy-control"><option value="incremental">{{ labels.incrementalScan }}</option><option value="full">{{ labels.fullScan }}</option></select>
+		  </label>
+		  <label class="schedule-toggle"><input v-model="policy.scheduleEnabled" type="checkbox" /> {{ labels.scheduledScan }}</label>
+		  <label v-if="policy.scheduleEnabled">{{ labels.scanInterval }}
+			<input v-model.number="policy.scheduleIntervalMinutes" class="policy-control interval" type="number" min="15" max="10080" />
+		  </label>
+		</div>
       </div>
 
       <!-- Action Buttons (Scan + Remove) -->
       <div class="source-actions">
+		<button type="button" class="btn btn-primary btn-sm action-btn" @click="emit('savePolicy', source.id, { ...policy })">{{ labels.savePolicy }}</button>
         <button
           type="button"
           class="btn btn-outline btn-sm action-btn"
@@ -254,6 +264,12 @@ const emit = defineEmits<{
   gap: 8px;
   flex-shrink: 0;
 }
+
+.source-policy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 5px; }
+.source-policy label { display: inline-flex; align-items: center; gap: 6px; color: var(--outline); font-size: 11px; }
+.policy-control { height: 26px; border: 1px solid var(--outline-variant); border-radius: var(--radius-sm); background: var(--surface-container-lowest); color: var(--on-surface); padding: 0 7px; font: 11px var(--font-data); }
+.policy-control.interval { width: 74px; }
+.schedule-toggle { cursor: pointer; }
 
 .action-btn {
   display: inline-flex;

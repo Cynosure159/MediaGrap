@@ -74,3 +74,28 @@ func TestTVMapsDetailsAndSeasonEpisodes(t *testing.T) {
 		t.Fatalf("episode details were not mapped: %#v", episodes)
 	}
 }
+
+func TestMovieUsesConfiguredFallbackLanguageForMissingTranslation(t *testing.T) {
+	languages := []string{}
+	client := &http.Client{Transport: tmdbRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		language := request.URL.Query().Get("language")
+		languages = append(languages, language)
+		body := `{"id":123,"title":"","original_title":"Original","overview":""}`
+		if language == "en-US" {
+			body = `{"id":123,"title":"Fallback title","original_title":"Original","overview":"Fallback overview"}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	provider := NewTMDb(nil, client, "test-key")
+	provider.ConfigureAdvanced(client, "test-key", "zh-CN", "en-US")
+	details, err := provider.Movie(t.Context(), "123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.Title != "Fallback title" || details.Overview != "Fallback overview" {
+		t.Fatalf("fallback translation not merged: %#v", details)
+	}
+	if len(languages) != 2 || languages[0] != "zh-CN" || languages[1] != "en-US" {
+		t.Fatalf("unexpected language sequence: %#v", languages)
+	}
+}

@@ -31,6 +31,6 @@ func NewTMDb(logger *slog.Logger, client *http.Client, apiKey string) *TMDb {
 	return tmdb.NewClient(logger, client, apiKey)
 }
 
-func NewOutboundClient(proxy string) (*http.Client, error) {
-	return tmdb.NewOutboundClient(proxy)
+func NewOutboundClient(proxy string, noProxy ...string) (*http.Client, error) {
+	return tmdb.NewOutboundClient(proxy, noProxy...)
 }

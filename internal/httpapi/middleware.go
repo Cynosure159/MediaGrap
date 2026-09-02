@@ -19,6 +19,7 @@ type LibraryService interface {
 	CreateSource(ctx context.Context, name, rootPath string) (library.Source, error)
 	DeleteSource(ctx context.Context, id int64) error
 	QueueScan(ctx context.Context, sourceID int64) (library.Job, error)
+	UpdateSourcePolicy(ctx context.Context, sourceID int64, policy library.SourcePolicy) (library.Source, error)
 	ListJobs(ctx context.Context) ([]library.Job, error)
 	Job(ctx context.Context, id int64) (library.Job, error)
 	CancelJob(ctx context.Context, id int64) (library.Job, error)
@@ -37,6 +38,8 @@ type LibraryService interface {
 type MetadataService interface {
 	ConfigureTMDb(apiKey, language, proxy string) error
 	ConfigureFanart(apiKey, language, proxy string) error
+	ConfigureProviders(apiKey, fanartAPIKey, language, fallbackLanguage, proxy, noProxy string) error
+	TestConnection(ctx context.Context, target string) metadata.ConnectionTest
 	Search(ctx context.Context, query string, year *int) ([]metadata.Candidate, error)
 	Select(ctx context.Context, itemID int64, providerID string) (metadata.Record, error)
 	Record(ctx context.Context, itemID int64) (metadata.Record, error)
@@ -67,8 +70,8 @@ type MetadataService interface {
 
 // SettingsService defines the subset of settings methods needed by httpapi handlers.
 type SettingsService interface {
-	View(ctx context.Context) (settings.View, error)
-	Update(ctx context.Context, update settings.Update) (settings.Snapshot, error)
+	View(ctx context.Context, userID ...int64) (settings.View, error)
+	Update(ctx context.Context, update settings.Update, userID ...int64) (settings.Snapshot, error)
 	Current(ctx context.Context) (settings.Snapshot, error)
 }
 

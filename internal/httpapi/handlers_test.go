@@ -122,6 +122,39 @@ func TestOperationsStatusRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestSettingsPreferencesSourcePolicyAndRedactedConnectionTest(t *testing.T) {
+	tc := setupTestContext(t)
+	tc.createAdminSession(t)
+	body := bytes.NewBufferString(`{"fallbackLanguage":"zh-CN","theme":"light","locale":"zh-CN","noProxy":"localhost,.lan"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := tc.doRequest(req, true, true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"theme":"light"`) || !strings.Contains(rec.Body.String(), `"noProxyConfigured":true`) {
+		t.Fatalf("unexpected settings response %d: %s", rec.Code, rec.Body.String())
+	}
+
+	source, err := tc.db.ExecContext(t.Context(), `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Media", tc.mediaRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := source.LastInsertId()
+	body = bytes.NewBufferString(`{"scanMode":"full","scheduleEnabled":true,"scheduleIntervalMinutes":60}`)
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/sources/%d/policy", sourceID), body)
+	req.Header.Set("Content-Type", "application/json")
+	rec = tc.doRequest(req, true, true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scanMode":"full"`) || !strings.Contains(rec.Body.String(), `"scheduleEnabled":true`) {
+		t.Fatalf("unexpected source policy response %d: %s", rec.Code, rec.Body.String())
+	}
+
+	body = bytes.NewBufferString(`{"target":"tmdb"}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/settings/connection-tests", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec = tc.doRequest(req, true, true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"not_configured"`) {
+		t.Fatalf("unexpected connection test response %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestJobCancelRetryAndAuditEndpoints(t *testing.T) {
 	tc := setupTestContext(t)
 	tc.createAdminSession(t)

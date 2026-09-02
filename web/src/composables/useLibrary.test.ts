@@ -18,7 +18,7 @@ describe('useLibrary', () => {
   })
 
   it('loads sources, media, tvShows, and jobs on refresh', async () => {
-    vi.mocked(api.sources).mockResolvedValueOnce({ items: [{ id: 1, name: 'Movies', rootPath: '/media', enabled: true, itemCount: 10, writable: true }] })
+    vi.mocked(api.sources).mockResolvedValueOnce({ items: [{ id: 1, name: 'Movies', rootPath: '/media', enabled: true, itemCount: 10, writable: true, scanMode: 'incremental', scheduleEnabled: false, scheduleIntervalMinutes: 1440 }] })
     vi.mocked(api.media).mockResolvedValueOnce({ items: [{ id: 101, sourceId: 1, relativePath: 'Movie.mkv', titleHint: 'Movie', yearHint: 2024, fileSize: 1000, modifiedAt: 'now', sidecars: [] }], total: 1 })
     vi.mocked(api.tvShows).mockResolvedValueOnce({ items: [{ id: 201, sourceId: 1, relativePath: 'Show', titleHint: 'Show', yearHint: 2024, episodeCount: 1, seasonCount: 1 }] })
     vi.mocked(api.jobs).mockResolvedValueOnce({ items: [] })
@@ -50,7 +50,7 @@ describe('useLibrary', () => {
   })
 
   it('calls createSource and triggers refresh', async () => {
-    vi.mocked(api.addSource).mockResolvedValueOnce({ id: 2, name: 'TV', rootPath: '/tv', enabled: true, itemCount: 0, writable: true })
+    vi.mocked(api.addSource).mockResolvedValueOnce({ id: 2, name: 'TV', rootPath: '/tv', enabled: true, itemCount: 0, writable: true, scanMode: 'incremental', scheduleEnabled: false, scheduleIntervalMinutes: 1440 })
     vi.mocked(api.sources).mockResolvedValueOnce({ items: [] })
     vi.mocked(api.media).mockResolvedValueOnce({ items: [], total: 0 })
     vi.mocked(api.tvShows).mockResolvedValueOnce({ items: [] })

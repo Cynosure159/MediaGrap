@@ -19,6 +19,7 @@ TVSelection,
   SettingsUpdate,
   AuditEntry,
   OperationsStatus,
+  ConnectionTest,
 } from './types'
 
 export * from './types'
@@ -69,6 +70,13 @@ export const scanSource = (csrf: string, id: number) =>
   request<Job>(`/api/v1/sources/${id}/scans`, {
     method: 'POST',
     headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const updateSourcePolicy = (csrf: string, id: number, policy: Pick<Source, 'scanMode' | 'scheduleEnabled' | 'scheduleIntervalMinutes'>) =>
+  request<Source>(`/api/v1/sources/${id}/policy`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(policy),
   })
 
 // Media (Movies)
@@ -258,4 +266,11 @@ export const saveSettings = (csrf: string, update: SettingsUpdate) =>
       'X-CSRF-Token': csrf,
     },
     body: JSON.stringify(update),
+  })
+
+export const testConnection = (csrf: string, target: ConnectionTest['target']) =>
+  request<ConnectionTest>('/api/v1/settings/connection-tests', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ target }),
   })

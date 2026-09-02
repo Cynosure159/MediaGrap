@@ -3,11 +3,34 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/mediagrap/mediagrap/internal/library"
 )
 
 type sourceRequest struct {
 	Name     string `json:"name"`
 	RootPath string `json:"rootPath"`
+}
+
+func (s *server) updateSourcePolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_source", "Invalid source id")
+		return
+	}
+	var policy library.SourcePolicy
+	if !decodeJSON(w, r, &policy) {
+		return
+	}
+	source, err := s.library.UpdateSourcePolicy(r.Context(), id, policy)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_source_policy", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, source)
 }
 
 func (s *server) listSources(w http.ResponseWriter, r *http.Request) {

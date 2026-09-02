@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type auditEntryView struct {
@@ -162,7 +164,7 @@ func directoryUsage(path string) map[string]any {
 	})
 	info, err := os.Stat(path)
 	available := err == nil && info.IsDir()
-	writable := available && info.Mode().Perm()&0o222 != 0
+	writable := available && unix.Access(path, unix.W_OK) == nil
 	return map[string]any{
 		"path":      filepath.Base(filepath.Clean(path)),
 		"available": available,
@@ -172,11 +174,12 @@ func directoryUsage(path string) map[string]any {
 }
 
 func (s *server) operationsStatus(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireSession(w, r, false); !ok {
+	session, ok := s.requireSession(w, r, false)
+	if !ok {
 		return
 	}
 	ctx := r.Context()
-	settingsView, err := s.settingsService.View(ctx)
+	settingsView, err := s.settingsService.View(ctx, session.User.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load system status")
 		return
@@ -189,6 +192,8 @@ func (s *server) operationsStatus(w http.ResponseWriter, r *http.Request) {
 	latestMigration := ""
 	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),'') FROM schema_migrations`).Scan(&latestMigration)
 	databaseBytes := int64(0)
+	journalMode := "unknown"
+	_ = s.db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journalMode)
 	if s.runtime.ConfigDir != "" {
 		if info, statErr := os.Stat(filepath.Join(s.runtime.ConfigDir, "mediagrap.db")); statErr == nil {
 			databaseBytes = info.Size()
@@ -200,23 +205,38 @@ func (s *server) operationsStatus(w http.ResponseWriter, r *http.Request) {
 		available := statErr == nil && info.IsDir()
 		mounts = append(mounts, map[string]any{
 			"id": source.ID, "name": source.Name, "available": available,
-			"writable": available && source.Writable, "itemCount": source.ItemCount,
+			"writable": available && source.Writable, "itemCount": source.ItemCount, "scanMode": source.ScanMode,
+			"scheduleEnabled": source.ScheduleEnabled, "nextScanAt": source.NextScanAt, "lastScanAt": source.LastScanAt,
 		})
 	}
 	cache := map[string]any{"path": "cache", "available": false, "writable": false, "usedBytes": int64(0)}
 	if s.runtime.CacheDir != "" {
 		cache = directoryUsage(s.runtime.CacheDir)
 	}
+	tests := map[string]any{}
+	rows, testErr := s.db.QueryContext(ctx, `SELECT target,status,COALESCE(http_status,0),duration_ms,message,tested_at FROM connection_test_results WHERE id IN (SELECT MAX(id) FROM connection_test_results GROUP BY target)`)
+	if testErr == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var target, status, message, testedAt string
+			var httpStatus int
+			var duration int64
+			if rows.Scan(&target, &status, &httpStatus, &duration, &message, &testedAt) == nil {
+				tests[target] = map[string]any{"status": status, "httpStatus": httpStatus, "durationMs": duration, "message": message, "testedAt": testedAt}
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"application": map[string]string{"name": "MediaGrap", "version": s.build.Version, "commit": s.build.Commit, "builtAt": s.build.BuiltAt},
-		"database":    map[string]any{"ready": s.db.PingContext(ctx) == nil, "latestMigration": latestMigration, "sizeBytes": databaseBytes, "walMode": true},
+		"database":    map[string]any{"ready": s.db.PingContext(ctx) == nil, "latestMigration": latestMigration, "sizeBytes": databaseBytes, "walMode": strings.EqualFold(journalMode, "wal"), "journalMode": journalMode},
 		"cache":       cache,
 		"mounts":      mounts,
 		"providers": []map[string]any{
 			{"id": "tmdb", "configured": settingsView.TMDbAPIKeyConfigured, "status": configuredStatus(settingsView.TMDbAPIKeyConfigured)},
 			{"id": "fanart_tv", "configured": settingsView.FanartTVAPIKeyConfigured, "status": configuredStatus(settingsView.FanartTVAPIKeyConfigured)},
 		},
-		"network": map[string]any{"proxyConfigured": settingsView.OutboundProxyConfigured},
+		"network":         map[string]any{"proxyConfigured": settingsView.OutboundProxyConfigured, "noProxyConfigured": settingsView.NoProxyConfigured},
+		"connectionTests": tests,
 	})
 }
 

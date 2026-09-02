@@ -78,6 +78,11 @@ export function useLibrary(csrfToken: () => string) {
     await refreshSources()
   }
 
+  async function saveSourcePolicy(id: number, policy: Pick<api.Source, 'scanMode' | 'scheduleEnabled' | 'scheduleIntervalMinutes'>) {
+	await api.updateSourcePolicy(csrfToken(), id, policy)
+	await refreshSources()
+  }
+
   async function scan(id: number, query = '') {
     const job = await api.scanSource(csrfToken(), id)
     await refreshJobs()
@@ -109,6 +114,7 @@ export function useLibrary(csrfToken: () => string) {
     refreshJobs,
     createSource,
     removeSource,
+	saveSourcePolicy,
     scan,
   }
 }

@@ -13,19 +13,23 @@ import (
 var tmdbLanguagePattern = regexp.MustCompile(`^[a-z]{2}(-[A-Z]{2})?$`)
 
 type Defaults struct {
-	TMDbAPIKey     string
-	FanartTVAPIKey string
-	TMDbLanguage   string
-	OutboundProxy  string
-	MediaRoots     []string
+	TMDbAPIKey       string
+	FanartTVAPIKey   string
+	TMDbLanguage     string
+	FallbackLanguage string
+	OutboundProxy    string
+	NoProxy          string
+	MediaRoots       []string
 }
 
 type Snapshot struct {
-	TMDbAPIKey     string
-	FanartTVAPIKey string
-	TMDbLanguage   string
-	OutboundProxy  string
-	MediaRoots     []string
+	TMDbAPIKey       string
+	FanartTVAPIKey   string
+	TMDbLanguage     string
+	FallbackLanguage string
+	OutboundProxy    string
+	NoProxy          string
+	MediaRoots       []string
 }
 
 type View struct {
@@ -33,6 +37,10 @@ type View struct {
 	FanartTVAPIKeyConfigured bool     `json:"fanartTvApiKeyConfigured"`
 	OutboundProxyConfigured  bool     `json:"outboundProxyConfigured"`
 	TMDbLanguage             string   `json:"tmdbLanguage"`
+	FallbackLanguage         string   `json:"fallbackLanguage"`
+	NoProxyConfigured        bool     `json:"noProxyConfigured"`
+	Theme                    string   `json:"theme"`
+	Locale                   string   `json:"locale"`
 	MediaRoots               []string `json:"mediaRoots"`
 }
 
@@ -42,8 +50,13 @@ type Update struct {
 	FanartTVAPIKey      string `json:"fanartTvApiKey"`
 	ClearFanartTVAPIKey bool   `json:"clearFanartTvApiKey"`
 	TMDbLanguage        string `json:"tmdbLanguage"`
+	FallbackLanguage    string `json:"fallbackLanguage"`
 	OutboundProxy       string `json:"outboundProxy"`
 	ClearOutboundProxy  bool   `json:"clearOutboundProxy"`
+	NoProxy             string `json:"noProxy"`
+	ClearNoProxy        bool   `json:"clearNoProxy"`
+	Theme               string `json:"theme"`
+	Locale              string `json:"locale"`
 }
 
 type Service struct {
@@ -55,12 +68,15 @@ func NewService(db *sql.DB, defaults Defaults) *Service {
 	if defaults.TMDbLanguage == "" {
 		defaults.TMDbLanguage = "en-US"
 	}
+	if defaults.FallbackLanguage == "" {
+		defaults.FallbackLanguage = "en-US"
+	}
 	return &Service{db: db, defaults: defaults}
 }
 
 func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 	values := map[string]string{}
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'fanart_tv_api_key', 'tmdb_language', 'outbound_proxy')`)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'fanart_tv_api_key', 'tmdb_language', 'fallback_language', 'outbound_proxy', 'no_proxy')`)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -76,23 +92,29 @@ func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return Snapshot{
-		TMDbAPIKey:     valueOrDefault(values, "tmdb_api_key", s.defaults.TMDbAPIKey),
-		FanartTVAPIKey: valueOrDefault(values, "fanart_tv_api_key", s.defaults.FanartTVAPIKey),
-		TMDbLanguage:   valueOrDefault(values, "tmdb_language", s.defaults.TMDbLanguage),
-		OutboundProxy:  valueOrDefault(values, "outbound_proxy", s.defaults.OutboundProxy),
-		MediaRoots:     append([]string(nil), s.defaults.MediaRoots...),
+		TMDbAPIKey:       valueOrDefault(values, "tmdb_api_key", s.defaults.TMDbAPIKey),
+		FanartTVAPIKey:   valueOrDefault(values, "fanart_tv_api_key", s.defaults.FanartTVAPIKey),
+		TMDbLanguage:     valueOrDefault(values, "tmdb_language", s.defaults.TMDbLanguage),
+		FallbackLanguage: valueOrDefault(values, "fallback_language", s.defaults.FallbackLanguage),
+		OutboundProxy:    valueOrDefault(values, "outbound_proxy", s.defaults.OutboundProxy),
+		NoProxy:          valueOrDefault(values, "no_proxy", s.defaults.NoProxy),
+		MediaRoots:       append([]string(nil), s.defaults.MediaRoots...),
 	}, nil
 }
 
-func (s *Service) View(ctx context.Context) (View, error) {
+func (s *Service) View(ctx context.Context, userID ...int64) (View, error) {
 	current, err := s.Current(ctx)
 	if err != nil {
 		return View{}, err
 	}
-	return View{TMDbAPIKeyConfigured: current.TMDbAPIKey != "", FanartTVAPIKeyConfigured: current.FanartTVAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", TMDbLanguage: current.TMDbLanguage, MediaRoots: current.MediaRoots}, nil
+	view := View{TMDbAPIKeyConfigured: current.TMDbAPIKey != "", FanartTVAPIKeyConfigured: current.FanartTVAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", NoProxyConfigured: current.NoProxy != "", TMDbLanguage: current.TMDbLanguage, FallbackLanguage: current.FallbackLanguage, Theme: "dark", Locale: "en", MediaRoots: current.MediaRoots}
+	if len(userID) > 0 && userID[0] > 0 {
+		_ = s.db.QueryRowContext(ctx, `SELECT theme, locale FROM user_preferences WHERE user_id=?`, userID[0]).Scan(&view.Theme, &view.Locale)
+	}
+	return view, nil
 }
 
-func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
+func (s *Service) Update(ctx context.Context, update Update, userID ...int64) (Snapshot, error) {
 	current, err := s.Current(ctx)
 	if err != nil {
 		return Snapshot{}, err
@@ -102,6 +124,12 @@ func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
 	}
 	if !tmdbLanguagePattern.MatchString(current.TMDbLanguage) {
 		return Snapshot{}, errors.New("TMDb language must use a code such as zh-CN or en-US")
+	}
+	if value := strings.TrimSpace(update.FallbackLanguage); value != "" {
+		current.FallbackLanguage = value
+	}
+	if !tmdbLanguagePattern.MatchString(current.FallbackLanguage) {
+		return Snapshot{}, errors.New("fallback language must use a code such as zh-CN or en-US")
 	}
 	if update.ClearTMDbAPIKey {
 		current.TMDbAPIKey = ""
@@ -121,14 +149,42 @@ func (s *Service) Update(ctx context.Context, update Update) (Snapshot, error) {
 	if err := validateProxy(current.OutboundProxy); err != nil {
 		return Snapshot{}, err
 	}
+	if update.ClearNoProxy {
+		current.NoProxy = ""
+	} else if value := strings.TrimSpace(update.NoProxy); value != "" {
+		current.NoProxy = value
+	}
+	if err := validateNoProxy(current.NoProxy); err != nil {
+		return Snapshot{}, err
+	}
+	theme, locale := strings.TrimSpace(update.Theme), strings.TrimSpace(update.Locale)
+	if theme != "" && theme != "dark" && theme != "light" && theme != "system" {
+		return Snapshot{}, errors.New("theme must be dark, light, or system")
+	}
+	if locale != "" && locale != "en" && locale != "zh-CN" {
+		return Snapshot{}, errors.New("interface language must be en or zh-CN")
+	}
 	transaction, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	defer transaction.Rollback()
-	for key, value := range map[string]string{"tmdb_api_key": current.TMDbAPIKey, "fanart_tv_api_key": current.FanartTVAPIKey, "tmdb_language": current.TMDbLanguage, "outbound_proxy": current.OutboundProxy} {
+	for key, value := range map[string]string{"tmdb_api_key": current.TMDbAPIKey, "fanart_tv_api_key": current.FanartTVAPIKey, "tmdb_language": current.TMDbLanguage, "fallback_language": current.FallbackLanguage, "outbound_proxy": current.OutboundProxy, "no_proxy": current.NoProxy} {
 		if _, err := transaction.ExecContext(ctx, `INSERT INTO application_settings(key, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value); err != nil {
 			return Snapshot{}, fmt.Errorf("save setting: %w", err)
+		}
+	}
+	if len(userID) > 0 && userID[0] > 0 && (theme != "" || locale != "") {
+		currentTheme, currentLocale := "dark", "en"
+		_ = transaction.QueryRowContext(ctx, `SELECT theme, locale FROM user_preferences WHERE user_id=?`, userID[0]).Scan(&currentTheme, &currentLocale)
+		if theme != "" {
+			currentTheme = theme
+		}
+		if locale != "" {
+			currentLocale = locale
+		}
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO user_preferences(user_id,theme,locale,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET theme=excluded.theme,locale=excluded.locale,updated_at=excluded.updated_at`, userID[0], currentTheme, currentLocale); err != nil {
+			return Snapshot{}, fmt.Errorf("save user preferences: %w", err)
 		}
 	}
 	if err := transaction.Commit(); err != nil {
@@ -149,8 +205,21 @@ func validateProxy(value string) error {
 		return nil
 	}
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return errors.New("outbound proxy must be a valid HTTP or HTTPS proxy URL")
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "socks5" && parsed.Scheme != "socks5h") {
+		return errors.New("outbound proxy must be a valid HTTP, HTTPS, or SOCKS5 proxy URL")
+	}
+	return nil
+}
+
+func validateNoProxy(value string) error {
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.ContainsAny(entry, "/?#@") {
+			return errors.New("NO_PROXY entries must be hostnames, domains, IP addresses, or host:port values")
+		}
 	}
 	return nil
 }

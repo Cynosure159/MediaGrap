@@ -17,6 +17,7 @@ const emit = defineEmits<{
   add: []
   scan: [id: number]
   delete: [id: number]
+	savePolicy: [id: number, policy: Pick<Source, 'scanMode' | 'scheduleEnabled' | 'scheduleIntervalMinutes'>]
 }>()
 </script>
 
@@ -79,6 +80,7 @@ const emit = defineEmits<{
           :labels="labels"
           @scan="emit('scan', $event)"
           @delete="emit('delete', $event)"
+		  @save-policy="(id, policy) => emit('savePolicy', id, policy)"
         />
       </div>
     </div>

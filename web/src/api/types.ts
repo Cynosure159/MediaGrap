@@ -15,6 +15,11 @@ export interface Source {
   enabled: boolean
   itemCount: number
   writable: boolean
+  scanMode: 'full' | 'incremental'
+  scheduleEnabled: boolean
+  scheduleIntervalMinutes: number
+  nextScanAt?: string
+  lastScanAt?: string
 }
 
 export interface SidecarAsset {
@@ -208,11 +213,21 @@ export interface AuditEntry {
 
 export interface OperationsStatus {
   application: { name: string; version: string; commit: string; builtAt: string }
-  database: { ready: boolean; latestMigration: string; sizeBytes: number; walMode: boolean }
+  database: { ready: boolean; latestMigration: string; sizeBytes: number; walMode: boolean; journalMode: string }
   cache: { path: string; available: boolean; writable: boolean; usedBytes: number }
-  mounts: Array<{ id: number; name: string; available: boolean; writable: boolean; itemCount: number }>
+  mounts: Array<{ id: number; name: string; available: boolean; writable: boolean; itemCount: number; scanMode: string; scheduleEnabled: boolean; nextScanAt?: string; lastScanAt?: string }>
   providers: Array<{ id: string; configured: boolean; status: string }>
-  network: { proxyConfigured: boolean }
+  network: { proxyConfigured: boolean; noProxyConfigured: boolean }
+  connectionTests: Record<string, ConnectionTest>
+}
+
+export interface ConnectionTest {
+  target: 'tmdb' | 'fanart_tv' | 'proxy'
+  status: 'reachable' | 'failed' | 'not_configured'
+  httpStatus?: number
+  durationMs: number
+  message: string
+  testedAt?: string
 }
 
 export interface Metadata {
@@ -309,6 +324,10 @@ export interface Settings {
   fanartTvApiKeyConfigured: boolean
   outboundProxyConfigured: boolean
   tmdbLanguage: string
+  fallbackLanguage: string
+  noProxyConfigured: boolean
+  theme: 'dark' | 'light' | 'system'
+  locale: 'en' | 'zh-CN'
   mediaRoots: string[]
 }
 
@@ -318,6 +337,11 @@ export interface SettingsUpdate {
   fanartTvApiKey: string
   clearFanartTvApiKey: boolean
   tmdbLanguage: string
+  fallbackLanguage: string
   outboundProxy: string
   clearOutboundProxy: boolean
+  noProxy: string
+  clearNoProxy: boolean
+  theme: 'dark' | 'light' | 'system'
+  locale: 'en' | 'zh-CN'
 }

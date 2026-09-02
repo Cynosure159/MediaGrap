@@ -8,6 +8,7 @@ export function useOperations(csrfToken: () => string) {
   const error = shallowRef<string | null>(null)
   const isLoading = shallowRef(false)
   const streamState = shallowRef<'connecting' | 'connected' | 'reconnecting'>('connecting')
+	const testingTarget = shallowRef<string | null>(null)
   let events: EventSource | null = null
   let refreshTimer: number | null = null
 
@@ -59,5 +60,11 @@ export function useOperations(csrfToken: () => string) {
     await refreshJobs()
   }
 
-  return { jobs, audits, status, error, isLoading, streamState, refreshAll, refreshJobs, connect, disconnect, cancel, retry }
+	async function testConnection(target: api.ConnectionTest['target']) {
+		testingTarget.value = target
+		try { await api.testConnection(csrfToken(), target); status.value = await api.operationsStatus() }
+		finally { testingTarget.value = null }
+	}
+
+  return { jobs, audits, status, error, isLoading, streamState, testingTarget, refreshAll, refreshJobs, connect, disconnect, cancel, retry, testConnection }
 }

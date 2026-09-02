@@ -110,6 +110,28 @@ func (c *Client) configured() (string, string, string, *http.Client, error) {
 	return c.apiKey, c.language, c.endpoint, c.client, nil
 }
 
+func (c *Client) Ping(ctx context.Context) (int, error) {
+	apiKey, _, endpoint, client, err := c.configured()
+	if err != nil {
+		return 0, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/movies/550", nil)
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("api-key", apiKey)
+	request.Header.Set("Accept", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, errors.New("Fanart.tv connection failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return response.StatusCode, fmt.Errorf("Fanart.tv returned HTTP %d", response.StatusCode)
+	}
+	return response.StatusCode, nil
+}
+
 // Movie returns the artwork groups supported by Kodi and Fanart.tv. The
 // order follows MediaElch's useful behavior: preferred language first, then
 // language-neutral artwork, English, likes, and finally provider order.

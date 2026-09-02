@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mediagrap/mediagrap/internal/jobs"
+	"golang.org/x/sys/unix"
 )
 
 var videoExtensions = map[string]bool{".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".webm": true}
@@ -27,12 +29,23 @@ var episodePattern = regexp.MustCompile(`(?i)(?:^|[. _-])s(\d{1,2})e(\d{1,3})(?:
 var episodeXPattern = regexp.MustCompile(`(?i)(?:^|[. _-])(\d{1,2})x(\d{1,3})(?:-(\d{1,3}))?(?:$|[. _-])`)
 
 type Source struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	RootPath  string `json:"rootPath"`
-	Enabled   bool   `json:"enabled"`
-	ItemCount int    `json:"itemCount"`
-	Writable  bool   `json:"writable"`
+	ID                      int64  `json:"id"`
+	Name                    string `json:"name"`
+	RootPath                string `json:"rootPath"`
+	Enabled                 bool   `json:"enabled"`
+	ItemCount               int    `json:"itemCount"`
+	Writable                bool   `json:"writable"`
+	ScanMode                string `json:"scanMode"`
+	ScheduleEnabled         bool   `json:"scheduleEnabled"`
+	ScheduleIntervalMinutes int    `json:"scheduleIntervalMinutes"`
+	NextScanAt              string `json:"nextScanAt,omitempty"`
+	LastScanAt              string `json:"lastScanAt,omitempty"`
+}
+
+type SourcePolicy struct {
+	ScanMode                string `json:"scanMode"`
+	ScheduleEnabled         bool   `json:"scheduleEnabled"`
+	ScheduleIntervalMinutes int    `json:"scheduleIntervalMinutes"`
 }
 type MediaItem struct {
 	ID           int64     `json:"id"`
@@ -125,7 +138,11 @@ func (s *Service) registerScanJobHandler() {
 		if job.SourceID == nil {
 			return errors.New("source id is required for scan job")
 		}
-		return s.scan(ctx, job.ID, *job.SourceID, updateProgress)
+		payload := struct {
+			Mode string `json:"mode"`
+		}{Mode: "incremental"}
+		_ = json.Unmarshal([]byte(job.Payload), &payload)
+		return s.scan(ctx, job.ID, *job.SourceID, payload.Mode, updateProgress)
 	})
 }
 
@@ -136,7 +153,7 @@ func (s *Service) SetMetadataHydrator(hydrator interface {
 }
 
 func (s *Service) ListSources(ctx context.Context) ([]Source, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT s.id, s.name, s.root_path, s.enabled, COUNT(m.id) FROM sources s LEFT JOIN media_items m ON m.source_id = s.id AND m.missing = 0 GROUP BY s.id ORDER BY s.name COLLATE NOCASE`)
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, s.name, s.root_path, s.enabled, s.scan_mode, s.schedule_enabled, s.schedule_interval_minutes, COALESCE(s.next_scan_at,''), COALESCE(s.last_scan_at,''), COUNT(m.id) FROM sources s LEFT JOIN media_items m ON m.source_id = s.id AND m.missing = 0 GROUP BY s.id ORDER BY s.name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -145,14 +162,46 @@ func (s *Service) ListSources(ctx context.Context) ([]Source, error) {
 	for rows.Next() {
 		var source Source
 		var enabled int
-		if err := rows.Scan(&source.ID, &source.Name, &source.RootPath, &enabled, &source.ItemCount); err != nil {
+		var scheduleEnabled int
+		if err := rows.Scan(&source.ID, &source.Name, &source.RootPath, &enabled, &source.ScanMode, &scheduleEnabled, &source.ScheduleIntervalMinutes, &source.NextScanAt, &source.LastScanAt, &source.ItemCount); err != nil {
 			return nil, err
 		}
 		source.Enabled = enabled == 1
+		source.ScheduleEnabled = scheduleEnabled == 1
 		source.Writable = isWritable(source.RootPath)
 		result = append(result, source)
 	}
 	return result, rows.Err()
+}
+
+func (s *Service) UpdateSourcePolicy(ctx context.Context, sourceID int64, policy SourcePolicy) (Source, error) {
+	if policy.ScanMode != "full" && policy.ScanMode != "incremental" {
+		return Source{}, errors.New("scan mode must be full or incremental")
+	}
+	if policy.ScheduleIntervalMinutes < 15 || policy.ScheduleIntervalMinutes > 10080 {
+		return Source{}, errors.New("scan interval must be between 15 and 10080 minutes")
+	}
+	next := any(nil)
+	if policy.ScheduleEnabled {
+		next = time.Now().UTC().Add(time.Duration(policy.ScheduleIntervalMinutes) * time.Minute).Format("2006-01-02 15:04:05")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE sources SET scan_mode=?,schedule_enabled=?,schedule_interval_minutes=?,next_scan_at=?,updated_at=datetime('now') WHERE id=?`, policy.ScanMode, policy.ScheduleEnabled, policy.ScheduleIntervalMinutes, next, sourceID)
+	if err != nil {
+		return Source{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return Source{}, errors.New("source not found")
+	}
+	sources, err := s.ListSources(ctx)
+	if err != nil {
+		return Source{}, err
+	}
+	for _, source := range sources {
+		if source.ID == sourceID {
+			return source, nil
+		}
+	}
+	return Source{}, errors.New("source not found")
 }
 
 func (s *Service) CreateSource(ctx context.Context, name, rootPath string) (Source, error) {
@@ -173,7 +222,7 @@ func (s *Service) CreateSource(ctx context.Context, name, rootPath string) (Sour
 		return Source{}, fmt.Errorf("create source: %w", err)
 	}
 	id, _ := result.LastInsertId()
-	return Source{ID: id, Name: name, RootPath: rootPath, Enabled: true, Writable: isWritable(rootPath)}, nil
+	return Source{ID: id, Name: name, RootPath: rootPath, Enabled: true, Writable: isWritable(rootPath), ScanMode: "incremental", ScheduleIntervalMinutes: 1440}, nil
 }
 
 // DeleteSource removes only MediaGrap's source configuration and its indexed
@@ -195,11 +244,12 @@ func (s *Service) DeleteSource(ctx context.Context, sourceID int64) error {
 }
 
 func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sources WHERE id = ? AND enabled = 1`, sourceID).Scan(&exists); err != nil || exists == 0 {
+	var mode string
+	if err := s.db.QueryRowContext(ctx, `SELECT scan_mode FROM sources WHERE id = ? AND enabled = 1`, sourceID).Scan(&mode); err != nil {
 		return Job{}, errors.New("source not found")
 	}
-	return s.jobs.Queue(ctx, "scan", &sourceID)
+	payload, _ := json.Marshal(map[string]string{"mode": mode})
+	return s.jobs.QueuePayload(ctx, "scan", &sourceID, payload)
 }
 
 // QueuePayload and RegisterJobHandler let adjacent bounded-context services
@@ -522,10 +572,60 @@ func (s *Service) sidecars(ctx context.Context, id int64) ([]Sidecar, error) {
 }
 
 func (s *Service) RunWorker(ctx context.Context) {
+	go s.runScheduler(ctx)
 	s.jobs.RunWorker(ctx)
 }
 
-func (s *Service) scan(ctx context.Context, jobID, sourceID int64, progress func(current int, message string)) error {
+func (s *Service) runScheduler(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	s.scheduleDueScans(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.scheduleDueScans(ctx)
+		}
+	}
+}
+
+func (s *Service) scheduleDueScans(ctx context.Context) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,schedule_interval_minutes FROM sources WHERE enabled=1 AND schedule_enabled=1 AND (next_scan_at IS NULL OR next_scan_at<=datetime('now')) AND NOT EXISTS(SELECT 1 FROM jobs WHERE jobs.source_id=sources.id AND jobs.kind='scan' AND jobs.state IN ('queued','running'))`)
+	if err != nil {
+		return
+	}
+	type due struct {
+		id       int64
+		interval int
+	}
+	items := []due{}
+	for rows.Next() {
+		var item due
+		if rows.Scan(&item.id, &item.interval) == nil {
+			items = append(items, item)
+		}
+	}
+	_ = rows.Close()
+	for _, item := range items {
+		next := time.Now().UTC().Add(time.Duration(item.interval) * time.Minute).Format("2006-01-02 15:04:05")
+		result, updateErr := s.db.ExecContext(ctx, `UPDATE sources SET next_scan_at=? WHERE id=? AND schedule_enabled=1 AND (next_scan_at IS NULL OR next_scan_at<=datetime('now'))`, next, item.id)
+		if updateErr != nil {
+			continue
+		}
+		changed, _ := result.RowsAffected()
+		if changed == 0 {
+			continue
+		}
+		if _, queueErr := s.QueueScan(ctx, item.id); queueErr != nil {
+			s.logger.Warn("scheduled scan queue failed", "source_id", item.id, "error", queueErr)
+		} else {
+			s.logger.Info("scheduled scan queued", "source_id", item.id)
+		}
+	}
+}
+
+func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, progress func(current int, message string)) error {
 	var root string
 	if err := s.db.QueryRowContext(ctx, `SELECT root_path FROM sources WHERE id=?`, sourceID).Scan(&root); err != nil {
 		return err
@@ -534,8 +634,10 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, progress func
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
-	if _, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=?`, sourceID); err != nil {
-		return err
+	if mode == "full" {
+		if _, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=?`, sourceID); err != nil {
+			return err
+		}
 	}
 	count := 0
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -584,6 +686,7 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, progress func
 		return nil
 	})
 	if err == nil {
+		_, _ = s.db.ExecContext(ctx, `UPDATE sources SET last_scan_at=datetime('now') WHERE id=?`, sourceID)
 		s.logger.Info("library scan indexed files", "job_id", jobID, "source_id", sourceID, "media_item_count", count)
 	}
 	return err
@@ -703,5 +806,5 @@ func episodeTitleHint(filename string) string {
 }
 func isWritable(path string) bool {
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().Perm()&0o200 != 0
+	return err == nil && info.IsDir() && unix.Access(path, unix.W_OK) == nil
 }

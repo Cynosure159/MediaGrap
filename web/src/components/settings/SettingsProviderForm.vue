@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { Settings, SettingsUpdate } from '@/api/library'
+import type { ConnectionTest, Settings, SettingsUpdate } from '@/api/library'
 
-defineProps<{ settings: Settings | null; labels: Record<string, string>; saving: boolean }>()
+defineProps<{ settings: Settings | null; labels: Record<string, string>; saving: boolean; connectionTests: Record<string, ConnectionTest | null>; testingTarget: string | null }>()
 const model = defineModel<SettingsUpdate>('model', { required: true })
-const emit = defineEmits<{ save: [] }>()
+const emit = defineEmits<{ save: []; test: [target: ConnectionTest['target']] }>()
 </script>
 
 <template>
@@ -57,6 +57,8 @@ const emit = defineEmits<{ save: [] }>()
               {{ labels.clearApiKey }}
             </span>
           </label>
+		  <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.tmdbApiKeyConfigured" @click="emit('test', 'tmdb')">{{ testingTarget === 'tmdb' ? labels.testingConnection : labels.testConnection }}</button>
+		  <p v-if="connectionTests.tmdb" class="test-result" :class="`test-result--${connectionTests.tmdb.status}`">{{ labels[`connection_${connectionTests.tmdb.status}`] }} · {{ connectionTests.tmdb.durationMs }} ms</p>
         </div>
 
         <!-- TMDb Language -->
@@ -75,6 +77,12 @@ const emit = defineEmits<{ save: [] }>()
             </svg>
           </div>
         </div>
+
+		<div class="field-group">
+		  <label for="fallback-language" class="field-label">{{ labels.fallbackLanguage }}</label>
+		  <div class="select-wrapper"><select id="fallback-language" v-model="model.fallbackLanguage" class="form-select"><option value="en-US">English (en-US)</option><option value="zh-CN">简体中文 (zh-CN)</option><option value="zh-TW">繁體中文 (zh-TW)</option><option value="ja-JP">日本語 (ja-JP)</option><option value="ko-KR">한국어 (ko-KR)</option></select></div>
+		  <p class="field-hint">{{ labels.fallbackLanguageHelp }}</p>
+		</div>
 
         <!-- Fanart.tv API Key -->
         <div class="field-group">
@@ -105,6 +113,8 @@ const emit = defineEmits<{ save: [] }>()
               {{ labels.clearFanartTvApiKey }}
             </span>
           </label>
+		  <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.fanartTvApiKeyConfigured" @click="emit('test', 'fanart_tv')">{{ testingTarget === 'fanart_tv' ? labels.testingConnection : labels.testConnection }}</button>
+		  <p v-if="connectionTests.fanart_tv" class="test-result" :class="`test-result--${connectionTests.fanart_tv.status}`">{{ labels[`connection_${connectionTests.fanart_tv.status}`] }} · {{ connectionTests.fanart_tv.durationMs }} ms</p>
         </div>
 
         <!-- Outbound Proxy -->
@@ -125,7 +135,7 @@ const emit = defineEmits<{ save: [] }>()
           <input
             id="outbound-proxy"
             v-model="model.outboundProxy"
-            type="url"
+			type="text"
             autocomplete="off"
             class="input-control font-code"
             :placeholder="settings?.outboundProxyConfigured ? labels.proxyConfigured : labels.proxyPlaceholder"
@@ -142,7 +152,16 @@ const emit = defineEmits<{ save: [] }>()
               {{ labels.clearProxy }}
             </span>
           </label>
+		  <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.outboundProxyConfigured" @click="emit('test', 'proxy')">{{ testingTarget === 'proxy' ? labels.testingConnection : labels.testProxy }}</button>
+		  <p v-if="connectionTests.proxy" class="test-result" :class="`test-result--${connectionTests.proxy.status}`">{{ labels[`connection_${connectionTests.proxy.status}`] }} · {{ connectionTests.proxy.durationMs }} ms</p>
         </div>
+
+		<div class="field-group">
+		  <div class="field-header"><label for="no-proxy" class="field-label">NO_PROXY</label><span class="status-pill" :class="settings?.noProxyConfigured ? 'status-pill--configured' : 'status-pill--unset'">{{ settings?.noProxyConfigured ? labels.configured : labels.notSet }}</span></div>
+		  <input id="no-proxy" v-model="model.noProxy" type="text" autocomplete="off" class="input-control font-code" :placeholder="labels.noProxyPlaceholder" />
+		  <p class="field-hint">{{ labels.noProxyHelp }}</p>
+		  <label v-if="settings?.noProxyConfigured" class="custom-checkbox-row"><input v-model="model.clearNoProxy" type="checkbox" class="sr-only" /><span class="custom-checkbox-label">{{ labels.clearNoProxy }}</span></label>
+		</div>
 
         <!-- Submit Button -->
         <div class="form-actions">
@@ -251,6 +270,11 @@ const emit = defineEmits<{ save: [] }>()
   color: var(--outline, #908fa0);
   line-height: 1.4;
 }
+.test-btn { width: fit-content; margin-top: 4px; }
+.test-result { margin: 0; font: 11px var(--font-data); color: var(--outline); }
+.test-result--reachable { color: var(--secondary); }
+.test-result--failed { color: var(--error); }
+.test-result--not_configured { color: var(--tertiary); }
 
 .input-control {
   width: 100%;

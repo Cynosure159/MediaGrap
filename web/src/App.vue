@@ -7,12 +7,24 @@ import LibraryWorkspace from '@/components/library/LibraryWorkspace.vue'
 import SettingsPage from '@/components/settings/SettingsPage.vue'
 import OperationsPage from '@/components/operations/OperationsPage.vue'
 import { useLocale } from '@/composables/useLocale'
+import { useTheme, type Theme } from '@/composables/useTheme'
 
 const mode = shallowRef<'loading' | 'setup' | 'login' | 'library'>('loading')
 const session = shallowRef<api.Session | null>(null)
 const error = shallowRef<string | null>(null)
 const activeSection = shallowRef<'movies' | 'shows' | 'sources' | 'jobs' | 'settings'>('movies')
 const { locale, t, setLocale, toggleLocale } = useLocale()
+const { theme, setTheme } = useTheme()
+
+async function applyServerPreferences() {
+	try {
+		const preferences = await api.settings()
+		setLocale(preferences.locale)
+		setTheme(preferences.theme)
+	} catch {
+		// Local preferences remain usable if the settings snapshot is temporarily unavailable.
+	}
+}
 
 const navigationItems = computed<NavigationItem[]>(() => [
   { id: 'movies', label: t.value.movies, icon: 'movie' },
@@ -26,7 +38,8 @@ async function initialize() {
   try {
     const status = await api.setupStatus()
     if (status.needsSetup) { mode.value = 'setup'; return }
-    session.value = await api.session()
+	session.value = await api.session()
+	await applyServerPreferences()
     mode.value = 'library'
   } catch {
     mode.value = 'login'
@@ -39,6 +52,7 @@ async function authenticate(username: string, password: string) {
     session.value = mode.value === 'setup'
       ? await api.setup(username, password)
       : await api.signIn(username, password)
+	await applyServerPreferences()
     mode.value = 'library'
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : t.value.errorSignIn
@@ -100,8 +114,10 @@ onMounted(initialize)
         v-else
         :csrf-token="session.csrfToken"
         :locale="locale"
+		:theme="theme"
         :labels="t"
         @change-locale="setLocale"
+		@change-theme="setTheme"
       />
     </div>
   </div>

@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import type { Locale } from '@/composables/useLocale'
+import type { SettingsUpdate } from '@/api/library'
+import type { Theme } from '@/composables/useTheme'
 
-defineProps<{ locale: Locale; labels: Record<string, string> }>()
-const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
+defineProps<{ locale: Locale; labels: Record<string, string>; saving: boolean }>()
+const model = defineModel<SettingsUpdate>('model', { required: true })
+const emit = defineEmits<{ changeLocale: [locale: Locale]; changeTheme: [theme: Theme]; save: [] }>()
+
+function changeLocale(value: Locale) {
+	model.value.locale = value
+	emit('changeLocale', value)
+}
 </script>
 
 <template>
@@ -26,8 +34,8 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
           <select
             id="interface-language"
             class="form-select"
-            :value="locale"
-            @change="emit('changeLocale', ($event.target as HTMLSelectElement).value as Locale)"
+			:value="model.locale || locale"
+			@change="changeLocale(($event.target as HTMLSelectElement).value as Locale)"
           >
             <option value="zh-CN">简体中文 (zh-CN)</option>
             <option value="en">English (en)</option>
@@ -37,6 +45,11 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
           </svg>
         </div>
       </div>
+	  <div class="field-group locale-group">
+		<label for="interface-theme" class="field-label">{{ labels.interfaceTheme }}</label>
+		<div class="select-wrapper"><select id="interface-theme" v-model="model.theme" class="form-select" @change="emit('changeTheme', model.theme)"><option value="dark">{{ labels.themeDark }}</option><option value="light">{{ labels.themeLight }}</option><option value="system">{{ labels.themeSystem }}</option></select></div>
+	  </div>
+	  <button type="button" class="btn btn-primary preference-save" :disabled="saving" @click="emit('save')">{{ saving ? labels.saving : labels.savePreferences }}</button>
     </div>
   </section>
 </template>
@@ -103,6 +116,8 @@ const emit = defineEmits<{ changeLocale: [locale: Locale] }>()
   gap: 6px;
   max-width: 22rem;
 }
+.card-body { display: grid; gap: 16px; }
+.preference-save { width: fit-content; }
 
 .field-label {
   font-size: 12px;
