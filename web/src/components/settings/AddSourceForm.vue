@@ -20,15 +20,18 @@ const emit = defineEmits<{
           <svg class="field-label-icon" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
           </svg>
-          <span>{{ labels.source }}</span>
+          <span>{{ labels.sourceType || labels.source }}</span>
         </label>
-        <input
+        <select
           id="new-source-name"
           v-model="sourceName"
-          class="input-control"
+          class="input-control select-control"
           required
-          :placeholder="labels.sourceNamePlaceholder"
-        />
+        >
+          <option value="" disabled>{{ labels.selectSourceType || 'Select type (Movies / Shows)' }}</option>
+          <option value="Movies">Movies ({{ labels.movies || 'Movies' }})</option>
+          <option value="Shows">Shows ({{ labels.tvShows || 'Shows' }})</option>
+        </select>
       </div>
 
       <div class="field-group">
@@ -44,7 +47,7 @@ const emit = defineEmits<{
           class="input-control font-data"
           list="media-roots"
           required
-          :placeholder="labels.sourcePathPlaceholder"
+          :placeholder="labels.sourcePathPlaceholder || '/media/movies'"
         />
         <datalist id="media-roots">
           <option v-for="root in mediaRoots" :key="root" :value="root" />
@@ -52,7 +55,7 @@ const emit = defineEmits<{
       </div>
 
       <div class="form-action">
-        <button type="submit" class="btn btn-primary add-button">
+        <button type="submit" class="btn btn-primary add-button" :disabled="!sourceName || !sourcePath">
           <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
           </svg>
@@ -122,6 +125,20 @@ const emit = defineEmits<{
 
 .font-data {
   font-family: var(--font-code, monospace);
+}
+
+.select-control {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%23908fa0'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.select-control option {
+  background: var(--surface-container-high, #23293c);
+  color: var(--on-surface, #dce1fb);
 }
 
 .add-button {

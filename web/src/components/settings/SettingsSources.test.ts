@@ -10,17 +10,19 @@ describe('SettingsSources', () => {
         mediaRoots: ['/media'],
         labels: {
           libraryEyebrow: 'Library', directorySettings: 'Media directories', directoryHelp: 'Help',
-          source: 'Media source', containerPath: 'Container path', addSource: 'Add',
-          noSources: 'No sources', sourceNamePlaceholder: 'Media', sourcePathPlaceholder: '/media',
+          source: 'Media source', sourceType: 'Media type', selectSourceType: 'Select type', containerPath: 'Container path', addSource: 'Add',
+          noSources: 'No sources', sourceNamePlaceholder: 'Media library', sourcePathPlaceholder: '/media/movies',
+          movies: 'Movies', tvShows: 'Shows',
         },
         feedback: { kind: 'error', message: 'This media source has already been added.' },
-        sourceName: 'Media',
-        sourcePath: '/media',
+        sourceName: 'Movies',
+        sourcePath: '/media/movies',
         'onUpdate:sourceName': () => {},
         'onUpdate:sourcePath': () => {},
       },
     })
 
     expect(wrapper.get('.source-feedback').text()).toContain('already been added')
+    expect(wrapper.find('select#new-source-name').exists()).toBe(true)
   })
 })

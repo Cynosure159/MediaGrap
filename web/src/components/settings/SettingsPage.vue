@@ -10,8 +10,8 @@ import SettingsSources from './SettingsSources.vue'
 
 const props = defineProps<{ csrfToken: string; labels: Record<string, string>; locale: Locale; theme: Theme }>()
 const emit = defineEmits<{ changeLocale: [locale: Locale]; changeTheme: [theme: Theme] }>()
-const sourceName = shallowRef('Media')
-const sourcePath = shallowRef('/media')
+const sourceName = shallowRef('')
+const sourcePath = shallowRef('')
 const sourceFeedback = shallowRef<{ kind: 'success' | 'error'; message: string } | null>(null)
 const isSaving = shallowRef(false)
 const { sourceItems, refresh, createSource, removeSource, saveSourcePolicy, scan } = useLibrary(() => props.csrfToken)
@@ -31,6 +31,8 @@ async function addSource() {
   try {
     await createSource(sourceName.value, sourcePath.value)
     sourceFeedback.value = { kind: 'success', message: props.labels.sourceAdded }
+    sourceName.value = ''
+    sourcePath.value = ''
   } catch (caught) {
     sourceFeedback.value = { kind: 'error', message: sourceErrorMessage(caught) }
   }
