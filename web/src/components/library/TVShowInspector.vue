@@ -145,7 +145,8 @@ function findTVArtworkUrl(keywords: string[]): string | undefined {
 }
 
 const resolvedPosterUrl = computed(() => findTVArtworkUrl(['poster', 'cover', 'folder']) || draft.posterUrl || '')
-const resolvedBackdropUrl = computed(() => findTVArtworkUrl(['fanart', 'backdrop', 'background', 'keyart']) || draft.backdropUrl || '')
+const localBackdropUrl = computed(() => findTVArtworkUrl(['fanart', 'backdrop', 'background', 'keyart']) || '')
+const resolvedBackdropUrl = computed(() => localBackdropUrl.value || draft.backdropUrl || '')
 const resolvedLogoUrl = computed(() => findTVArtworkUrl(['clearlogo', 'logo', 'clearart']) || '')
 const resolvedBannerUrl = computed(() => findTVArtworkUrl(['banner']) || '')
 
@@ -207,7 +208,7 @@ const currentContextBackdropUrl = computed(() => {
       return api.tvArtworkUrl(detail.value.show.id, seasonFanartAsset.id)
     }
   }
-  return resolvedBackdropUrl.value
+  return localBackdropUrl.value
 })
 
 const currentContextBannerUrl = computed(() => {
@@ -503,6 +504,12 @@ async function handleSaveAndWrite() {
     </div>
 
     <div v-else-if="detail" class="inspector-content">
+      <!-- Ambient Backdrop Background Layer in parent container -->
+      <div v-if="activeTab === 'overview' && currentContextBackdropUrl" class="inspector-backdrop-bg" aria-hidden="true">
+        <img :src="currentContextBackdropUrl" alt="" class="backdrop-img" />
+        <div class="backdrop-gradient"></div>
+      </div>
+
       <TVOverviewTab
         v-if="activeTab === 'overview'"
         :selection="selection"
@@ -597,7 +604,8 @@ async function handleSaveAndWrite() {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 20px 24px;
+  padding: 16px 20px;
+  position: relative;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -660,5 +668,50 @@ async function handleSaveAndWrite() {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Ambient Backdrop Background Layer in parent container */
+.inspector-backdrop-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 60%,
+    rgba(0, 0, 0, 0.2) 85%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 60%,
+    rgba(0, 0, 0, 0.2) 85%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+.backdrop-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0.35;
+  filter: blur(0.5px);
+}
+
+.backdrop-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(7, 13, 31, 0.05) 0%,
+    rgba(7, 13, 31, 0.35) 50%,
+    rgba(7, 13, 31, 0.85) 85%,
+    var(--surface-container-lowest, #070d1f) 100%
+  );
 }
 </style>

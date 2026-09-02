@@ -11,6 +11,7 @@ web:
 
 prepare-ui:
 	npm --prefix web run build
+	rm -rf internal/httpapi/ui/dist/assets internal/httpapi/ui/dist/index.html internal/httpapi/ui/dist/manifest.webmanifest internal/httpapi/ui/dist/sw.js internal/httpapi/ui/dist/workbox-*.js
 	mkdir -p internal/httpapi/ui/dist
 	cp -R web/dist/. internal/httpapi/ui/dist/
 

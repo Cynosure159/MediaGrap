@@ -103,9 +103,9 @@ const techSpecs = computed(() => {
 })
 
 const streamSummary = computed(() => {
+  const values: string[] = []
   const video = props.inspection?.video[0]
   const audio = props.inspection?.audio[0]
-  const values: string[] = []
   if (video) values.push(`Video: ${video.width}×${video.height} ${video.codec.toUpperCase()}`)
   if (audio) values.push(`Audio: ${audio.codec.toUpperCase()} ${audio.channelLayout || `${audio.channels} ch`}`)
   return values.join(' • ')
@@ -114,6 +114,7 @@ const streamSummary = computed(() => {
 
 <template>
   <section class="overview-view">
+    <!-- Hero Title & Identity -->
     <div class="hero-banner">
       <div class="title-cluster">
         <template v-if="!isEditing">
@@ -330,6 +331,8 @@ const streamSummary = computed(() => {
 
 <style scoped>
 .overview-view {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -338,6 +341,13 @@ const streamSummary = computed(() => {
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.hero-banner,
+.overview-body-layout,
+.seasons-container {
+  position: relative;
+  z-index: 1;
 }
 
 .hero-banner {

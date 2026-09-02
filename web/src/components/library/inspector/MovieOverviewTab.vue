@@ -182,16 +182,15 @@ const streamSummary = computed(() => {
         <!-- ── File Info Audit Card ── -->
         <div class="file-info-card">
           <div class="file-icon-box">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-              <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
             </svg>
           </div>
-
           <div class="file-details">
             <p class="file-path font-code" :title="item.relativePath">{{ item.relativePath }}</p>
             <div class="file-specs">
-              <span class="dot" :class="fileHealthy ? 'dot-ok' : 'dot-warning'"></span>
-              <span class="status-txt">{{ fileHealthy ? labels.fileHealthy : labels.fileNeedsAttention }}</span>
+              <span class="dot" :class="inspection ? (inspection.video.length ? 'dot-ok' : 'dot-warning') : 'dot-ok'"></span>
+              <span class="status-txt">{{ inspection ? (inspection.video.length ? (labels.fileHealthy || 'HEALTHY') : (labels.fileUnprobed || 'UNPROBED')) : (labels.fileHealthy || 'HEALTHY') }}</span>
               <span class="meta-sep">|</span>
               <span class="stream-summary font-code">{{ streamSummary || labels.mediaInfoUnavailable }}</span>
             </div>
@@ -211,6 +210,8 @@ const streamSummary = computed(() => {
 
 <style scoped>
 .overview-view {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -219,6 +220,12 @@ const streamSummary = computed(() => {
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.hero-banner,
+.overview-body-layout {
+  position: relative;
+  z-index: 1;
 }
 
 .tech-unavailable {

@@ -77,6 +77,18 @@ const castList = computed<CastMember[]>(() =>
   ]
 )
 
+const resolvedBackdrop = computed(() => {
+  if (!detail.value) return ''
+  const localBackdrop = detail.value.item.sidecars.find(s => {
+    const filename = s.relativePath.split('/').pop()?.toLowerCase() || ''
+    return ['fanart', 'backdrop', 'background'].some(k => filename === k || filename.startsWith(k + '.'))
+  })
+  if (localBackdrop) {
+    return api.mediaArtworkUrl(detail.value.item.id, localBackdrop.relativePath)
+  }
+  return ''
+})
+
 const nfoXmlContent = computed(() => {
   const genresXml = draft.genres.map(g => `    <genre>${g}</genre>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -295,6 +307,12 @@ async function handleApplyNfo() {
 
     <!-- Tab Panels Container -->
     <div v-else-if="detail" class="inspector-content">
+      <!-- Ambient Backdrop Background Layer in parent container -->
+      <div v-if="activeTab === 'overview' && resolvedBackdrop" class="inspector-backdrop-bg" aria-hidden="true">
+        <img :src="resolvedBackdrop" alt="" class="backdrop-img" />
+        <div class="backdrop-gradient"></div>
+      </div>
+
       <MovieOverviewTab
         v-if="activeTab === 'overview'"
         :draft="draft"
@@ -429,12 +447,58 @@ async function handleApplyNfo() {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--pane-padding, 12px);
+  padding: 16px 20px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+/* Ambient Backdrop Background Layer in parent container */
+.inspector-backdrop-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 60%,
+    rgba(0, 0, 0, 0.2) 85%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 60%,
+    rgba(0, 0, 0, 0.2) 85%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+.backdrop-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0.35;
+  filter: blur(0.5px);
+}
+
+.backdrop-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(12, 19, 36, 0.05) 0%,
+    rgba(12, 19, 36, 0.35) 50%,
+    rgba(12, 19, 36, 0.85) 85%,
+    var(--surface-base, #0c1324) 100%
+  );
 }
 </style>
