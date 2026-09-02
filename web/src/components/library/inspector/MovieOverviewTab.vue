@@ -87,52 +87,72 @@ const streamSummary = computed(() => {
   <section class="overview-view">
     <!-- ── 1. Hero Title & Metadata Banner ──────────────────────────── -->
     <div class="hero-banner">
-      <div class="title-cluster">
-        <template v-if="!isEditing">
-          <h1 class="main-title">{{ draft.title || item.titleHint }}</h1>
-          <h2 v-if="draft.originalTitle && draft.originalTitle !== draft.title" class="sub-title">
-            {{ draft.originalTitle }}
-          </h2>
-        </template>
-        <template v-else>
-          <input v-model="draft.title" type="text" class="edit-title-input" :placeholder="labels.titlePlaceholder || '电影名称'" />
-          <input v-model="draft.originalTitle" type="text" class="edit-subtitle-input" :placeholder="labels.origTitlePlaceholder || '原始片名 / 英文名'" />
-        </template>
-      </div>
-
-      <!-- Metadata Strip -->
-      <div class="meta-strip">
-        <div class="meta-left-group">
-          <span class="meta-item font-code">{{ draft.year ?? item.yearHint ?? '—' }}</span>
-          <span class="meta-dot"></span>
-          <span class="meta-item">{{ formatRuntime(draft.runtimeMinutes) }}</span>
-          
-          <template v-if="draft.contentRating">
-            <span class="meta-dot"></span>
-            <span class="spec-pill font-code">{{ draft.contentRating }}</span>
+      <div class="hero-main-group">
+        <div class="title-cluster">
+          <template v-if="!isEditing">
+            <h1 class="main-title">{{ draft.title || item.titleHint }}</h1>
+            <h2 v-if="draft.originalTitle && draft.originalTitle !== draft.title" class="sub-title">
+              {{ draft.originalTitle }}
+            </h2>
+          </template>
+          <template v-else>
+            <input v-model="draft.title" type="text" class="edit-title-input" :placeholder="labels.titlePlaceholder || '电影名称'" />
+            <input v-model="draft.originalTitle" type="text" class="edit-subtitle-input" :placeholder="labels.origTitlePlaceholder || '原始片名 / 英文名'" />
           </template>
         </div>
 
-        <!-- Rating Box on the right -->
-        <div v-if="draft.rating !== null" class="rating-badge">
-          <span class="star-score">★ {{ typeof draft.rating === 'number' ? draft.rating.toFixed(1) : draft.rating }}</span>
-          <span class="score-denom">/10</span>
-          <span v-if="draft.votes !== null" class="vote-count">({{ draft.votes }})</span>
-          <span class="provider-tag">TMDb</span>
+        <!-- Metadata Strip -->
+        <div class="meta-strip">
+          <div class="meta-left-group">
+            <span class="meta-item font-code">{{ draft.year ?? item.yearHint ?? '—' }}</span>
+            <span class="meta-dot"></span>
+            <span class="meta-item">{{ formatRuntime(draft.runtimeMinutes) }}</span>
+            
+            <template v-if="draft.contentRating">
+              <span class="meta-dot"></span>
+              <span class="spec-pill font-code">{{ draft.contentRating }}</span>
+            </template>
+          </div>
+
+          <!-- Rating Box on the right -->
+          <div v-if="draft.rating !== null" class="rating-badge">
+            <span class="star-score">★ {{ typeof draft.rating === 'number' ? draft.rating.toFixed(1) : draft.rating }}</span>
+            <span class="score-denom">/10</span>
+            <span v-if="draft.votes !== null" class="vote-count">({{ draft.votes }})</span>
+            <span class="provider-tag">TMDb</span>
+          </div>
         </div>
+
+        <!-- Spec Pills Row (High-Density Tech Tags) -->
+        <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
+        <p v-else class="tech-unavailable font-code">
+          {{ inspectionLoading ? labels.inspectingMedia : (inspection?.probeError || labels.mediaInfoUnavailable) }}
+        </p>
       </div>
 
-      <!-- Spec Pills Row (High-Density Tech Tags) -->
-      <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
-      <p v-else class="tech-unavailable font-code">
-        {{ inspectionLoading ? labels.inspectingMedia : (inspection?.probeError || labels.mediaInfoUnavailable) }}
-      </p>
+      <!-- Mobile Poster on the right -->
+      <div class="poster-container mobile-hero-poster">
+        <div class="compact-poster-card group">
+          <img
+            v-if="resolvedPoster"
+            :src="resolvedPoster"
+            :alt="labels.posterAlt || 'Poster'"
+            class="poster-img"
+          />
+          <div v-else class="poster-empty">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" opacity="0.3">
+              <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+            </svg>
+            <span>{{ labels.noPosterLoaded || '未加载海报' }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── 2. Content Layout (Compact Poster + High Priority Info) ──── -->
     <div class="overview-body-layout">
-      <!-- ── Left: Compact Poster (Fixed Proportion) ──────────────── -->
-      <div class="poster-container">
+      <!-- ── Left: Compact Poster on Desktop (Hidden on Mobile) ──────────────── -->
+      <div class="poster-container desktop-body-poster">
         <div class="compact-poster-card group">
           <img
             v-if="resolvedPoster"
@@ -146,8 +166,6 @@ const streamSummary = computed(() => {
             </svg>
             <span>{{ labels.noPosterLoaded || '未加载海报' }}</span>
           </div>
-
-          <!-- Top-Right Resolution Badge -->
         </div>
       </div>
 
@@ -245,6 +263,22 @@ const streamSummary = computed(() => {
   gap: 8px;
   min-width: 0;
   max-width: 100%;
+}
+
+.hero-main-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.poster-container.mobile-hero-poster {
+  display: none;
+}
+
+.poster-container.desktop-body-poster {
+  display: block;
 }
 
 .title-cluster {
@@ -593,30 +627,52 @@ const streamSummary = computed(() => {
   letter-spacing: 0.05em;
 }
 
-/* ── Mobile / Narrow Responsive Layout ────────────────────────────── */
 @media (max-width: 768px) {
   .overview-view {
     padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hero-banner {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .hero-main-group {
+    flex: 1;
+    min-width: 0;
   }
 
   .main-title {
     font-size: 19px;
   }
 
+  .poster-container.mobile-hero-poster {
+    display: block;
+    width: 105px;
+    flex-shrink: 0;
+  }
+
+  .poster-container.mobile-hero-poster .compact-poster-card {
+    width: 105px;
+    height: 157px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+
+  .poster-container.desktop-body-poster {
+    display: none;
+  }
+
   .overview-body-layout {
+    display: flex;
     flex-direction: column;
     gap: 14px;
-  }
-
-  .poster-container {
     width: 100%;
-    display: flex;
-    justify-content: center;
   }
 
-  .compact-poster-card {
-    width: 130px;
-    height: 195px;
+  .details-container {
+    width: 100%;
   }
 }
 </style>

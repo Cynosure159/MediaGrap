@@ -116,48 +116,69 @@ const streamSummary = computed(() => {
   <section class="overview-view">
     <!-- Hero Title & Identity -->
     <div class="hero-banner">
-      <div class="title-cluster">
-        <template v-if="!isEditing">
-          <h1 class="main-title">{{ selectedUnitTitle }}</h1>
-          <h2 v-if="draft.originalTitle && draft.originalTitle !== draft.title" class="sub-title">
-            {{ draft.originalTitle }}
-          </h2>
-        </template>
-        <template v-else>
-          <input v-model="draft.title" type="text" class="edit-title-input" :placeholder="labels.titlePlaceholder || '电视剧名称'" />
-          <input v-model="draft.originalTitle" type="text" class="edit-subtitle-input" :placeholder="labels.origTitlePlaceholder || '原始片名 / 英文名'" />
-        </template>
-      </div>
-
-      <div class="meta-strip">
-        <div class="meta-left-group">
-          <span class="meta-item font-code">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (draft.year ?? detail.show.yearHint ?? labels.tvSeries) }}</span>
-          <span class="meta-dot"></span>
-          <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
-          <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
-          
-          <template v-if="draft.status">
-            <span class="meta-dot"></span>
-            <span class="spec-pill font-code">{{ draft.status }}</span>
+      <div class="hero-main-group">
+        <div class="title-cluster">
+          <template v-if="!isEditing">
+            <h1 class="main-title">{{ selectedUnitTitle }}</h1>
+            <h2 v-if="draft.originalTitle && draft.originalTitle !== draft.title" class="sub-title">
+              {{ draft.originalTitle }}
+            </h2>
+          </template>
+          <template v-else>
+            <input v-model="draft.title" type="text" class="edit-title-input" :placeholder="labels.titlePlaceholder || '电视剧名称'" />
+            <input v-model="draft.originalTitle" type="text" class="edit-subtitle-input" :placeholder="labels.origTitlePlaceholder || '原始片名 / 英文名'" />
           </template>
         </div>
 
-        <div v-if="draft.rating !== null" class="rating-badge">
-          <span class="star-score">★ {{ typeof draft.rating === 'number' ? draft.rating.toFixed(1) : draft.rating }}</span>
-          <span class="score-denom">/10</span>
-          <span v-if="draft.votes !== null" class="vote-count">({{ draft.votes }})</span>
-          <span class="provider-tag">TMDb</span>
+        <div class="meta-strip">
+          <div class="meta-left-group">
+            <span class="meta-item font-code">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (draft.year ?? detail.show.yearHint ?? labels.tvSeries) }}</span>
+            <span class="meta-dot"></span>
+            <span class="spec-pill font-code">{{ detail.show.seasonCount }} {{ labels.seasons }}</span>
+            <span class="spec-pill font-code">{{ detail.show.episodeCount }} {{ labels.episodes }}</span>
+            
+            <template v-if="draft.status">
+              <span class="meta-dot"></span>
+              <span class="spec-pill font-code">{{ draft.status }}</span>
+            </template>
+          </div>
+
+          <div v-if="draft.rating !== null" class="rating-badge">
+            <span class="star-score">★ {{ typeof draft.rating === 'number' ? draft.rating.toFixed(1) : draft.rating }}</span>
+            <span class="score-denom">/10</span>
+            <span v-if="draft.votes !== null" class="vote-count">({{ draft.votes }})</span>
+            <span class="provider-tag">TMDb</span>
+          </div>
         </div>
+
+        <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
+        <p v-else-if="selection?.kind === 'episode'" class="tech-unavailable font-code">
+          {{ inspectionLoading ? labels.inspectingMedia : (inspectionError || inspection?.probeError || labels.mediaInfoUnavailable) }}
+        </p>
       </div>
 
-      <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
-      <p v-else class="tech-unavailable font-code">
-        {{ inspectionLoading ? labels.inspectingMedia : (inspectionError || inspection?.probeError || labels.mediaInfoUnavailable) }}
-      </p>
+      <!-- Mobile Poster on the right -->
+      <div class="poster-container mobile-hero-poster">
+        <div class="compact-poster-card group">
+          <img
+            v-if="resolvedPosterUrl"
+            :src="resolvedPosterUrl"
+            :alt="draft.title || 'Poster'"
+            class="poster-img"
+          />
+          <div v-else class="poster-empty">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" opacity="0.3">
+              <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+            </svg>
+            <span>{{ labels.noPosterLoaded || '未加载海报' }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="overview-body-layout">
-      <div class="poster-container">
+      <!-- Desktop Poster on Left -->
+      <div class="poster-container desktop-body-poster">
         <div class="compact-poster-card group">
           <img
             v-if="resolvedPosterUrl"
@@ -357,6 +378,26 @@ const streamSummary = computed(() => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+.hero-main-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1;
+}
+
+.poster-container.mobile-hero-poster {
+  display: none;
+}
+
+.poster-container.desktop-body-poster {
+  display: block;
+  width: 180px;
+  flex-shrink: 0;
 }
 
 .title-cluster {
@@ -859,23 +900,44 @@ const streamSummary = computed(() => {
   .overview-view {
     padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
+
+  .hero-banner {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .hero-main-group {
+    flex: 1;
+    min-width: 0;
+  }
+
   .main-title {
     font-size: 19px;
   }
+
+  .poster-container.mobile-hero-poster {
+    display: block;
+    width: 105px;
+    flex-shrink: 0;
+  }
+
+  .poster-container.mobile-hero-poster .compact-poster-card {
+    width: 105px;
+    height: 157px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+
+  .poster-container.desktop-body-poster {
+    display: none;
+  }
+
   .overview-body-layout {
     grid-template-columns: 1fr;
     gap: 14px;
   }
-  .poster-container {
-    width: 100%;
-    max-width: 100%;
-    display: flex;
-    justify-content: center;
-  }
-  .compact-poster-card {
-    width: 130px;
-    height: 195px;
-  }
+
   .episode-table-container {
     overflow-x: auto;
   }
