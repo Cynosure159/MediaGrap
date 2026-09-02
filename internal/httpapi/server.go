@@ -76,6 +76,8 @@ func NewServer(
 	// Media (Movies)
 	mux.HandleFunc("GET /api/v1/media", application.listMedia)
 	mux.HandleFunc("GET /api/v1/media/{id}", application.getMedia)
+	mux.HandleFunc("GET /api/v1/media/{id}/inspection", application.getMediaInspection)
+	mux.HandleFunc("POST /api/v1/media/{id}/naming-preview", application.previewMediaNaming)
 	mux.HandleFunc("GET /api/v1/media/{id}/candidates", application.getMediaCandidates)
 	mux.HandleFunc("GET /api/v1/media/{id}/artwork-candidates", application.getMediaArtworkCandidates)
 	mux.HandleFunc("POST /api/v1/media/{id}/artwork-candidates", application.scrapeMediaArtworkCandidates)

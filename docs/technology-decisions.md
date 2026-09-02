@@ -34,6 +34,13 @@ The initial application is one deployable process but is divided into domain mod
 - Do not store downloaded artwork blobs in SQLite; store files in cache or alongside media and keep references/checksums in the database.
 - Abstract repositories at domain boundaries, but do not introduce a generic repository layer that hides useful SQL.
 
+## Media inspection rules
+
+- Invoke `ffprobe -v quiet -print_format json -show_format -show_streams` through `exec.CommandContext` with a bounded timeout and output size; never invoke a shell or interpolate a command string.
+- Cache only successful probe JSON in SQLite, keyed by media item ID plus the current `Lstat` size and nanosecond modification time. Recheck the fingerprint after probing before caching.
+- Treat ffprobe as optional. `MEDIAGRAP_FFPROBE_PATH` selects the executable, defaults to `ffprobe`, and accepts `off` or `disabled` to disable probing. Missing/disabled probes produce an explicit unavailable state while filesystem audit remains functional.
+- Do not follow a media-file symlink. Resolve and validate its parent against the resolved source root immediately before probing to block post-scan symlink escapes.
+
 ## Frontend principles
 
 - Use responsive master/detail layouts: a compact bottom navigation on phones and a sidebar on larger screens.

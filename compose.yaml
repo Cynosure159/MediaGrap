@@ -2,9 +2,10 @@ services:
   mediagrap:
     build:
       context: .
+      target: ffprobe
       args:
         VERSION: dev
-    image: mediagrap:dev
+    image: mediagrap:latest
     container_name: mediagrap
     restart: unless-stopped
     ports:

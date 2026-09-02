@@ -35,6 +35,81 @@ export interface MediaItem {
   sidecars: SidecarAsset[]
 }
 
+export interface ProbeFormat {
+  name: string
+  durationSeconds: number
+  bitRate: number
+}
+
+export interface VideoStream {
+  index: number
+  codec: string
+  profile?: string
+  width: number
+  height: number
+  pixelFormat?: string
+  bitDepth?: number
+  hdr?: string
+  language?: string
+}
+
+export interface AudioStream {
+  index: number
+  codec: string
+  channels: number
+  channelLayout?: string
+  language?: string
+  title?: string
+}
+
+export interface SubtitleStream {
+  index: number
+  codec: string
+  language?: string
+  title?: string
+}
+
+export interface FileAuditEntry {
+  relativePath: string
+  kind: string
+  size: number
+  mimeType: string
+  modifiedAt: string
+  permissions: string
+  writable: boolean
+  regular: boolean
+  symlink: boolean
+  valid: boolean
+  warnings: ReadonlyArray<string>
+}
+
+export interface MediaInspection {
+  probeStatus: 'ready' | 'unavailable' | 'failed'
+  probeError?: string
+  cached: boolean
+  probedAt?: string
+  format: ProbeFormat
+  video: ReadonlyArray<VideoStream>
+  audio: ReadonlyArray<AudioStream>
+  subtitles: ReadonlyArray<SubtitleStream>
+  files: ReadonlyArray<FileAuditEntry>
+}
+
+export interface NamingPreviewItem {
+  kind: string
+  currentPath: string
+  plannedPath: string
+  operation: 'keep' | 'rename' | 'conflict'
+  conflict: boolean
+}
+
+export interface NamingPreview {
+  pattern: string
+  readOnly: true
+  items: ReadonlyArray<NamingPreviewItem>
+  warnings: ReadonlyArray<string>
+}
+
 export interface TVShow {
   id: number
   sourceId: number

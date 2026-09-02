@@ -27,6 +27,7 @@ type Config struct {
 	FanartTVAPIKey string
 	TMDbLanguage   string
 	OutboundProxy  string
+	FFprobePath    string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -57,6 +58,10 @@ func LoadConfig(args []string) (Config, error) {
 	config.FanartTVAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_FANARTTV_API_KEY"))
 	config.TMDbLanguage = envOrDefault("MEDIAGRAP_TMDB_LANGUAGE", "en-US")
 	config.OutboundProxy = strings.TrimSpace(os.Getenv("MEDIAGRAP_OUTBOUND_PROXY"))
+	config.FFprobePath = envOrDefault("MEDIAGRAP_FFPROBE_PATH", "ffprobe")
+	if strings.EqualFold(config.FFprobePath, "off") || strings.EqualFold(config.FFprobePath, "disabled") {
+		config.FFprobePath = ""
+	}
 	if len(config.MediaRoots) == 0 {
 		return Config{}, errors.New("at least one media root is required")
 	}

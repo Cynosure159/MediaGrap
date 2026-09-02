@@ -3,6 +3,8 @@ import type {
   Session,
   Source,
   MediaItem,
+  MediaInspection,
+  NamingPreview,
 TVShow,
 TVShowDetail,
 TVMetadata,
@@ -80,6 +82,16 @@ export const mediaDetail = (id: number) =>
     metadataOrigin: 'draft' | 'nfo' | 'empty'
     writable: boolean
   }>(`/api/v1/media/${id}`)
+
+export const mediaInspection = (id: number, signal?: AbortSignal) =>
+  request<MediaInspection>(`/api/v1/media/${id}/inspection`, { signal })
+
+export const previewMediaNaming = (id: number, pattern: string) =>
+  request<NamingPreview>(`/api/v1/media/${id}/naming-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pattern }),
+  })
 
 export const candidates = (id: number, q = '') =>
   request<{ items: Candidate[] }>(

@@ -18,6 +18,7 @@ Settings are stored in the SQLite database on the `/config` volume. Protect that
 | `MEDIAGRAP_FANARTTV_API_KEY` | First-run Fanart.tv project API key fallback. |
 | `MEDIAGRAP_TMDB_LANGUAGE` | First-run TMDb information language; defaults to `en-US`. |
 | `MEDIAGRAP_OUTBOUND_PROXY` | First-run HTTP/HTTPS outbound-proxy fallback. |
+| `MEDIAGRAP_FFPROBE_PATH` | Optional ffprobe executable; defaults to `ffprobe`. Set `off` to disable media stream probing. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | Standard environment proxy behavior when no MediaGrap proxy is configured. |
 
 Once a value is saved in Settings it takes precedence over the corresponding environment default. Clearing a saved setting explicitly disables that setting for this instance.
@@ -29,6 +30,12 @@ The Settings page also manages indexed media sources. A source must be an existi
 Configure one logical source at the common mounted parent directory, normally `/media`. For example, mounts such as `/srv/media/movies:/media/movies:rw` and `/srv/media/shows:/media/shows:rw` can be indexed together by adding `/media` once. The scanner derives TV shows from episode filenames and lists all other indexed video files as movies; sources do not have separate Movie or TV types. To permit NFO creation, mount the relevant child paths read-write, then rescan after changing filesystem contents.
 
 Removing a media source removes only its MediaGrap configuration and indexed database records. It does not modify, move, or delete any mounted media files.
+
+## Media inspection
+
+Movie Overview and File Audit request media-stream information from the optional backend ffprobe adapter. A successful result is cached in SQLite until the media file size or modification time changes. The filesystem audit does not require ffprobe and continues to report real file size, MIME type, permissions, XML validity, read-only state, and symlink warnings when probing is unavailable.
+
+The standard image bundles a statically linked, metadata-only ffprobe at `/usr/bin/ffprobe` and sets `MEDIAGRAP_FFPROBE_PATH` automatically. It probes local files only and covers the scanner's supported containers; unsupported formats are reported as unavailable. Set `MEDIAGRAP_FFPROBE_PATH=off` only when deliberately disabling probing. The UI never installs packages and never executes a host “open file/folder” command.
 
 ## Interface language
 

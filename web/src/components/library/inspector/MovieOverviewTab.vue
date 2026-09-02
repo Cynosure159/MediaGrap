@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import * as api from '@/api/library'
-import type { CastMember, MediaItem } from '@/api/types'
+import type { CastMember, MediaInspection, MediaItem } from '@/api/types'
 import TechSpecGrid from './TechSpecGrid.vue'
 import MetadataForm from './MetadataForm.vue'
 
@@ -28,6 +28,8 @@ const props = defineProps<{
   item: MediaItem
   isEditing: boolean
   labels: Record<string, string>
+  inspection: MediaInspection | null
+  inspectionLoading: boolean
 }>()
 
 const resolvedPoster = computed(() => {
@@ -57,29 +59,27 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
 }
 
-// Extract media tech specs hints from filename
 const techSpecs = computed(() => {
-  const path = props.item.relativePath.toUpperCase()
   const specs: string[] = []
-  
-  if (path.includes('2160P') || path.includes('4K') || path.includes('UHD')) specs.push('4K UHD')
-  else if (path.includes('1080P') || path.includes('FHD')) specs.push('1080p FHD')
-  else if (path.includes('720P')) specs.push('720p HD')
+  const video = props.inspection?.video[0]
+  const audio = props.inspection?.audio[0]
+  if (video?.width && video.height) specs.push(`${video.width}×${video.height}`)
+  if (video?.codec) specs.push(`${video.codec.toUpperCase()}${video.bitDepth ? ` ${video.bitDepth}-bit` : ''}`)
+  if (video?.hdr) specs.push(video.hdr)
+  if (audio?.codec) specs.push(`${audio.codec.toUpperCase()} ${audio.channelLayout || `${audio.channels} ch`}`)
+  if (props.inspection?.subtitles.length) specs.push(`${props.inspection.subtitles.length} ${props.labels.subtitleTracks || 'subtitle tracks'}`)
+  return specs
+})
 
-  if (path.includes('HEVC') || path.includes('X265') || path.includes('H.265') || path.includes('H265')) specs.push('HEVC 10-bit')
-  else if (path.includes('AVC') || path.includes('X264') || path.includes('H.264') || path.includes('H264')) specs.push('AVC 8-bit')
+const fileHealthy = computed(() => props.inspection?.files.every(file => file.valid && !file.symlink) ?? false)
 
-  if (path.includes('ATMOS')) specs.push('Dolby Atmos 7.1')
-  else if (path.includes('DDP5.1') || path.includes('DD+5.1') || path.includes('EAC3')) specs.push('E-AC3 5.1')
-  else if (path.includes('AAC')) specs.push('AAC 2.0')
-
-  if (path.includes('HDR10+') || path.includes('HDR10PLUS')) specs.push('HDR10+')
-  else if (path.includes('HDR')) specs.push('HDR10')
-  else if (path.includes('DV') || path.includes('DOVI')) specs.push('Dolby Vision')
-
-  if (path.includes('DUAL') || path.includes('CHS') || path.includes('CHT')) specs.push('Chs/Eng Sub')
-
-  return specs.length > 0 ? specs : ['1080p FHD', 'AVC 8-bit', 'AAC 2.0', 'Chs/Eng Sub']
+const streamSummary = computed(() => {
+  const video = props.inspection?.video[0]
+  const audio = props.inspection?.audio[0]
+  const values: string[] = []
+  if (video) values.push(`Video: ${video.width}×${video.height} ${video.codec.toUpperCase()}`)
+  if (audio) values.push(`Audio: ${audio.codec.toUpperCase()} ${audio.channelLayout || `${audio.channels} ch`}`)
+  return values.join(' • ')
 })
 </script>
 
@@ -123,7 +123,10 @@ const techSpecs = computed(() => {
       </div>
 
       <!-- Spec Pills Row (High-Density Tech Tags) -->
-      <TechSpecGrid :specs="techSpecs" />
+      <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
+      <p v-else class="tech-unavailable font-code">
+        {{ inspectionLoading ? labels.inspectingMedia : (inspection?.probeError || labels.mediaInfoUnavailable) }}
+      </p>
     </div>
 
     <!-- ── 2. Content Layout (Compact Poster + High Priority Info) ──── -->
@@ -145,9 +148,6 @@ const techSpecs = computed(() => {
           </div>
 
           <!-- Top-Right Resolution Badge -->
-          <div v-if="resolvedPoster" class="poster-res-badge font-code">
-            1000×1500
-          </div>
         </div>
       </div>
 
@@ -190,10 +190,10 @@ const techSpecs = computed(() => {
           <div class="file-details">
             <p class="file-path font-code" :title="item.relativePath">{{ item.relativePath }}</p>
             <div class="file-specs">
-              <span class="dot dot-ok"></span>
-              <span class="status-txt">{{ labels.fileHealthy || 'HEALTHY' }}</span>
+              <span class="dot" :class="fileHealthy ? 'dot-ok' : 'dot-warning'"></span>
+              <span class="status-txt">{{ fileHealthy ? labels.fileHealthy : labels.fileNeedsAttention }}</span>
               <span class="meta-sep">|</span>
-              <span class="stream-summary font-code">Video: 1080p AVC • Audio: AAC 2.0</span>
+              <span class="stream-summary font-code">{{ streamSummary || labels.mediaInfoUnavailable }}</span>
             </div>
           </div>
 
@@ -219,6 +219,16 @@ const techSpecs = computed(() => {
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.tech-unavailable {
+  margin: 0;
+  color: var(--outline, #908fa0);
+  font-size: 11px;
+}
+
+.dot-warning {
+  background: var(--tertiary, #ffb95f);
 }
 
 /* ── 1. Hero Title Banner ─────────────────────────────────────────── */

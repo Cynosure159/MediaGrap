@@ -15,7 +15,7 @@ MediaGrap needs a low-overhead, self-hosted server that can manage mounted media
 - Use SQLite WAL with embedded ordered SQL migrations.
 - Use Vue 3, TypeScript, Vite, and `vite-plugin-pwa` for the frontend.
 - Embed the Vite build output into the Go binary at release-build time.
-- Use a multi-stage Docker build and distroless non-root runtime image.
+- Use a multi-stage Docker build and a non-root scratch runtime containing the Go server, embedded UI, CA certificates, and the purpose-built static ffprobe metadata probe.
 
 ## Consequences
 
@@ -28,4 +28,3 @@ MediaGrap needs a low-overhead, self-hosted server that can manage mounted media
 
 - Public license selection requires owner approval and is not decided by this ADR.
 - Concrete provider contracts, job queue persistence, and source filesystem capability checks belong to later ADRs once their risk spikes are complete.
-

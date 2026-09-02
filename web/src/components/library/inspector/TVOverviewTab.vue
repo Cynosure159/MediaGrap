@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TVShowDetail, TVEpisode, TVSelection } from '@/api/types'
+import type { MediaInspection, TVShowDetail, TVEpisode, TVSelection } from '@/api/types'
+import TechSpecGrid from './TechSpecGrid.vue'
 
 export interface TVDraft {
   title: string
@@ -31,7 +32,6 @@ const props = defineProps<{
   detail: TVShowDetail
   draft: TVDraft
   isEditing: boolean
-  techSpecs: string[]
   resolvedPosterUrl: string
   selectedUnitTitle: string
   selectedUnitEpisode: TVEpisode | null
@@ -41,6 +41,9 @@ const props = defineProps<{
   selectedUnitSize: number
   seasonsMap: Map<number, TVEpisode[]>
   selectedEpisodeId: number | null
+  inspection: MediaInspection | null
+  inspectionLoading: boolean
+  inspectionError: string | null
   labels: Record<string, string>
 }>()
 
@@ -86,6 +89,27 @@ function formatFileSize(bytes: number): string {
 function nfoState(ep: TVEpisode): string {
   return ep.sidecars.some(sidecar => sidecar.kind === 'nfo') ? (props.labels.nfoFound || 'NFO Present') : (props.labels.nfoMissing || 'NFO Missing')
 }
+
+const techSpecs = computed(() => {
+  const specs: string[] = []
+  const video = props.inspection?.video[0]
+  const audio = props.inspection?.audio[0]
+  if (video?.width && video.height) specs.push(`${video.width}×${video.height}`)
+  if (video?.codec) specs.push(`${video.codec.toUpperCase()}${video.bitDepth ? ` ${video.bitDepth}-bit` : ''}`)
+  if (video?.hdr) specs.push(video.hdr)
+  if (audio?.codec) specs.push(`${audio.codec.toUpperCase()} ${audio.channelLayout || `${audio.channels} ch`}`)
+  if (props.inspection?.subtitles.length) specs.push(`${props.inspection.subtitles.length} ${props.labels.subtitleTracks || 'subtitle tracks'}`)
+  return specs
+})
+
+const streamSummary = computed(() => {
+  const video = props.inspection?.video[0]
+  const audio = props.inspection?.audio[0]
+  const values: string[] = []
+  if (video) values.push(`Video: ${video.width}×${video.height} ${video.codec.toUpperCase()}`)
+  if (audio) values.push(`Audio: ${audio.codec.toUpperCase()} ${audio.channelLayout || `${audio.channels} ch`}`)
+  return values.join(' • ')
+})
 </script>
 
 <template>
@@ -125,11 +149,10 @@ function nfoState(ep: TVEpisode): string {
         </div>
       </div>
 
-      <div class="spec-pills-row">
-        <span v-for="spec in techSpecs" :key="spec" class="spec-pill">
-          {{ spec }}
-        </span>
-      </div>
+      <TechSpecGrid v-if="techSpecs.length" :specs="techSpecs" />
+      <p v-else class="tech-unavailable font-code">
+        {{ inspectionLoading ? labels.inspectingMedia : (inspectionError || inspection?.probeError || labels.mediaInfoUnavailable) }}
+      </p>
     </div>
 
     <div class="overview-body-layout">
@@ -146,9 +169,6 @@ function nfoState(ep: TVEpisode): string {
               <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
             </svg>
             <span>{{ labels.noPosterLoaded || '未加载海报' }}</span>
-          </div>
-          <div v-if="resolvedPosterUrl" class="poster-res-badge font-code">
-            1000×1500
           </div>
         </div>
       </div>
@@ -238,7 +258,7 @@ function nfoState(ep: TVEpisode): string {
               <span class="dot dot-ok"></span>
               <span class="status-txt">{{ selectedUnitEpisode ? formatEpisodeCode(selectedUnitEpisode) : (selection?.kind === 'season' ? `${selectedUnitSeasonEpisodes.length} ${labels.episodes}` : `${detail.show.seasonCount} ${labels.seasons} · ${detail.show.episodeCount} ${labels.episodes}`) }}</span>
               <span class="meta-sep">|</span>
-              <span class="stream-summary font-code">Video: 1080p AVC • Audio: AAC 2.0</span>
+              <span class="stream-summary font-code">{{ streamSummary || (inspectionLoading ? labels.inspectingMedia : (inspectionError || inspection?.probeError || labels.mediaInfoUnavailable)) }}</span>
             </div>
           </div>
           <div class="file-size-divider"></div>
@@ -295,7 +315,7 @@ function nfoState(ep: TVEpisode): string {
                 <div class="ep-path font-code">{{ ep.relativePath }}</div>
               </td>
               <td class="col-res">
-                <span class="spec-badge font-code">{{ remoteEpisode(ep)?.runtimeMinutes ? `${remoteEpisode(ep)?.runtimeMinutes} ${labels.runtimeMinutes || 'min'}` : (labels.qualityUnavailable || '1080p') }}</span>
+                <span class="spec-badge font-code">{{ remoteEpisode(ep)?.runtimeMinutes ? `${remoteEpisode(ep)?.runtimeMinutes} ${labels.runtimeMinutes || 'min'}` : (labels.qualityUnavailable || '—') }}</span>
               </td>
               <td class="col-status">
                 <span class="dot" :class="ep.sidecars.some(sidecar => sidecar.kind === 'nfo') ? 'dot-ok' : 'dot-off'" :title="nfoState(ep)"></span>

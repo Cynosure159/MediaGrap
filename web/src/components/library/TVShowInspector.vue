@@ -8,6 +8,7 @@ import TVFileAuditTab from './inspector/TVFileAuditTab.vue'
 import MovieCastTab, { type CastMember as DisplayCastMember } from './inspector/MovieCastTab.vue'
 import MovieNfoTab from './inspector/MovieNfoTab.vue'
 import ScraperModal from './ScraperModal.vue'
+import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   selection: api.TVSelection | null
@@ -31,6 +32,14 @@ const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
 
 const showId = computed(() => props.selection?.showId ?? null)
+const inspectionEpisodeId = computed(() =>
+  props.selection?.kind === 'episode' ? props.selection.episodeId : null
+)
+const {
+  inspection,
+  isLoading: isInspectionLoading,
+  error: inspectionError,
+} = useMediaInspection(() => inspectionEpisodeId.value)
 
 const selectedUnitEpisode = computed(() => {
   const selection = props.selection
@@ -276,31 +285,6 @@ function formatEpisodeCode(ep: api.TVEpisode): string {
   return `S${s}E${e}`
 }
 
-const techSpecs = computed(() => {
-  const specs: string[] = []
-  const episodes = detail.value?.episodes || []
-  const samplePath = (episodes[0]?.relativePath || detail.value?.show.relativePath || '').toUpperCase()
-
-  if (samplePath.includes('2160P') || samplePath.includes('4K') || samplePath.includes('UHD')) specs.push('4K UHD')
-  else if (samplePath.includes('1080P') || samplePath.includes('FHD')) specs.push('1080p FHD')
-  else if (samplePath.includes('720P')) specs.push('720p HD')
-  else specs.push('1080p FHD')
-
-  if (samplePath.includes('HEVC') || samplePath.includes('X265') || samplePath.includes('H.265') || samplePath.includes('H265')) specs.push('HEVC 10-bit')
-  else specs.push('AVC 8-bit')
-
-  if (samplePath.includes('ATMOS')) specs.push('Dolby Atmos 7.1')
-  else if (samplePath.includes('DDP5.1') || samplePath.includes('DD+5.1') || samplePath.includes('EAC3')) specs.push('E-AC3 5.1')
-  else specs.push('AAC 2.0')
-
-  if (samplePath.includes('HDR10+') || samplePath.includes('HDR10PLUS')) specs.push('HDR10+')
-  else if (samplePath.includes('HDR')) specs.push('HDR10')
-  else if (samplePath.includes('DV') || samplePath.includes('DOVI')) specs.push('Dolby Vision')
-
-  specs.push('Chs/Eng Sub')
-  return specs
-})
-
 const nfoXmlContent = computed(() => {
   const genresXml = draft.genres.map(g => `    <genre>${g}</genre>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -495,7 +479,6 @@ async function handleSaveAndWrite() {
         :detail="detail"
         :draft="draft"
         :is-editing="isEditing"
-        :tech-specs="techSpecs"
         :resolved-poster-url="resolvedPosterUrl"
         :selected-unit-title="selectedUnitTitle"
         :selected-unit-episode="selectedUnitEpisode"
@@ -505,6 +488,9 @@ async function handleSaveAndWrite() {
         :selected-unit-size="selectedUnitSize"
         :seasons-map="seasonsMap"
         :selected-episode-id="selectedEpisodeId"
+        :inspection="inspection"
+        :inspection-loading="isInspectionLoading"
+        :inspection-error="inspectionError"
         :labels="labels"
         @update:selected-episode-id="selectedEpisodeId = $event"
       />
@@ -543,6 +529,9 @@ async function handleSaveAndWrite() {
       <TVFileAuditTab
         v-else-if="activeTab === 'files'"
         :episodes="scopedEpisodes"
+        :inspection="inspection"
+        :inspection-loading="isInspectionLoading"
+        :inspection-error="inspectionError"
         :labels="labels"
       />
     </div>

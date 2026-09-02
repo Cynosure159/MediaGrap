@@ -48,6 +48,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 
 	libraryService := library.NewService(db, config.MediaRoots)
 	libraryService.SetLogger(logger)
+	libraryService.SetFFprobePath(config.FFprobePath)
 	settingsService := settings.NewService(db, settings.Defaults{TMDbAPIKey: config.TMDbAPIKey, FanartTVAPIKey: config.FanartTVAPIKey, TMDbLanguage: config.TMDbLanguage, OutboundProxy: config.OutboundProxy, MediaRoots: config.MediaRoots})
 	currentSettings, err := settingsService.Current(context.Background())
 	if err != nil {

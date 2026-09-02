@@ -95,8 +95,10 @@ type Service struct {
 	repo             Repository
 	roots            []string
 	locks            sync.Map
+	inspectionLocks  sync.Map
 	logger           *slog.Logger
 	jobs             *jobs.Service
+	prober           mediaProber
 	metadataHydrator interface {
 		HydrateExistingNFO(context.Context, int64, string) error
 	}
@@ -104,7 +106,7 @@ type Service struct {
 
 func NewService(db *sql.DB, roots []string) *Service {
 	logger := slog.Default()
-	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger)}
+	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger), prober: ffprobeRunner{path: "ffprobe"}}
 	s.registerScanJobHandler()
 	return s
 }

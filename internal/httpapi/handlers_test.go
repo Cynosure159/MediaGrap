@@ -106,6 +106,50 @@ func TestSystemSummaryEndpoint(t *testing.T) {
 	}
 }
 
+func TestMovieInspectionAndNamingPreviewEndpointsAreReadOnly(t *testing.T) {
+	tc := setupTestContext(t)
+	tc.createAdminSession(t)
+	mediaPath := filepath.Join(tc.mediaRoot, "Example.2024.mkv")
+	if err := os.WriteFile(mediaPath, []byte("not a real video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source, err := tc.db.ExecContext(t.Context(), `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", tc.mediaRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := source.LastInsertId()
+	item, err := tc.db.ExecContext(t.Context(), `INSERT INTO media_items(source_id,relative_path,title_hint,year_hint,file_size,modified_at) VALUES(?,?,?,?,?,?)`, sourceID, filepath.Base(mediaPath), "Example", 2024, 16, "2024-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := item.LastInsertId()
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/media/%d/inspection", itemID), nil)
+	rec := tc.doRequest(req, true, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected inspection status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var inspection library.MediaInspection
+	if err := json.Unmarshal(rec.Body.Bytes(), &inspection); err != nil || len(inspection.Files) != 1 {
+		t.Fatalf("unexpected inspection response: %#v err=%v", inspection, err)
+	}
+
+	body := bytes.NewBufferString(`{"pattern":"${title} (${year})"}`)
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/media/%d/naming-preview", itemID), body)
+	req.Header.Set("Content-Type", "application/json")
+	rec = tc.doRequest(req, true, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected naming preview status 200 without CSRF, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var preview library.NamingPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil || !preview.ReadOnly || len(preview.Items) != 1 {
+		t.Fatalf("unexpected naming preview: %#v err=%v", preview, err)
+	}
+	if _, err := os.Stat(mediaPath); err != nil {
+		t.Fatalf("read-only endpoints changed the media file: %v", err)
+	}
+}
+
 func TestSetupAndSessionFlow(t *testing.T) {
 	tc := setupTestContext(t)
 

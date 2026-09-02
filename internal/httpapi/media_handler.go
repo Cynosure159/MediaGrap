@@ -24,6 +24,10 @@ type artworkPlanRequest struct {
 	Selections []metadata.ArtworkSelection `json:"selections"`
 }
 
+type namingPreviewRequest struct {
+	Pattern string `json:"pattern"`
+}
+
 func (s *server) listMedia(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
 		return
@@ -102,6 +106,62 @@ func (s *server) getMedia(w http.ResponseWriter, r *http.Request) {
 		"metadataOrigin": origin,
 		"writable":       location.Writable,
 	})
+}
+
+func (s *server) getMediaInspection(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	inspection, err := s.library.InspectMedia(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media item not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, inspection)
+}
+
+func (s *server) previewMediaNaming(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_media", "Invalid media id")
+		return
+	}
+	var body namingPreviewRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	location, err := s.library.LocateMedia(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media item not found")
+		return
+	}
+	record, err := s.metadata.Record(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load metadata")
+		return
+	}
+	title := record.Title
+	if title == "" {
+		title = location.Item.TitleHint
+	}
+	year := record.Year
+	if year == nil {
+		year = location.Item.YearHint
+	}
+	preview, err := s.library.PreviewNaming(r.Context(), id, body.Pattern, library.NamingValues{Title: title, OriginalTitle: record.OriginalTitle, Year: year})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_naming_pattern", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
 }
 
 func mediaLocalArtworkURL(mediaID int64, kind string) string {

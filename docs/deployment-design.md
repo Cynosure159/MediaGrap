@@ -30,6 +30,7 @@ services:
       TZ: Asia/Shanghai
       MEDIAGRAP_CONFIG_DIR: /config
       MEDIAGRAP_CACHE_DIR: /cache
+      MEDIAGRAP_FFPROBE_PATH: /usr/bin/ffprobe
     volumes:
       - ./config:/config
       - ./cache:/cache
@@ -94,12 +95,11 @@ First-run setup is security-sensitive. The implementation should either require 
 - Build linux/amd64 and linux/arm64 images.
 - Publish immutable semantic-version and digest-addressable tags.
 - Generate an SBOM, scan dependencies/images, and sign release images when CI is established.
-- Run as `scratch` or a minimal distroless base if timezone, CA certificates, and optional `ffprobe` packaging remain correct. Otherwise use a small non-root runtime image.
-- Offer a separate image variant with `ffprobe` if including it would undermine the base image size goal.
+- Use the repository's `ffprobe` target as the standard production image, published locally as `latest`: `docker build -t mediagrap:latest .`. The build compiles a small, statically linked ffprobe with the media containers and codecs currently needed by inspection, then copies only that binary and CA certificates into a scratch runtime. It accepts local files only and covers the scanner's `avi`, `flac`, `matroska`, `mp3`, `mpegts`, `mov`, `ogg`, and `wav` containers; unsupported formats remain an explicit unavailable probe state. The FFmpeg source version is pinned by the `FFMPEG_VERSION` build argument (currently `7.1.1`).
+- Filesystem audit remains available independently of probing. Set `MEDIAGRAP_FFPROBE_PATH=off` only for an intentional no-probe deployment.
 
 ## Local development
 
 - Go server and Vite dev server run separately with API proxying and hot reload.
 - A production-like local command builds frontend assets, embeds them, migrates a temporary SQLite database, and starts the single binary.
 - Integration tests use temporary directories as media roots; they must never point at a developer's real media library.
-

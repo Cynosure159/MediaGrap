@@ -6,7 +6,7 @@ MediaGrap is a lightweight, self-hosted media metadata scraper and library manag
 
 The project aims to retain the essential workflows found in tools such as tinyMediaManager and MediaElch while reducing server-side resource usage and providing a better browser, mobile, and container experience.
 
-> Current status: Phase 2 movie scraping, safe NFO writing, and previewed TMDb poster/fanart downloads are implemented. Phase 3 TV discovery now indexes common episode names and provides a separate TV library view; TV scraping and NFO writes remain next.
+> Current status: Phase 2 movie scraping and safe writes, the first Phase 3 TV discovery/write slice, and the first Phase 4 movie-workshop slices are implemented. Phase 4D now provides optional cached ffprobe data, real file/Sidecar audit, and preview-only movie naming Dry-Runs.
 
 ## Goals
 

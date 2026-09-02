@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { TVEpisode } from '@/api/types'
+import type { MediaInspection, TVEpisode } from '@/api/types'
 
 const props = defineProps<{
   episodes: TVEpisode[]
+  inspection: MediaInspection | null
+  inspectionLoading: boolean
+  inspectionError: string | null
   labels: Record<string, string>
 }>()
 
@@ -75,6 +78,26 @@ function formatEpisodeCode(ep: TVEpisode): string {
         </div>
       </div>
     </div>
+
+    <div class="probe-card">
+      <div class="card-header-bar">
+        <span class="header-title">{{ labels.mediaStreams || 'Embedded media streams' }}</span>
+        <span v-if="inspection?.cached" class="item-count font-code">{{ labels.cachedProbe || 'CACHED' }}</span>
+      </div>
+      <div v-if="inspectionLoading" class="empty-row">{{ labels.inspectingMedia || 'Inspecting media…' }}</div>
+      <div v-else-if="inspection?.probeStatus !== 'ready'" class="empty-row">
+        {{ inspectionError || inspection?.probeError || labels.mediaInfoUnavailable || 'ffprobe media information is unavailable.' }}
+      </div>
+      <div v-else class="probe-summary font-code">
+        <span v-for="stream in inspection.video" :key="`video-${stream.index}`" class="probe-pill">
+          {{ labels.video || 'Video' }} {{ stream.codec.toUpperCase() }} {{ stream.width }}×{{ stream.height }}
+        </span>
+        <span v-for="stream in inspection.audio" :key="`audio-${stream.index}`" class="probe-pill">
+          {{ labels.audio || 'Audio' }} {{ stream.codec.toUpperCase() }} {{ stream.channelLayout || `${stream.channels} ch` }}
+        </span>
+        <span v-if="!inspection.video.length && !inspection.audio.length" class="empty-row">{{ labels.mediaInfoUnavailable || 'No stream metadata.' }}</span>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -106,8 +129,15 @@ function formatEpisodeCode(ep: TVEpisode): string {
   color: var(--on-surface-variant, #c7c4d7);
 }
 
+.empty-row {
+  padding: 14px;
+  color: var(--on-surface-variant, #c7c4d7);
+  font-size: 12px;
+}
+
 .rename-engine-card,
-.structure-card {
+.structure-card,
+.probe-card {
   background: var(--surface-container, #191f31);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-lg, 0.5rem);
@@ -247,5 +277,21 @@ function formatEpisodeCode(ep: TVEpisode): string {
 
 .text-ok {
   color: var(--secondary, #4edea3);
+}
+
+.probe-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.probe-pill {
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 4px 8px;
+  background: var(--surface-container-low, #151b2d);
+  color: var(--on-surface, #dce1fb);
+  font-size: 11px;
 }
 </style>

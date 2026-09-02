@@ -23,6 +23,8 @@ type LibraryService interface {
 	Job(ctx context.Context, id int64) (library.Job, error)
 	ListMedia(ctx context.Context, query string, page, pageSize int) (library.Page, error)
 	LocateMedia(ctx context.Context, id int64) (library.MediaLocation, error)
+	InspectMedia(ctx context.Context, id int64) (library.MediaInspection, error)
+	PreviewNaming(ctx context.Context, id int64, pattern string, values library.NamingValues) (library.NamingPreview, error)
 	MetadataSearchHint(item library.MediaItem) (string, *int, string)
 	ListTVShows(ctx context.Context, query string) ([]library.TVShow, error)
 	TVShow(ctx context.Context, id int64) (library.TVShowDetail, error)

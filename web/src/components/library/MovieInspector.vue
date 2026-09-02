@@ -9,6 +9,7 @@ import MovieArtworkTab from './inspector/MovieArtworkTab.vue'
 import MovieCastTab, { type CastMember } from './inspector/MovieCastTab.vue'
 import MovieNfoTab from './inspector/MovieNfoTab.vue'
 import MovieFileAuditTab from './inspector/MovieFileAuditTab.vue'
+import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   itemId: number | null
@@ -37,6 +38,14 @@ const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
+const {
+  inspection,
+  namingPreview,
+  isLoading: isInspectionLoading,
+  isPreviewing: isNamingPreviewLoading,
+  error: inspectionError,
+  previewNaming,
+} = useMediaInspection(() => props.itemId)
 
 const draft = reactive<MovieDraft>({
   title: '',
@@ -278,6 +287,8 @@ async function handleApplyNfo() {
         :item="detail.item"
         :is-editing="isEditing"
         :labels="labels"
+        :inspection="inspection"
+        :inspection-loading="isInspectionLoading"
       />
 
       <MovieArtworkTab
@@ -309,6 +320,12 @@ async function handleApplyNfo() {
         v-else-if="activeTab === 'files'"
         :item="detail.item"
         :labels="labels"
+        :inspection="inspection"
+        :inspection-loading="isInspectionLoading"
+        :inspection-error="inspectionError"
+        :naming-preview="namingPreview"
+        :preview-loading="isNamingPreviewLoading"
+        @preview-naming="previewNaming"
       />
     </div>
 
