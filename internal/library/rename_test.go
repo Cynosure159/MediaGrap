@@ -168,7 +168,8 @@ func TestRename_CaseInsensitiveCollisionDetection(t *testing.T) {
 
 func TestRename_TVTokensAndPresets(t *testing.T) {
 	tokens := map[string]string{
-		"showTitle":        "Breaking Bad",
+		"showTitle":        "绝命毒师",
+		"originalTitle":    "Breaking Bad",
 		"seasonNumber":     "1",
 		"seasonNumberPad":  "01",
 		"episodeNumber":    "1",
@@ -188,27 +189,32 @@ func TestRename_TVTokensAndPresets(t *testing.T) {
 		{
 			name:         "Kodi Standard",
 			pattern:      "${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad}",
-			expectedStem: "Breaking Bad/Season 1/Breaking Bad - S01E01",
+			expectedStem: "绝命毒师/Season 1/绝命毒师 - S01E01",
 		},
 		{
 			name:         "Kodi with Title",
 			pattern:      "${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}",
-			expectedStem: "Breaking Bad/Season 1/Breaking Bad - S01E01 - Pilot",
+			expectedStem: "绝命毒师/Season 1/绝命毒师 - S01E01 - Pilot",
+		},
+		{
+			name:         "Original Title Pattern",
+			pattern:      "${originalTitle} (${year})/Season ${seasonNumberPad}/${originalTitle} - S${seasonNumberPad}E${episodeNumberPad}",
+			expectedStem: "Breaking Bad (2008)/Season 01/Breaking Bad - S01E01",
 		},
 		{
 			name:         "Plex Standard",
 			pattern:      "${showTitle} (Season ${seasonNumberPad})/${showTitle} - s${seasonNumberPad}e${episodeNumberPad} - ${episodeTitle}",
-			expectedStem: "Breaking Bad (Season 01)/Breaking Bad - s01e01 - Pilot",
+			expectedStem: "绝命毒师 (Season 01)/绝命毒师 - s01e01 - Pilot",
 		},
 		{
 			name:         "Jellyfin Standard",
 			pattern:      "${showTitle}/Season ${seasonNumberPad}/${showTitle} S${seasonNumberPad}E${episodeNumberPad} ${episodeTitle}",
-			expectedStem: "Breaking Bad/Season 01/Breaking Bad S01E01 Pilot",
+			expectedStem: "绝命毒师/Season 01/绝命毒师 S01E01 Pilot",
 		},
 		{
 			name:         "Flat Pattern",
-			pattern:      "${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}",
-			expectedStem: "Breaking Bad - S01E01 - Pilot",
+			pattern:      "${showTitle}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}",
+			expectedStem: "绝命毒师/绝命毒师 - S01E01 - Pilot",
 		},
 	}
 

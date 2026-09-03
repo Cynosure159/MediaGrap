@@ -567,7 +567,6 @@ async function handleSaveAndWrite() {
         v-else-if="activeTab === 'files'"
         :show-id="showId"
         :episodes="scopedEpisodes"
-        :all-episodes="detail.episodes"
         :selection="selection"
         :inspection="inspection"
         :inspection-loading="isInspectionLoading"

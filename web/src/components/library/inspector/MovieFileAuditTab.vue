@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
-import type { MediaInspection, MediaItem, NamingPreview, RenamePlan } from '@/api/types'
+import { computed, shallowRef, watch } from 'vue'
+import type { MediaInspection, MediaItem, RenamePlan } from '@/api/types'
 
 const props = withDefaults(defineProps<{
   item: MediaItem
@@ -8,35 +8,48 @@ const props = withDefaults(defineProps<{
   inspection: MediaInspection | null
   inspectionLoading: boolean
   inspectionError: string | null
-  namingPreview?: NamingPreview | null
   renamePlan?: RenamePlan | null
-  previewLoading: boolean
+  previewLoading?: boolean
   isApplying?: boolean
 }>(), {
-  namingPreview: null,
   renamePlan: null,
+  previewLoading: false,
   isApplying: false,
 })
 
 const emit = defineEmits<{ 
-  previewNaming: [pattern: string]
   previewRename: [pattern: string]
   applyRename: []
 }>()
 
-function triggerPreview() {
-  emit('previewRename', patternInput.value)
-  emit('previewNaming', patternInput.value)
-}
-
-const patternInput = shallowRef('${title} (${year})')
+const patternInput = shallowRef('${title} (${year})/${title} (${year})')
 const selectedPreset = shallowRef('kodi')
 const availableTokens = ['${title}', '${originalTitle}', '${year}', '${resolution}', '${videoCodec}', '${audioCodec}', '${edition}', '${imdbId}']
 const hasConflicts = computed(() => props.renamePlan?.hasConflicts ?? false)
 
+const isPreviewCollapsed = shallowRef(false)
+const isDismissed = shallowRef(false)
+
+// Reset dismissed state when new plan arrives
+watch(() => props.renamePlan, () => {
+  if (props.renamePlan) {
+    isDismissed.value = false
+    isPreviewCollapsed.value = false
+  }
+})
+
+function triggerPreview() {
+  isDismissed.value = false
+  isPreviewCollapsed.value = false
+  emit('previewRename', patternInput.value)
+}
+
+function clearPreview() {
+  isDismissed.value = true
+}
+
 function onPresetChange() {
-  if (selectedPreset.value === 'kodi') patternInput.value = '${title} (${year})'
-  else if (selectedPreset.value === 'plex') patternInput.value = '${title} (${year})/${title} (${year})'
+  if (selectedPreset.value === 'kodi' || selectedPreset.value === 'plex') patternInput.value = '${title} (${year})/${title} (${year})'
 }
 
 function appendToken(token: string) { 
@@ -71,8 +84,67 @@ function formatModifiedAt(value: string): string {
       <span class="readonly-badge font-code">{{ labels.previewOnly }}</span>
     </div>
 
-    <div v-if="inspectionError" class="audit-alert">{{ inspectionError }}</div>
+    <div v-if="inspectionError" class="audit-alert font-code">{{ inspectionError }}</div>
 
+    <!-- Naming pattern engine (placed at top) -->
+    <div class="rename-engine-card">
+      <div class="card-header-bar">
+        <span class="header-title">{{ labels.namingPattern }}</span>
+        <select v-model="selectedPreset" class="preset-select font-code" @change="onPresetChange">
+          <option value="kodi">{{ labels.presetKodi || 'Kodi Standard' }}</option>
+          <option value="plex">{{ labels.presetPlex || 'Plex Standard' }}</option>
+          <option value="custom">{{ labels.presetCustom || 'Custom' }}</option>
+        </select>
+      </div>
+
+      <div class="card-body">
+        <label class="field-label font-code" for="movie-naming-pattern">{{ labels.patternTemplate }}</label>
+        <div class="pattern-action-row">
+          <input id="movie-naming-pattern" v-model="patternInput" type="text" class="pattern-input font-code" />
+          <button class="btn btn-primary" :disabled="previewLoading" type="button" @click="triggerPreview">
+            {{ previewLoading ? labels.previewing : labels.dryRunSimulation }}
+          </button>
+        </div>
+        <div class="tokens-list" :aria-label="labels.availableTokens">
+          <button v-for="token in availableTokens" :key="token" class="token-pill font-code" type="button" @click="appendToken(token)">
+            {{ token }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Dry Run Result Section -->
+      <div v-if="renamePlan && !isDismissed" class="rename-preview">
+        <div class="preview-summary-bar" :class="{ 'preview-summary--conflict': hasConflicts }">
+          <div class="summary-title font-code">
+            <span class="dot-ok" :class="{ 'dot-conflict': hasConflicts }"></span>
+            {{ hasConflicts ? labels.conflictsDetected : labels.noConflictsDetected }} ({{ renamePlan.items.length }} {{ labels.files }})
+          </div>
+          <div class="summary-actions">
+            <button class="btn-preview-action font-code" type="button" @click="isPreviewCollapsed = !isPreviewCollapsed">
+              {{ isPreviewCollapsed ? (labels.expandPreview || '展开预览') : (labels.collapsePreview || '收起预览') }}
+            </button>
+            <button class="btn-preview-action font-code" type="button" :title="labels.closePreview || '关闭预览'" @click="clearPreview">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div v-show="!isPreviewCollapsed" class="preview-items-list">
+          <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
+            <span class="operation-tag font-code" :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`">
+              {{ entry.operation === 'rename' ? (labels.renameFile || 'RENAME FILE') : (entry.operation === 'rename_dir' ? (labels.renameDir || 'RENAME DIR') : entry.operation.toUpperCase()) }}
+            </span>
+            <div class="rename-paths font-code">
+              <span class="current-path">{{ entry.currentPath }}</span>
+              <span class="path-arrow">→</span>
+              <span class="planned-path">{{ entry.plannedPath }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current files structure card -->
     <div class="structure-card">
       <div class="card-header-bar">
         <span class="header-title">{{ labels.currentFiles }}</span>
@@ -92,8 +164,8 @@ function formatModifiedAt(value: string): string {
               <td class="font-code">{{ formatModifiedAt(file.modifiedAt) }}</td>
               <td class="font-code">{{ file.permissions || '—' }}</td>
               <td>
-                <span v-if="!file.warnings.length" class="status-ok">{{ labels.valid }}</span>
-                <template v-else><span v-for="warning in file.warnings" :key="warning" class="warning-chip">{{ warningLabel(warning) }}</span></template>
+                <span v-if="!file.warnings.length" class="status-ok font-code">{{ labels.valid }}</span>
+                <template v-else><span v-for="warning in file.warnings" :key="warning" class="warning-chip font-code">{{ warningLabel(warning) }}</span></template>
               </td>
             </tr>
           </tbody>
@@ -101,6 +173,7 @@ function formatModifiedAt(value: string): string {
       </div>
     </div>
 
+    <!-- Streams probe card -->
     <div class="streams-card">
       <div class="card-header-bar">
         <span class="header-title">{{ labels.mediaStreams }}</span>
@@ -130,44 +203,10 @@ function formatModifiedAt(value: string): string {
       </div>
     </div>
 
-    <div class="rename-engine-card">
-      <div class="card-header-bar">
-        <span class="header-title">{{ labels.namingPattern }}</span>
-        <select v-model="selectedPreset" class="preset-select font-code" @change="onPresetChange">
-          <option value="kodi">{{ labels.presetKodi }}</option>
-          <option value="plex">{{ labels.presetPlex }}</option>
-          <option value="custom">{{ labels.presetCustom }}</option>
-        </select>
-      </div>
-      <div class="card-body">
-        <label class="field-label font-code" for="movie-naming-pattern">{{ labels.patternTemplate }}</label>
-        <div class="pattern-action-row">
-          <input id="movie-naming-pattern" v-model="patternInput" type="text" class="pattern-input font-code" />
-          <button class="btn btn-primary" :disabled="previewLoading" type="button" @click="triggerPreview">{{ previewLoading ? labels.previewing : labels.dryRunSimulation }}</button>
-        </div>
-        <div class="tokens-list" :aria-label="labels.availableTokens">
-          <button v-for="token in availableTokens" :key="token" class="token-pill font-code" type="button" @click="appendToken(token)">{{ token }}</button>
-        </div>
-      </div>
-      <div v-if="renamePlan" class="rename-preview">
-        <div class="preview-summary" :class="{ 'preview-summary--conflict': hasConflicts }">{{ hasConflicts ? labels.conflictsDetected : labels.noConflictsDetected }}</div>
-        <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
-          <span class="operation-tag font-code" :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`">{{ entry.operation === 'rename' ? labels.renameFile || 'RENAME FILE' : (entry.operation === 'rename_dir' ? labels.renameDir || 'RENAME DIR' : entry.operation.toUpperCase()) }}</span>
-          <div class="rename-paths font-code"><span class="current-path">{{ entry.currentPath }}</span><span class="path-arrow">→</span><span class="planned-path">{{ entry.plannedPath }}</span></div>
-        </div>
-      </div>
-      <div v-else-if="namingPreview" class="rename-preview">
-        <div class="preview-summary" :class="{ 'preview-summary--conflict': namingPreview.items.some(i => i.conflict) }">{{ namingPreview.items.some(i => i.conflict) ? labels.namingConflictsFound : labels.namingPreviewSafe }}</div>
-        <div v-for="entry in namingPreview.items" :key="entry.currentPath" class="rename-row">
-          <span class="operation-tag font-code" :class="`operation-tag--${entry.operation.toLowerCase()}`">{{ entry.operation.toUpperCase() }}</span>
-          <div class="rename-paths font-code"><span class="current-path">{{ entry.currentPath }}</span><span class="path-arrow">→</span><span class="planned-path">{{ entry.plannedPath }}</span></div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="renamePlan && !hasConflicts" class="sticky-action-bar">
+    <!-- Sticky action bar -->
+    <div v-if="renamePlan && !hasConflicts && !isDismissed" class="sticky-action-bar">
       <div class="action-bar-left">
-        <span class="spec-pill spec-pill--success"><span class="dot-ok"></span>{{ labels.noConflictsDetected }}</span>
+        <span class="spec-pill spec-pill--success"><span class="dot-ok"></span>{{ labels.noConflictsDetected }} ({{ renamePlan.items.length }})</span>
       </div>
       <div class="action-bar-right">
         <button class="btn btn-outline" :disabled="previewLoading || isApplying" type="button" @click="triggerPreview">{{ labels.dryRunSimulation }}</button>
@@ -178,49 +217,54 @@ function formatModifiedAt(value: string): string {
 </template>
 
 <style scoped>
-.files-workshop-view { display: flex; flex-direction: column; gap: 16px; width: 100%; }
-.workshop-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.header-left h2 { margin: 0 0 2px; color: var(--on-surface); font-size: 18px; }
-.sub-label, .empty-row, .stream-empty { color: var(--on-surface-variant); font-size: 12px; }
-.readonly-badge, .cache-tag { color: var(--secondary); border: 1px solid color-mix(in srgb, var(--secondary) 35%, transparent); border-radius: 4px; padding: 3px 7px; font-size: 10px; }
-.structure-card, .streams-card, .rename-engine-card { overflow: hidden; border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); background: var(--surface-container); }
-.card-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid var(--outline-variant); background: var(--surface-container-high); }
-.header-title { color: var(--on-surface); font-size: 13px; font-weight: 600; }
+.files-workshop-view { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.workshop-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.header-left h2 { margin: 0 0 2px; color: var(--on-surface); font-size: 16px; font-weight: 700; }
+.sub-label, .empty-row, .stream-empty { color: var(--on-surface-variant); font-size: 11px; }
+.readonly-badge, .cache-tag { color: var(--secondary); border: 1px solid color-mix(in srgb, var(--secondary) 35%, transparent); border-radius: 4px; padding: 2px 6px; font-size: 9px; font-weight: 600; }
+.structure-card, .streams-card, .rename-engine-card { overflow: hidden; border: 1px solid var(--outline-variant); border-radius: var(--radius-md, 0.375rem); background: var(--surface-container); }
+.card-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid var(--outline-variant); background: var(--surface-container-high); }
+.header-title { color: var(--on-surface); font-size: 12px; font-weight: 600; }
 .item-count, .preset-tag { color: var(--outline); font-size: 10px; }
-.empty-row { padding: 18px 14px; }
+.empty-row { padding: 12px; }
 .audit-table-wrap { overflow-x: auto; }
 .audit-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; }
-.audit-table th { padding: 7px 10px; background: var(--surface-container-low); color: var(--outline); font-weight: 600; }
-.audit-table td { padding: 8px 10px; border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); color: var(--on-surface-variant); }
+.audit-table th { padding: 6px 8px; background: var(--surface-container-low); color: var(--outline); font-weight: 600; font-size: 10px; }
+.audit-table td { padding: 6px 8px; border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); color: var(--on-surface-variant); }
 .audit-row--warning { border-left: 2px solid var(--tertiary); }
-.audit-path { min-width: 220px; max-width: 420px; overflow: hidden; color: var(--on-surface) !important; text-overflow: ellipsis; white-space: nowrap; }
-.status-ok { color: var(--secondary); }
-.warning-chip { display: inline-block; margin: 1px 4px 1px 0; border: 1px solid color-mix(in srgb, var(--tertiary) 35%, transparent); border-radius: 3px; padding: 1px 5px; color: var(--tertiary); }
+.audit-path { min-width: 200px; max-width: 400px; overflow: hidden; color: var(--on-surface) !important; text-overflow: ellipsis; white-space: nowrap; }
+.status-ok { color: var(--secondary); font-size: 10px; }
+.warning-chip { display: inline-block; margin: 1px 3px 1px 0; border: 1px solid color-mix(in srgb, var(--tertiary) 35%, transparent); border-radius: 3px; padding: 1px 4px; color: var(--tertiary); font-size: 9px; }
 .stream-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--outline-variant); }
-.stream-group { min-width: 0; padding: 12px; background: var(--surface-container); }
-.stream-group h3 { margin: 0 0 8px; color: var(--on-surface); font-size: 11px; text-transform: uppercase; }
-.stream-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; border-radius: 4px; padding: 6px 8px; background: var(--surface-container-low); color: var(--on-surface-variant); font-size: 10px; }
+.stream-group { min-width: 0; padding: 8px 10px; background: var(--surface-container); }
+.stream-group h3 { margin: 0 0 4px; color: var(--on-surface); font-size: 10px; text-transform: uppercase; font-weight: 700; }
+.stream-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; border-radius: 3px; padding: 4px 6px; background: var(--surface-container-low); color: var(--on-surface-variant); font-size: 10px; }
 .stream-accent { color: var(--tertiary); }
-.card-body { display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+.card-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
 .field-label { color: var(--primary); font-size: 10px; font-weight: 700; }
 .pattern-action-row { display: flex; gap: 8px; }
-.pattern-input { min-width: 0; flex: 1; border: 1px solid var(--outline-variant); border-radius: 4px; padding: 8px 10px; background: var(--surface-container-lowest); color: var(--on-surface); }
-.tokens-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.token-pill { border: 1px solid var(--outline-variant); border-radius: 4px; padding: 3px 7px; background: var(--surface-container-low); color: var(--secondary); cursor: pointer; }
+.pattern-input { min-width: 0; flex: 1; border: 1px solid var(--outline-variant); border-radius: 4px; padding: 6px 10px; background: var(--surface-container-lowest); color: var(--on-surface); font-size: 12px; }
+.tokens-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.token-pill { border: 1px solid var(--outline-variant); border-radius: 3px; padding: 2px 6px; background: var(--surface-container-low); color: var(--secondary); cursor: pointer; font-size: 10px; }
 .rename-preview { border-top: 1px solid var(--outline-variant); }
-.preview-summary { padding: 8px 14px; background: color-mix(in srgb, var(--secondary) 8%, transparent); color: var(--secondary); font-size: 11px; }
+.preview-summary-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: color-mix(in srgb, var(--secondary) 8%, transparent); color: var(--secondary); font-size: 11px; }
 .preview-summary--conflict { background: color-mix(in srgb, var(--error) 8%, transparent); color: var(--error); }
-.rename-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); }
-.operation-tag { min-width: 54px; border-radius: 4px; padding: 2px 6px; font-size: 9px; text-align: center; font-weight: 600; }
+.summary-title { display: flex; align-items: center; gap: 6px; }
+.dot-conflict { background: var(--error) !important; box-shadow: 0 0 6px var(--error) !important; }
+.summary-actions { display: flex; align-items: center; gap: 8px; }
+.btn-preview-action { background: var(--surface-container-high); border: 1px solid var(--outline-variant); border-radius: 3px; color: var(--on-surface); padding: 2px 6px; font-size: 10px; cursor: pointer; }
+.btn-preview-action:hover { background: var(--surface-container-highest, #2d3347); }
+.rename-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 12px; border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); }
+.operation-tag { min-width: 52px; border-radius: 3px; padding: 2px 4px; font-size: 9px; text-align: center; font-weight: 600; }
 .operation-tag--keep { background: var(--surface-container-high); color: var(--on-surface-variant); }
 .operation-tag--rename, .operation-tag--rename_file, .operation-tag--rename_dir { background: color-mix(in srgb, var(--secondary) 10%, transparent); color: var(--secondary); }
 .operation-tag--conflict { background: color-mix(in srgb, var(--error) 10%, transparent); color: var(--error); }
-.rename-paths { display: grid; min-width: 0; flex: 1; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; font-size: 10px; }
+.rename-paths { display: grid; min-width: 0; flex: 1; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; font-size: 10px; }
 .current-path, .planned-path { overflow-wrap: anywhere; }.current-path { color: var(--on-surface-variant); }.planned-path { color: var(--on-surface); }.path-arrow { color: var(--outline); }
-.audit-alert { border: 1px solid var(--error); border-radius: 4px; padding: 8px 12px; color: var(--error); font-size: 12px; }
+.audit-alert { border: 1px solid var(--error); border-radius: 4px; padding: 6px 10px; color: var(--error); font-size: 11px; }
 .preset-select { border: 1px solid var(--outline-variant); border-radius: 4px; padding: 2px 6px; background: var(--surface-container-lowest); color: var(--on-surface); font-size: 10px; }
-.sticky-action-bar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-top: 1px solid var(--outline-variant); background: var(--surface-container); z-index: 10; margin-top: 16px; border-radius: var(--radius-lg); }
+.sticky-action-bar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--outline-variant); background: var(--surface-container); z-index: 10; margin-top: 8px; border-radius: var(--radius-md, 0.375rem); box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3); }
 .action-bar-right { display: flex; gap: 8px; }
 @media (max-width: 900px) { .stream-groups { grid-template-columns: 1fr; } }
-@media (max-width: 700px) { .workshop-header, .pattern-action-row, .sticky-action-bar { align-items: stretch; flex-direction: column; gap: 12px; }.rename-paths { grid-template-columns: 1fr; }.path-arrow { transform: rotate(90deg); } }
+@media (max-width: 700px) { .workshop-header, .pattern-action-row, .sticky-action-bar { align-items: stretch; flex-direction: column; gap: 10px; }.rename-paths { grid-template-columns: 1fr; }.path-arrow { transform: rotate(90deg); } }
 </style>

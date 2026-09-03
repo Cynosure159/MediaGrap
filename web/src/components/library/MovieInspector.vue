@@ -359,11 +359,9 @@ async function handleApplyNfo() {
         :inspection="inspection"
         :inspection-loading="isInspectionLoading"
         :inspection-error="inspectionError"
-        :naming-preview="namingPreview"
         :rename-plan="renamePlan"
         :preview-loading="isNamingPreviewLoading"
         :is-applying="isApplying"
-        @preview-naming="previewNaming"
         @preview-rename="previewRename"
         @apply-rename="applyRename"
       />

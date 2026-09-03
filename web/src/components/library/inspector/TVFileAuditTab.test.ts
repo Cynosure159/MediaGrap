@@ -60,7 +60,6 @@ describe('TVFileAuditTab', () => {
       props: {
         showId: 1,
         episodes,
-        allEpisodes: episodes,
         selection: { kind: 'season', showId: 1, seasonNumber: 1 },
         inspection,
         inspectionLoading: false,
@@ -101,7 +100,6 @@ describe('TVFileAuditTab', () => {
       props: {
         showId: 1,
         episodes,
-        allEpisodes: episodes,
         selection: { kind: 'season', showId: 1, seasonNumber: 1 },
         inspection,
         inspectionLoading: false,
@@ -148,7 +146,6 @@ describe('TVFileAuditTab', () => {
       props: {
         showId: 1,
         episodes: [episodes[0]],
-        allEpisodes: episodes,
         selection: { kind: 'episode', showId: 1, seasonNumber: 1, episodeId: 101 },
         inspection,
         inspectionLoading: false,
@@ -174,7 +171,6 @@ describe('TVFileAuditTab', () => {
       props: {
         showId: 1,
         episodes,
-        allEpisodes: episodes,
         inspection,
         inspectionLoading: false,
         inspectionError: null,

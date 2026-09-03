@@ -6,7 +6,6 @@ import * as api from '@/api/library'
 const props = withDefaults(defineProps<{
   showId?: number
   episodes: TVEpisode[]
-  allEpisodes?: TVEpisode[]
   selection?: TVSelection | null
   inspection: MediaInspection | null
   inspectionLoading: boolean
@@ -15,13 +14,13 @@ const props = withDefaults(defineProps<{
   csrfToken?: string
 }>(), {
   showId: 0,
-  allEpisodes: () => [],
   selection: null,
   csrfToken: '',
 })
 
 const availableTokens = [
   '${showTitle}',
+  '${originalTitle}',
   '${seasonNumber}',
   '${seasonNumberPad}',
   '${episodeNumber}',
@@ -33,16 +32,17 @@ const availableTokens = [
 ]
 
 const presets = {
-  kodi: '${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad}',
   kodiTitle: '${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}',
-  plex: '${showTitle} (Season ${seasonNumberPad})/${showTitle} - s${seasonNumberPad}e${episodeNumberPad} - ${episodeTitle}',
+  kodi: '${showTitle}/Season ${seasonNumber}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad}',
+  plex: '${showTitle}/Season ${seasonNumberPad}/${showTitle} - s${seasonNumberPad}e${episodeNumberPad} - ${episodeTitle}',
   jellyfin: '${showTitle}/Season ${seasonNumberPad}/${showTitle} S${seasonNumberPad}E${episodeNumberPad} ${episodeTitle}',
-  flat: '${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}',
+  flat: '${showTitle}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad} - ${episodeTitle}',
   custom: '',
 }
 
 const selectedPreset = ref<keyof typeof presets>('kodiTitle')
 const patternInput = ref(presets.kodiTitle)
+const isPreviewCollapsed = ref(false)
 
 function formatEpisodeCode(ep: TVEpisode): string {
   const s = String(ep.seasonNumber).padStart(2, '0')
@@ -99,13 +99,21 @@ watch(() => props.selection, () => {
   renamePlan.value = null
   actionError.value = null
   actionMessage.value = null
+  isPreviewCollapsed.value = false
 })
+
+function clearPreview() {
+  renamePlan.value = null
+  actionError.value = null
+  actionMessage.value = null
+}
 
 async function runDryRun() {
   if (!props.showId) return
   previewLoading.value = true
   actionError.value = null
   actionMessage.value = null
+  isPreviewCollapsed.value = false
   try {
     renamePlan.value = await api.previewTVRename(
       props.csrfToken,
@@ -165,15 +173,14 @@ async function executeRename() {
         </div>
 
         <div class="selectors-row">
-          <!-- Preset selector -->
           <div class="select-wrapper">
             <label class="control-label font-code">{{ labels.patternPreset || 'Preset' }}:</label>
             <select v-model="selectedPreset" class="preset-select font-code" @change="onPresetChange">
-              <option value="kodi">{{ labels.presetKodiTV || 'Kodi Standard' }}</option>
               <option value="kodiTitle">{{ labels.presetKodiTVWithTitle || 'Kodi (with Title)' }}</option>
+              <option value="kodi">{{ labels.presetKodiTV || 'Kodi Standard' }}</option>
               <option value="plex">{{ labels.presetPlexTV || 'Plex Standard' }}</option>
               <option value="jellyfin">{{ labels.presetJellyfinTV || 'Jellyfin / Emby' }}</option>
-              <option value="flat">{{ labels.presetFlatTV || 'Flat (No folder)' }}</option>
+              <option value="flat">{{ labels.presetFlatTV || 'Flat (No Season folder)' }}</option>
               <option value="custom">{{ labels.presetCustom || 'Custom' }}</option>
             </select>
           </div>
@@ -202,22 +209,36 @@ async function executeRename() {
         </div>
       </div>
 
-      <!-- Dry run preview section -->
+      <!-- Dry run preview section with collapse & close -->
       <div v-if="renamePlan" class="rename-preview">
-        <div class="preview-summary" :class="{ 'preview-summary--conflict': hasConflicts }">
-          {{ hasConflicts ? (labels.conflictsDetected || 'Conflicts detected — cannot execute') : (labels.noConflictsDetected || 'No conflicts detected') }} ({{ renamePlan.items.length }} {{ labels.files || 'files' }})
+        <div class="preview-summary-bar" :class="{ 'preview-summary--conflict': hasConflicts }">
+          <div class="summary-title font-code">
+            <span class="dot-ok" :class="{ 'dot-conflict': hasConflicts }"></span>
+            {{ hasConflicts ? (labels.conflictsDetected || 'Conflicts detected — cannot execute') : (labels.noConflictsDetected || 'No conflicts detected') }} ({{ renamePlan.items.length }} {{ labels.files || 'files' }})
+          </div>
+          <div class="summary-actions">
+            <button class="btn-preview-action font-code" type="button" @click="isPreviewCollapsed = !isPreviewCollapsed">
+              {{ isPreviewCollapsed ? (labels.expandPreview || '展开预览') : (labels.collapsePreview || '收起预览') }}
+            </button>
+            <button class="btn-preview-action font-code" type="button" :title="labels.closePreview || '关闭预览'" @click="clearPreview">
+              ✕
+            </button>
+          </div>
         </div>
-        <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
-          <span
-            class="operation-tag font-code"
-            :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`"
-          >
-            {{ entry.operation === 'rename' ? (labels.renameFile || 'RENAME FILE') : (entry.operation === 'rename_dir' ? (labels.renameDir || 'RENAME DIR') : entry.operation.toUpperCase()) }}
-          </span>
-          <div class="rename-paths font-code">
-            <span class="current-path">{{ entry.currentPath }}</span>
-            <span class="path-arrow">→</span>
-            <span class="planned-path">{{ entry.plannedPath }}</span>
+
+        <div v-show="!isPreviewCollapsed" class="preview-items-list">
+          <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
+            <span
+              class="operation-tag font-code"
+              :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`"
+            >
+              {{ entry.operation === 'rename' ? (labels.renameFile || 'RENAME FILE') : (entry.operation === 'rename_dir' ? (labels.renameDir || 'RENAME DIR') : entry.operation.toUpperCase()) }}
+            </span>
+            <div class="rename-paths font-code">
+              <span class="current-path">{{ entry.currentPath }}</span>
+              <span class="path-arrow">→</span>
+              <span class="planned-path">{{ entry.plannedPath }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -281,7 +302,7 @@ async function executeRename() {
 .files-workshop-view {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -289,11 +310,11 @@ async function executeRename() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .header-left h2 {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--on-surface, #dce1fb);
   margin: 0 0 2px 0;
@@ -301,14 +322,14 @@ async function executeRename() {
 }
 
 .sub-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--on-surface-variant, #c7c4d7);
 }
 
 .empty-row {
-  padding: 14px;
+  padding: 12px;
   color: var(--on-surface-variant, #c7c4d7);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .rename-engine-card,
@@ -316,7 +337,7 @@ async function executeRename() {
 .probe-card {
   background: var(--surface-container, #191f31);
   border: 1px solid var(--outline-variant, #2e3447);
-  border-radius: var(--radius-lg, 0.5rem);
+  border-radius: var(--radius-md, 0.375rem);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -326,8 +347,8 @@ async function executeRename() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 6px 12px;
   background: var(--surface-container-high, #23293c);
   border-bottom: 1px solid var(--outline-variant, #2e3447);
 }
@@ -335,12 +356,12 @@ async function executeRename() {
 .header-left-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .header-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--on-surface, #dce1fb);
   white-space: nowrap;
@@ -349,11 +370,11 @@ async function executeRename() {
 .scope-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: var(--surface-container-lowest, #070d1f);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
-  padding: 2px 8px;
+  padding: 1px 6px;
   color: var(--secondary, #4edea3);
   font-size: 10px;
   font-weight: 600;
@@ -362,7 +383,7 @@ async function executeRename() {
 .selectors-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -380,10 +401,10 @@ async function executeRename() {
 .preset-select {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: 4px;
-  padding: 2px 8px;
+  padding: 2px 6px;
   background: var(--surface-container-lowest, #070d1f);
   color: var(--on-surface, #dce1fb);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .item-count {
@@ -392,10 +413,10 @@ async function executeRename() {
 }
 
 .card-body {
-  padding: 14px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .field-label {
@@ -417,8 +438,8 @@ async function executeRename() {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
   color: var(--on-surface, #dce1fb);
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .pattern-input:focus {
@@ -429,7 +450,7 @@ async function executeRename() {
 .tokens-list {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 
@@ -437,8 +458,8 @@ async function executeRename() {
   background: var(--surface-container-low, #151b2d);
   border: 1px solid var(--outline-variant, #2e3447);
   color: var(--secondary, #4edea3);
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: 10px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm, 0.25rem);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -453,8 +474,11 @@ async function executeRename() {
   border-top: 1px solid var(--outline-variant, #2e3447);
 }
 
-.preview-summary {
-  padding: 8px 14px;
+.preview-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
   background: color-mix(in srgb, var(--secondary, #4edea3) 8%, transparent);
   color: var(--secondary, #4edea3);
   font-size: 11px;
@@ -465,18 +489,49 @@ async function executeRename() {
   color: var(--error, #ffb4ab);
 }
 
+.summary-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot-conflict {
+  background: var(--error, #ffb4ab) !important;
+  box-shadow: 0 0 6px var(--error, #ffb4ab) !important;
+}
+
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-preview-action {
+  background: var(--surface-container-high, #23293c);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: 3px;
+  color: var(--on-surface, #dce1fb);
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.btn-preview-action:hover {
+  background: var(--surface-container-highest, #2d3347);
+}
+
 .rename-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 9px 14px;
+  gap: 8px;
+  padding: 6px 12px;
   border-top: 1px solid color-mix(in srgb, var(--outline-variant, #2e3447) 60%, transparent);
 }
 
 .operation-tag {
-  min-width: 58px;
-  border-radius: 4px;
-  padding: 2px 6px;
+  min-width: 52px;
+  border-radius: 3px;
+  padding: 2px 4px;
   font-size: 9px;
   text-align: center;
   font-weight: 600;
@@ -504,7 +559,7 @@ async function executeRename() {
   min-width: 0;
   flex: 1;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 8px;
+  gap: 6px;
   font-size: 10px;
 }
 
@@ -526,10 +581,10 @@ async function executeRename() {
 }
 
 .file-audit-list {
-  padding: 12px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-height: 280px;
   overflow-y: auto;
 }
@@ -538,21 +593,23 @@ async function executeRename() {
   background: var(--surface-container-low, #151b2d);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
-  padding: 8px 12px;
+  padding: 6px 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .video-badge {
   background: var(--primary-container, #8083ff) !important;
   color: #ffffff !important;
   border-color: var(--primary-container, #8083ff) !important;
+  font-size: 10px;
+  padding: 1px 5px;
 }
 
 .audit-path {
   flex: 1;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--on-surface, #dce1fb);
   white-space: nowrap;
   overflow: hidden;
@@ -560,7 +617,7 @@ async function executeRename() {
 }
 
 .audit-status {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .text-ok {
@@ -570,23 +627,23 @@ async function executeRename() {
 .probe-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 8px 12px;
 }
 
 .probe-pill {
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-sm, 0.25rem);
-  padding: 4px 8px;
+  padding: 3px 6px;
   background: var(--surface-container-low, #151b2d);
   color: var(--on-surface, #dce1fb);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .audit-alert {
   border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
 }
 
 .error-banner {
@@ -607,12 +664,12 @@ async function executeRename() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1px solid var(--outline-variant, #2e3447);
   background: var(--surface-container, #191f31);
   z-index: 10;
   margin-top: 8px;
-  border-radius: var(--radius-lg, 0.5rem);
+  border-radius: var(--radius-md, 0.375rem);
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -628,7 +685,7 @@ async function executeRename() {
   .card-header-bar {
     align-items: stretch;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
   .rename-paths {
     grid-template-columns: 1fr;

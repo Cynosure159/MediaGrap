@@ -21,7 +21,7 @@ describe('MovieFileAuditTab', () => {
     expect(wrapper.text()).toContain('HDR10')
 
     await wrapper.find('.btn-primary').trigger('click')
-    expect(wrapper.emitted('previewNaming')?.[0]).toEqual(['${title} (${year})'])
+    expect(wrapper.emitted('previewRename')?.[0]).toEqual(['${title} (${year})/${title} (${year})'])
   })
 
   it('shows filesystem safety warnings', () => {
