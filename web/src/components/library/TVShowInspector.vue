@@ -542,8 +542,11 @@ async function handleSaveAndWrite() {
         :banner-url="currentContextBannerUrl"
         :season-poster-url="seasonPosterUrl"
         :scoped-artwork="scopedArtwork"
+        :csrf-token="csrfToken"
+        :writable="detail.writable"
         :labels="labels"
         :episode-title-text="selectedUnitEpisode ? `${formatEpisodeCode(selectedUnitEpisode)} - ${episodeTitle(selectedUnitEpisode)}` : ''"
+        @applied="loadDetail(detail.show.id)"
       />
 
       <MovieCastTab

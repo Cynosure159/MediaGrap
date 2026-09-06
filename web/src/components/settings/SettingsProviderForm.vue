@@ -113,8 +113,23 @@ const emit = defineEmits<{ save: []; test: [target: ConnectionTest['target']] }>
               {{ labels.clearFanartTvApiKey }}
             </span>
           </label>
-		  <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.fanartTvApiKeyConfigured" @click="emit('test', 'fanart_tv')">{{ testingTarget === 'fanart_tv' ? labels.testingConnection : labels.testConnection }}</button>
-		  <p v-if="connectionTests.fanart_tv" class="test-result" :class="`test-result--${connectionTests.fanart_tv.status}`">{{ labels[`connection_${connectionTests.fanart_tv.status}`] }} · {{ connectionTests.fanart_tv.durationMs }} ms</p>
+          <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.fanartTvApiKeyConfigured" @click="emit('test', 'fanart_tv')">{{ testingTarget === 'fanart_tv' ? labels.testingConnection : labels.testConnection }}</button>
+          <p v-if="connectionTests.fanart_tv" class="test-result" :class="`test-result--${connectionTests.fanart_tv.status}`">{{ labels[`connection_${connectionTests.fanart_tv.status}`] }} · {{ connectionTests.fanart_tv.durationMs }} ms</p>
+        </div>
+
+        <div class="field-group">
+          <div class="field-header">
+            <label for="fanart-tv-personal-api-key" class="field-label">{{ labels.fanartTvPersonalApiKey }}</label>
+            <span class="status-pill" :class="settings?.fanartTvPersonalApiKeyConfigured ? 'status-pill--configured' : 'status-pill--unset'">
+              {{ settings?.fanartTvPersonalApiKeyConfigured ? labels.configured : labels.notSet }}
+            </span>
+          </div>
+          <input id="fanart-tv-personal-api-key" v-model="model.fanartTvPersonalApiKey" type="password" autocomplete="off" class="input-control font-code" :placeholder="settings?.fanartTvPersonalApiKeyConfigured ? labels.apiKeyConfigured : labels.fanartTvPersonalApiKeyPlaceholder" />
+          <p class="field-hint">{{ labels.fanartTvPersonalApiKeyHelp }}</p>
+          <label v-if="settings?.fanartTvPersonalApiKeyConfigured" class="custom-checkbox-row">
+            <input v-model="model.clearFanartTvPersonalApiKey" type="checkbox" class="sr-only" />
+            <span class="custom-checkbox-label">{{ labels.clearFanartTvPersonalApiKey }}</span>
+          </label>
         </div>
 
         <!-- Outbound Proxy -->

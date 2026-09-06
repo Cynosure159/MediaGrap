@@ -26,7 +26,16 @@ type Repository interface {
 	ListArtworkCandidates(ctx context.Context, itemID int64) ([]ArtworkCandidate, error)
 	GetArtworkCandidate(ctx context.Context, id string) (ArtworkCandidate, error)
 	SetArtworkAsset(ctx context.Context, asset ArtworkAsset, mediaItemID int64) error
+	ReplaceTVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int, candidates []TVArtworkCandidate) error
+	ListTVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int) ([]TVArtworkCandidate, error)
+	GetTVArtworkCandidate(ctx context.Context, id string) (TVArtworkCandidate, error)
+	SaveTVArtworkPlan(ctx context.Context, plan TVArtworkPlan) error
+	GetTVArtworkPlan(ctx context.Context, id string) (TVArtworkPlan, error)
+	UpdateTVArtworkPlanState(ctx context.Context, id, state string) error
+	ClaimTVArtworkPlan(ctx context.Context, id string) (bool, error)
+	SetTVArtworkAsset(ctx context.Context, asset TVArtworkAsset, showID int64) error
 	InsertAuditEntry(ctx context.Context, action string, mediaItemID int64, targetPath, detail string) error
+	InsertTVAuditEntry(ctx context.Context, action string, showID int64, targetPath, detail string) error
 }
 
 type sqliteRepository struct {
@@ -92,8 +101,8 @@ func (r *sqliteRepository) GetTVRecord(ctx context.Context, showID int64) (TVRec
 	var year, votes sql.NullInt64
 	var rating sql.NullFloat64
 	var genres, cast string
-	err := r.db.QueryRowContext(ctx, `SELECT show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at FROM tv_metadata WHERE show_id=?`, showID).
-		Scan(&record.ShowID, &record.Provider, &record.ProviderID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.Status, &record.Network, &cast, &record.UpdatedAt)
+	err := r.db.QueryRowContext(ctx, `SELECT show_id,provider,provider_id,tvdb_id,imdb_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at FROM tv_metadata WHERE show_id=?`, showID).
+		Scan(&record.ShowID, &record.Provider, &record.ProviderID, &record.TVDBID, &record.IMDbID, &record.Title, &record.OriginalTitle, &year, &record.Overview, &genres, &record.PosterURL, &record.BackdropURL, &rating, &votes, &record.Status, &record.Network, &cast, &record.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return normalizedTVRecord(TVRecord{ShowID: showID}), nil
 	}
@@ -147,7 +156,7 @@ func (r *sqliteRepository) SaveTVRecord(ctx context.Context, record TVRecord) er
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, `INSERT INTO tv_metadata(show_id,provider,provider_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(show_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,status=excluded.status,network=excluded.network,cast_json=excluded.cast_json,updated_at=datetime('now')`, record.ShowID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.Status), strings.TrimSpace(record.Network), string(cast))
+	_, err = tx.ExecContext(ctx, `INSERT INTO tv_metadata(show_id,provider,provider_id,tvdb_id,imdb_id,title,original_title,year,overview,genres_json,poster_url,backdrop_url,rating,votes,status,network,cast_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(show_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,tvdb_id=excluded.tvdb_id,imdb_id=excluded.imdb_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,status=excluded.status,network=excluded.network,cast_json=excluded.cast_json,updated_at=datetime('now')`, record.ShowID, record.Provider, record.ProviderID, strings.TrimSpace(record.TVDBID), strings.TrimSpace(record.IMDbID), strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.Status), strings.TrimSpace(record.Network), string(cast))
 	if err != nil {
 		return err
 	}
@@ -283,6 +292,129 @@ func (r *sqliteRepository) SetArtworkAsset(ctx context.Context, asset ArtworkAss
 	return err
 }
 
+func (r *sqliteRepository) ReplaceTVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int, candidates []TVArtworkCandidate) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tv_artwork_candidates WHERE show_id=? AND scope=? AND season_number=?`, showID, scope, nullableSeason(seasonNumber)); err != nil {
+		return err
+	}
+	for _, candidate := range candidates {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO tv_artwork_candidates(id,show_id,scope,season_number,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, candidate.ID, candidate.ShowID, candidate.Scope, nullableSeason(candidate.SeasonNumber), candidate.Provider, candidate.ProviderAssetID, candidate.Kind, candidate.SourceURL, candidate.PreviewURL, candidate.Language, candidate.Likes, candidate.Width, candidate.Height, candidate.MimeType, candidate.SortOrder); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *sqliteRepository) ListTVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int) ([]TVArtworkCandidate, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,show_id,scope,season_number,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type,sort_order FROM tv_artwork_candidates WHERE show_id=? AND scope=? AND season_number=? ORDER BY kind, sort_order, id`, showID, scope, nullableSeason(seasonNumber))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TVArtworkCandidate{}
+	for rows.Next() {
+		candidate, err := scanTVArtworkCandidate(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, candidate)
+	}
+	return items, rows.Err()
+}
+
+func (r *sqliteRepository) GetTVArtworkCandidate(ctx context.Context, id string) (TVArtworkCandidate, error) {
+	candidate, err := scanTVArtworkCandidate(r.db.QueryRowContext(ctx, `SELECT id,show_id,scope,season_number,provider,provider_asset_id,kind,source_url,preview_url,language,likes,width,height,mime_type,sort_order FROM tv_artwork_candidates WHERE id=?`, id))
+	if err != nil {
+		return TVArtworkCandidate{}, errors.New("TV artwork candidate not found")
+	}
+	return candidate, nil
+}
+
+func scanTVArtworkCandidate(scanner interface{ Scan(...any) error }) (TVArtworkCandidate, error) {
+	var candidate TVArtworkCandidate
+	var season sql.NullInt64
+	err := scanner.Scan(&candidate.ID, &candidate.ShowID, &candidate.Scope, &season, &candidate.Provider, &candidate.ProviderAssetID, &candidate.Kind, &candidate.SourceURL, &candidate.PreviewURL, &candidate.Language, &candidate.Likes, &candidate.Width, &candidate.Height, &candidate.MimeType, &candidate.SortOrder)
+	if season.Valid && season.Int64 >= 0 {
+		value := int(season.Int64)
+		candidate.SeasonNumber = &value
+	}
+	return candidate, err
+}
+
+func (r *sqliteRepository) SaveTVArtworkPlan(ctx context.Context, plan TVArtworkPlan) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO tv_artwork_plans(id,show_id,state) VALUES(?,?,?)`, plan.ID, plan.ShowID, plan.State); err != nil {
+		return err
+	}
+	for _, asset := range plan.Assets {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO tv_artwork_plan_assets(artwork_plan_id,scope,season_number,kind,candidate_id,provider,provider_asset_id,source_url,preview_url,language,likes,width,height,mime_type,target_path) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, asset.Scope, nullableSeason(asset.SeasonNumber), asset.Kind, asset.CandidateID, asset.Provider, asset.ProviderAssetID, asset.SourceURL, asset.PreviewURL, asset.Language, asset.Likes, asset.Width, asset.Height, asset.MimeType, asset.TargetPath); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *sqliteRepository) GetTVArtworkPlan(ctx context.Context, id string) (TVArtworkPlan, error) {
+	var plan TVArtworkPlan
+	if err := r.db.QueryRowContext(ctx, `SELECT id,show_id,state,created_at FROM tv_artwork_plans WHERE id=?`, id).Scan(&plan.ID, &plan.ShowID, &plan.State, &plan.CreatedAt); err != nil {
+		return TVArtworkPlan{}, errors.New("TV artwork plan not found")
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT scope,season_number,kind,candidate_id,provider,provider_asset_id,source_url,preview_url,language,likes,width,height,mime_type,target_path FROM tv_artwork_plan_assets WHERE artwork_plan_id=? ORDER BY id`, id)
+	if err != nil {
+		return TVArtworkPlan{}, err
+	}
+	defer rows.Close()
+	plan.Assets = []TVArtworkAsset{}
+	for rows.Next() {
+		var asset TVArtworkAsset
+		var season sql.NullInt64
+		if err := rows.Scan(&asset.Scope, &season, &asset.Kind, &asset.CandidateID, &asset.Provider, &asset.ProviderAssetID, &asset.SourceURL, &asset.PreviewURL, &asset.Language, &asset.Likes, &asset.Width, &asset.Height, &asset.MimeType, &asset.TargetPath); err != nil {
+			return TVArtworkPlan{}, err
+		}
+		if season.Valid && season.Int64 >= 0 {
+			value := int(season.Int64)
+			asset.SeasonNumber = &value
+		}
+		asset.WillReplace, asset.Conflict, _ = files.ValidateTarget(asset.TargetPath)
+		plan.Assets = append(plan.Assets, asset)
+	}
+	return plan, rows.Err()
+}
+
+func (r *sqliteRepository) UpdateTVArtworkPlanState(ctx context.Context, id, state string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE tv_artwork_plans SET state=?,applied_at=CASE WHEN ?='applied' THEN datetime('now') ELSE NULL END WHERE id=?`, state, state, id)
+	return err
+}
+
+func (r *sqliteRepository) ClaimTVArtworkPlan(ctx context.Context, id string) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE tv_artwork_plans SET state='queued',applied_at=NULL WHERE id=? AND state='previewed'`, id)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
+}
+
+func (r *sqliteRepository) SetTVArtworkAsset(ctx context.Context, asset TVArtworkAsset, showID int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO tv_artwork_assets(show_id,scope,season_number,kind,provider,provider_asset_id,target_path) VALUES(?,?,?,?,?,?,?) ON CONFLICT(show_id,scope,season_number,kind) DO UPDATE SET provider=excluded.provider,provider_asset_id=excluded.provider_asset_id,target_path=excluded.target_path,updated_at=datetime('now')`, showID, asset.Scope, nullableSeason(asset.SeasonNumber), asset.Kind, asset.Provider, asset.ProviderAssetID, asset.TargetPath)
+	return err
+}
+
+func nullableSeason(season *int) any {
+	if season == nil {
+		return -1
+	}
+	return *season
+}
+
 func (r *sqliteRepository) UpdateArtworkPlanState(ctx context.Context, id, state string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE artwork_plans SET state=?,applied_at=datetime('now') WHERE id=?`, state, id)
 	return err
@@ -290,6 +422,11 @@ func (r *sqliteRepository) UpdateArtworkPlanState(ctx context.Context, id, state
 
 func (r *sqliteRepository) InsertAuditEntry(ctx context.Context, action string, mediaItemID int64, targetPath, detail string) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO audit_entries(action,media_item_id,target_path,detail) VALUES(?,?,?,?)`, action, mediaItemID, targetPath, detail)
+	return err
+}
+
+func (r *sqliteRepository) InsertTVAuditEntry(ctx context.Context, action string, showID int64, targetPath, detail string) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO audit_entries(action,show_id,target_path,detail) VALUES(?,?,?,?)`, action, showID, targetPath, detail)
 	return err
 }
 

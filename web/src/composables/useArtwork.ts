@@ -52,7 +52,8 @@ export function useArtwork(
     }
   }
 
-  function select(candidate: api.ArtworkCandidate) {
+	function select(candidate: { id: string; kind: string }) {
+		if (!groups.value.some(group => group.kind === candidate.kind)) return
     selected[candidate.kind] = selected[candidate.kind] === candidate.id ? '' : candidate.id
   }
 

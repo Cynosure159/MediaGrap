@@ -42,7 +42,7 @@ type LibraryService interface {
 type MetadataService interface {
 	ConfigureTMDb(apiKey, language, proxy string) error
 	ConfigureFanart(apiKey, language, proxy string) error
-	ConfigureProviders(apiKey, fanartAPIKey, language, fallbackLanguage, proxy, noProxy string) error
+	ConfigureProviders(apiKey, fanartAPIKey, fanartPersonalAPIKey, language, fallbackLanguage, proxy, noProxy string) error
 	TestConnection(ctx context.Context, target string) metadata.ConnectionTest
 	Search(ctx context.Context, query string, year *int) ([]metadata.Candidate, error)
 	Select(ctx context.Context, itemID int64, providerID string) (metadata.Record, error)
@@ -60,6 +60,12 @@ type MetadataService interface {
 	OpenArtworkPreview(ctx context.Context, itemID int64, candidateID string) (metadata.ArtworkPreview, error)
 	PreviewArtworkSelection(ctx context.Context, itemID int64, selections []metadata.ArtworkSelection, mediaPath string, writable bool) (metadata.ArtworkPlan, error)
 	QueueArtwork(ctx context.Context, id string, allowed func(string) bool) (metadata.ArtworkPlan, error)
+	TVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int) ([]metadata.TVArtworkCandidate, error)
+	CachedTVArtworkCandidates(ctx context.Context, showID int64, scope string, seasonNumber *int) ([]metadata.TVArtworkCandidate, error)
+	OpenTVArtworkPreview(ctx context.Context, showID int64, candidateID string) (metadata.ArtworkPreview, error)
+	PreviewTVArtworkSelection(ctx context.Context, showID int64, scope string, seasonNumber *int, selections []metadata.TVArtworkSelection, showDirectory string, writable bool) (metadata.TVArtworkPlan, error)
+	TVArtworkPlan(ctx context.Context, id string) (metadata.TVArtworkPlan, error)
+	QueueTVArtwork(ctx context.Context, id string, allowed func(string) bool) (metadata.TVArtworkPlan, error)
 	SearchTV(ctx context.Context, query string, year *int) ([]metadata.Candidate, error)
 	TVRecord(ctx context.Context, showID int64) (metadata.TVRecord, error)
 	SaveTV(ctx context.Context, record metadata.TVRecord) (metadata.TVRecord, error)

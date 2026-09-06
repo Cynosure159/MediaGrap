@@ -29,6 +29,7 @@ Provider, proxy, media-source, and interface options are now available from the 
 | `MEDIAGRAP_OUTBOUND_PROXY` | Optional HTTP/HTTPS proxy URL for provider requests. |
 | `MEDIAGRAP_TMDB_LANGUAGE` | Default TMDb result/detail language and Fanart.tv artwork preference (`en-US` by default). |
 | `MEDIAGRAP_FANARTTV_API_KEY` | Optional Fanart.tv project API key. It is never returned from the API or logged. |
+| `MEDIAGRAP_FANARTTV_PERSONAL_API_KEY` | Optional Fanart.tv personal client key. It is never returned from the API or logged. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | Standard proxy environment variables used when `MEDIAGRAP_OUTBOUND_PROXY` is absent. |
 
 Add the TMDb key to the `environment` section of your private Compose override; do not commit it to this repository.

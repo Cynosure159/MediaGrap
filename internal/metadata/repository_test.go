@@ -78,6 +78,8 @@ func TestMetadataRepositoryTVRecordCRUD(t *testing.T) {
 		ShowID:        1,
 		Provider:      "tmdb",
 		ProviderID:    "67890",
+		TVDBID:        "81189",
+		IMDbID:        "tt0903747",
 		Title:         "Succession",
 		OriginalTitle: "Succession",
 		Year:          &year,
@@ -99,8 +101,43 @@ func TestMetadataRepositoryTVRecordCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTVRecord failed: %v", err)
 	}
-	if got.Title != "Succession" || got.Network != "HBO" || len(got.Episodes) != 1 || got.Episodes[0].Title != "Celebration" {
+	if got.Title != "Succession" || got.TVDBID != "81189" || got.IMDbID != "tt0903747" || got.Network != "HBO" || len(got.Episodes) != 1 || got.Episodes[0].Title != "Celebration" {
 		t.Fatalf("unexpected tv record: %+v", got)
+	}
+}
+
+func TestMetadataRepositoryTVArtworkCandidatesAndPlan(t *testing.T) {
+	repo := newTestMetadataRepo(t)
+	ctx := t.Context()
+	season := 1
+	candidate := TVArtworkCandidate{ID: "fanart:tv:1:season:1:season_poster:7", ShowID: 1, Scope: "season", SeasonNumber: &season, Provider: "fanart.tv", ProviderAssetID: "7", Kind: "season_poster", SourceURL: "https://assets.fanart.tv/fanart/tv/1/poster.jpg", PreviewURL: "https://assets.fanart.tv/preview/tv/1/poster.jpg", Language: "en", Likes: 4, Width: 1000, Height: 1426, MimeType: "image/jpeg"}
+	if err := repo.ReplaceTVArtworkCandidates(ctx, 1, "season", &season, []TVArtworkCandidate{candidate}); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := repo.ListTVArtworkCandidates(ctx, 1, "season", &season)
+	if err != nil || len(candidates) != 1 || candidates[0].SeasonNumber == nil || *candidates[0].SeasonNumber != 1 {
+		t.Fatalf("unexpected candidates: %#v, err=%v", candidates, err)
+	}
+	asset := TVArtworkAsset{ArtworkAsset: ArtworkAsset{Kind: candidate.Kind, CandidateID: candidate.ID, Provider: candidate.Provider, ProviderAssetID: candidate.ProviderAssetID, SourceURL: candidate.SourceURL, PreviewURL: candidate.PreviewURL, Language: candidate.Language, Likes: candidate.Likes, Width: candidate.Width, Height: candidate.Height, MimeType: candidate.MimeType, TargetPath: "/media/Show/season01-poster.jpg"}, Scope: "season", SeasonNumber: &season}
+	plan := TVArtworkPlan{ID: "plan-1", ShowID: 1, State: "previewed", Assets: []TVArtworkAsset{asset}}
+	if err := repo.SaveTVArtworkPlan(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := repo.GetTVArtworkPlan(ctx, plan.ID)
+	if err != nil || len(saved.Assets) != 1 || saved.Assets[0].Kind != "season_poster" {
+		t.Fatalf("unexpected plan: %#v, err=%v", saved, err)
+	}
+	claimed, err := repo.ClaimTVArtworkPlan(ctx, plan.ID)
+	if err != nil || !claimed {
+		t.Fatalf("expected pending plan to be claimed, claimed=%t err=%v", claimed, err)
+	}
+	claimed, err = repo.ClaimTVArtworkPlan(ctx, plan.ID)
+	if err != nil || claimed {
+		t.Fatalf("expected queued plan not to be claimed twice, claimed=%t err=%v", claimed, err)
+	}
+	saved, err = repo.GetTVArtworkPlan(ctx, plan.ID)
+	if err != nil || saved.State != "queued" {
+		t.Fatalf("expected queued plan, got %#v err=%v", saved, err)
 	}
 }
 

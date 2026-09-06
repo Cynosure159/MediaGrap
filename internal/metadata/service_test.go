@@ -415,6 +415,57 @@ func TestPreviewArtworkRejectsNonTMDbURLs(t *testing.T) {
 	}
 }
 
+func TestApplyTVArtworkWritesKodiSeasonTarget(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	db, err := database.Open(filepath.Join(t.TempDir(), "tv-artwork.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.ExecContext(ctx, `INSERT INTO sources(name,root_path) VALUES(?,?)`, "TV", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	result, err = db.ExecContext(ctx, `INSERT INTO tv_shows(source_id,relative_path,title_hint) VALUES(?,?,?)`, sourceID, "Example Show", "Example Show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	showID, _ := result.LastInsertId()
+	showDirectory := filepath.Join(root, "Example Show")
+	if err := os.MkdirAll(showDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/jpeg"}}, Body: io.NopCloser(bytes.NewReader([]byte{0xff, 0xd8, 0xff, 't', 'v'}))}, nil
+	})}
+	service := NewService(db, NewTMDb(nil, client, "key"))
+	season := 1
+	candidate := TVArtworkCandidate{ID: "tv-season-poster", ShowID: showID, Scope: "season", SeasonNumber: &season, Provider: "fanart.tv", ProviderAssetID: "7", Kind: "season_poster", SourceURL: "https://assets.fanart.tv/fanart/tv/81189/seasonposter/example.jpg", PreviewURL: "https://assets.fanart.tv/preview/tv/81189/seasonposter/example.jpg", MimeType: "image/jpeg"}
+	if err := service.repo.ReplaceTVArtworkCandidates(ctx, showID, "season", &season, []TVArtworkCandidate{candidate}); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.PreviewTVArtworkSelection(ctx, showID, "season", &season, []TVArtworkSelection{{Kind: "season_poster", CandidateID: candidate.ID}}, showDirectory, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, err := service.applyTVArtworkFiles(ctx, plan, func(int, string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.State != "applied" {
+		t.Fatalf("unexpected plan state: %s", applied.State)
+	}
+	contents, err := os.ReadFile(filepath.Join(showDirectory, "season01-poster.jpg"))
+	if err != nil || !bytes.Equal(contents, []byte{0xff, 0xd8, 0xff, 't', 'v'}) {
+		t.Fatalf("unexpected TV artwork: %x, %v", contents, err)
+	}
+}
+
 func TestOpenArtworkPreviewUsesServerArtworkClient(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

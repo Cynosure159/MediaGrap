@@ -5,7 +5,8 @@ The authenticated **Settings** page keeps operational configuration out of the m
 ## Provider settings
 
 - A TMDb v3 API key can be supplied and changed at runtime. The API never returns the saved value; it only reports whether one is configured.
-- An optional Fanart.tv project API key can be supplied and changed at runtime. It is used for movie artwork candidates and is never returned; the API only reports whether one is configured.
+- An optional Fanart.tv project API key can be supplied and changed at runtime. It is used for movie and TV artwork candidates and is never returned; the API only reports whether one is configured.
+- A separate optional Fanart.tv personal client key can be stored for earlier access to newly approved artwork. It is sent only from the server and is never returned or logged.
 - TMDb search and detail requests use the selected information language. A separate fallback language fills missing translated title/overview fields on detail requests.
 - An optional HTTP, HTTPS, `socks5://`, or `socks5h://` outbound proxy applies to provider and artwork requests immediately after saving. Proxy values and credentials are never returned.
 - Comma-separated `NO_PROXY` host/domain/IP rules bypass the configured proxy. The API reports only whether rules exist.
@@ -18,6 +19,7 @@ Settings are stored in the SQLite database on the `/config` volume. Protect that
 | --- | --- |
 | `MEDIAGRAP_TMDB_API_KEY` | First-run TMDb v3 API key fallback. |
 | `MEDIAGRAP_FANARTTV_API_KEY` | First-run Fanart.tv project API key fallback. |
+| `MEDIAGRAP_FANARTTV_PERSONAL_API_KEY` | Optional first-run Fanart.tv personal client-key fallback. |
 | `MEDIAGRAP_TMDB_LANGUAGE` | First-run TMDb information language; defaults to `en-US`. |
 | `MEDIAGRAP_FALLBACK_LANGUAGE` | First-run metadata fallback language; defaults to `en-US`. |
 | `MEDIAGRAP_OUTBOUND_PROXY` | First-run HTTP/HTTPS/SOCKS5 outbound-proxy fallback. |

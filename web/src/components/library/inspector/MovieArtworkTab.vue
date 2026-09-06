@@ -287,6 +287,7 @@ const resolvedBannerUrl = computed(() => {
       :writable="writable"
       :error="error"
       :existing-kinds="existingArtworkKinds"
+	  :preview-url="candidate => api.artworkPreviewUrl(props.itemId, candidate.id)"
       @close="isCandidateDialogOpen = false"
       @scrape="scrape"
       @select="select"

@@ -51,6 +51,9 @@ func TestSearchTVAndDetails(t *testing.T) {
 		case "/tv/1396":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":1396,"name":"Breaking Bad","original_name":"Breaking Bad","first_air_date":"2008-01-20","overview":"A chemistry teacher...","status":"Ended","vote_average":9.5,"vote_count":12000,"genres":[{"name":"Crime"}],"networks":[{"name":"AMC"}],"credits":{"cast":[{"name":"Bryan Cranston","character":"Walter White","profile_path":"/walter.jpg"}]},"seasons":[{"season_number":1}]}`))
+		case "/tv/1396/external_ids":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tvdb_id":81189,"imdb_id":"tt0903747"}`))
 		case "/tv/1396/season/1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"episodes":[{"episode_number":1,"name":"Pilot","overview":"Walter White turns to crime...","air_date":"2008-01-20","runtime":58,"still_path":"/pilot.jpg"}]}`))
@@ -75,7 +78,7 @@ func TestSearchTVAndDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TV details failed: %v", err)
 	}
-	if details.Title != "Breaking Bad" || details.Network != "AMC" || len(details.Cast) != 1 {
+	if details.Title != "Breaking Bad" || details.Network != "AMC" || len(details.Cast) != 1 || details.TVDBID != "81189" {
 		t.Fatalf("unexpected TV details: %+v", details)
 	}
 

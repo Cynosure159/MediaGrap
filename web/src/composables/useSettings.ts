@@ -5,17 +5,19 @@ export function useSettings(csrfToken: () => string) {
   const settings = shallowRef<api.Settings | null>(null)
   const error = shallowRef<string | null>(null)
   const isLoading = shallowRef(false)
-  const providerForm = reactive<api.SettingsUpdate>({ tmdbApiKey: '', clearTmdbApiKey: false, fanartTvApiKey: '', clearFanartTvApiKey: false, tmdbLanguage: 'en-US', fallbackLanguage: 'en-US', outboundProxy: '', clearOutboundProxy: false, noProxy: '', clearNoProxy: false, theme: 'dark', locale: 'en' })
+  const providerForm = reactive<api.SettingsUpdate>({ tmdbApiKey: '', clearTmdbApiKey: false, fanartTvApiKey: '', clearFanartTvApiKey: false, fanartTvPersonalApiKey: '', clearFanartTvPersonalApiKey: false, tmdbLanguage: 'en-US', fallbackLanguage: 'en-US', outboundProxy: '', clearOutboundProxy: false, noProxy: '', clearNoProxy: false, theme: 'dark', locale: 'en' })
 	const connectionTests = reactive<Record<string, api.ConnectionTest | null>>({ tmdb: null, fanart_tv: null, proxy: null })
 	const testingTarget = shallowRef<string | null>(null)
 
   function resetSensitiveFields() {
     providerForm.tmdbApiKey = ''
     providerForm.fanartTvApiKey = ''
+    providerForm.fanartTvPersonalApiKey = ''
     providerForm.outboundProxy = ''
     providerForm.noProxy = ''
     providerForm.clearTmdbApiKey = false
     providerForm.clearFanartTvApiKey = false
+    providerForm.clearFanartTvPersonalApiKey = false
     providerForm.clearOutboundProxy = false
     providerForm.clearNoProxy = false
   }

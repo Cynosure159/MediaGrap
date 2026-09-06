@@ -156,6 +156,8 @@ export interface TVMetadata {
   showId: number
   provider: string
   providerId: string
+	  tvdbId?: string
+	  imdbId?: string
   title: string
   originalTitle: string
   year: number | null
@@ -203,6 +205,7 @@ export interface AuditEntry {
   id: number
   action: string
   mediaItemId?: number
+  showId?: number
   target: string
   detail: string
   outcome: 'previewed' | 'applied' | 'recorded' | string
@@ -319,9 +322,43 @@ export interface ArtworkPlan {
   assets: ArtworkAsset[]
 }
 
+export type TVArtworkKind = 'poster' | 'fanart' | 'clearlogo' | 'logo' | 'clearart' | 'banner' | 'landscape' | 'character' | 'season_poster' | 'season_banner' | 'season_landscape'
+
+export interface TVArtworkCandidate {
+  id: string
+  showId: number
+  scope: 'show' | 'season'
+  seasonNumber?: number
+  provider: string
+  providerAssetId: string
+  kind: TVArtworkKind
+  sourceUrl: string
+  previewUrl: string
+  language: string
+  likes: number
+  width: number
+  height: number
+  mimeType: string
+}
+
+export interface TVArtworkAsset extends Omit<ArtworkAsset, 'kind'> {
+  kind: TVArtworkKind
+  scope: 'show' | 'season'
+  seasonNumber?: number
+}
+
+export interface TVArtworkPlan {
+  id: string
+  showId: number
+  state: string
+  createdAt: string
+  assets: TVArtworkAsset[]
+}
+
 export interface Settings {
   tmdbApiKeyConfigured: boolean
   fanartTvApiKeyConfigured: boolean
+  fanartTvPersonalApiKeyConfigured?: boolean
   outboundProxyConfigured: boolean
   tmdbLanguage: string
   fallbackLanguage: string
@@ -336,6 +373,8 @@ export interface SettingsUpdate {
   clearTmdbApiKey: boolean
   fanartTvApiKey: string
   clearFanartTvApiKey: boolean
+  fanartTvPersonalApiKey: string
+  clearFanartTvPersonalApiKey: boolean
   tmdbLanguage: string
   fallbackLanguage: string
   outboundProxy: string

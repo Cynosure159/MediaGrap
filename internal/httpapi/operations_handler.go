@@ -18,6 +18,7 @@ type auditEntryView struct {
 	ID             int64  `json:"id"`
 	Action         string `json:"action"`
 	MediaItemID    *int64 `json:"mediaItemId,omitempty"`
+	ShowID         *int64 `json:"showId,omitempty"`
 	Target         string `json:"target"`
 	Detail         string `json:"detail"`
 	Outcome        string `json:"outcome"`
@@ -108,7 +109,7 @@ func (s *server) listAuditEntries(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT id,action,media_item_id,target_path,detail,outcome,backup_path,recoverability,created_at FROM audit_entries ORDER BY id DESC LIMIT 200`)
+	rows, err := s.db.QueryContext(r.Context(), `SELECT id,action,media_item_id,show_id,target_path,detail,outcome,backup_path,recoverability,created_at FROM audit_entries ORDER BY id DESC LIMIT 200`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to list audit entries")
 		return
@@ -117,14 +118,17 @@ func (s *server) listAuditEntries(w http.ResponseWriter, r *http.Request) {
 	items := make([]auditEntryView, 0)
 	for rows.Next() {
 		var item auditEntryView
-		var mediaID sql.NullInt64
+		var mediaID, showID sql.NullInt64
 		var target, backup string
-		if err := rows.Scan(&item.ID, &item.Action, &mediaID, &target, &item.Detail, &item.Outcome, &backup, &item.Recoverability, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Action, &mediaID, &showID, &target, &item.Detail, &item.Outcome, &backup, &item.Recoverability, &item.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "Unable to read audit entries")
 			return
 		}
 		if mediaID.Valid {
 			item.MediaItemID = &mediaID.Int64
+		}
+		if showID.Valid {
+			item.ShowID = &showID.Int64
 		}
 		item.Target = safeAuditPath(target)
 		item.Backup = safeAuditPath(backup)

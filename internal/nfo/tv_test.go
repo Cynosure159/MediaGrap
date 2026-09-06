@@ -16,6 +16,7 @@ func TestTVShowAndEpisodeRoundTrip(t *testing.T) {
 		Plot:          "A great series.",
 		Genres:        []string{"Action", "Thriller"},
 		TMDbID:        "67890",
+		TVDBID:        "81189",
 		PosterURL:     "https://image.tmdb.org/t/p/original/tv_poster.jpg",
 		BackdropURL:   "https://image.tmdb.org/t/p/original/tv_backdrop.jpg",
 		Rating:        &rating,
@@ -33,7 +34,7 @@ func TestTVShowAndEpisodeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTVShow: %v", err)
 	}
-	if parsedShow.Title != show.Title || parsedShow.Network != "HBO" || parsedShow.Status != "Ended" || len(parsedShow.Cast) != 1 {
+	if parsedShow.Title != show.Title || parsedShow.TVDBID != "81189" || parsedShow.Network != "HBO" || parsedShow.Status != "Ended" || len(parsedShow.Cast) != 1 {
 		t.Fatalf("show mismatch: %+v vs %+v", parsedShow, show)
 	}
 
@@ -68,5 +69,15 @@ func TestTVShowAndEpisodeRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(string(seasonXML), "<title>Season 1</title>") || !strings.Contains(string(seasonXML), "<season>1</season>") {
 		t.Fatalf("season xml mismatch: %s", string(seasonXML))
+	}
+}
+
+func TestParseTVShowReadsLegacyTVDBID(t *testing.T) {
+	show, err := ParseTVShow([]byte(`<tvshow><title>Example</title><tvdbid>121361</tvdbid></tvshow>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.TVDBID != "121361" {
+		t.Fatalf("unexpected TVDB id: %q", show.TVDBID)
 	}
 }

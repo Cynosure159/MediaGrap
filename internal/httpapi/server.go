@@ -111,6 +111,10 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/tv/shows/{id}/seasons/{season}/episodes/{episode}/scrape", application.scrapeTVEpisode)
 	mux.HandleFunc("POST /api/v1/tv/shows/{id}/nfo-plans", application.previewTVNFOPlans)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}/nfo", application.getTVNFORaw)
+	mux.HandleFunc("GET /api/v1/tv/shows/{id}/artwork-candidates", application.getTVArtworkCandidates)
+	mux.HandleFunc("POST /api/v1/tv/shows/{id}/artwork-candidates", application.scrapeTVArtworkCandidates)
+	mux.HandleFunc("GET /api/v1/tv/shows/{id}/artwork-preview/{candidate}", application.getTVArtworkPreview)
+	mux.HandleFunc("POST /api/v1/tv/shows/{id}/artwork-plans", application.previewTVArtworkPlan)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}/poster", application.getTVShowPoster)
 	mux.HandleFunc("GET /api/v1/tv/shows/{id}/artwork/{asset}", application.getTVArtwork)
 
@@ -119,7 +123,9 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/write-plans/{id}/apply", application.applyWritePlan)
 	mux.HandleFunc("GET /api/v1/artwork-plans/{id}", application.getArtworkPlan)
 	mux.HandleFunc("POST /api/v1/artwork-plans/{id}/apply", application.applyArtworkPlan)
-	
+	mux.HandleFunc("GET /api/v1/tv/artwork-plans/{id}", application.getTVArtworkPlan)
+	mux.HandleFunc("POST /api/v1/tv/artwork-plans/{id}/apply", application.applyTVArtworkPlan)
+
 	// Rename Plans
 	mux.HandleFunc("POST /api/v1/media/{id}/rename-plans", application.previewMediaRenamePlan)
 	mux.HandleFunc("POST /api/v1/tv/shows/{id}/rename-plans", application.previewTVRenamePlan)

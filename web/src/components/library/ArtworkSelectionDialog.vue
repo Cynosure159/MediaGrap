@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
-import type { ArtworkCandidate } from '@/api/library'
-import ArtworkCandidateGallery from './ArtworkCandidateGallery.vue'
+import ArtworkCandidateGallery, { type ArtworkCandidateView } from './ArtworkCandidateGallery.vue'
 
 const props = defineProps<{
-  groups: { kind: ArtworkCandidate['kind']; items: ArtworkCandidate[] }[]
+  groups: { kind: string; items: ArtworkCandidateView[] }[]
   selected: Record<string, string>
   labels: Record<string, string>
   loading: boolean
   writable: boolean
   error?: string | null
-  existingKinds?: Partial<Record<ArtworkCandidate['kind'], boolean>>
+  previewUrl?: (candidate: ArtworkCandidateView) => string
+  existingKinds?: Partial<Record<string, boolean>>
 }>()
 
 const emit = defineEmits<{
   close: []
   scrape: []
-  select: [candidate: ArtworkCandidate]
+  select: [candidate: ArtworkCandidateView]
   preview: []
 }>()
 
@@ -80,6 +80,7 @@ onBeforeUnmount(() => {
             :groups="groups"
             :selected="selected"
             :labels="labels"
+            :preview-url="previewUrl"
             :existing-kinds="existingKinds"
             @select="emit('select', $event)"
           />

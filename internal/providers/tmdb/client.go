@@ -47,6 +47,8 @@ type Person struct {
 
 type TVDetails struct {
 	Candidate
+	TVDBID      string   `json:"tvdbId"`
+	IMDbID      string   `json:"imdbId"`
 	Genres      []string `json:"genres"`
 	BackdropURL string   `json:"backdropUrl"`
 	Rating      *float64 `json:"rating"`
@@ -429,6 +431,13 @@ func (c *Client) TV(ctx context.Context, id string) (TVDetails, error) {
 	if err := c.get(ctx, "/tv/"+url.PathEscape(id), params, &result); err != nil {
 		return TVDetails{}, err
 	}
+	var externalIDs struct {
+		TVDBID int    `json:"tvdb_id"`
+		IMDbID string `json:"imdb_id"`
+	}
+	if err := c.get(ctx, "/tv/"+url.PathEscape(id)+"/external_ids", url.Values{"api_key": {apiKey}}, &externalIDs); err != nil {
+		c.logger.Warn("TMDb TV external IDs lookup failed", "tv_id", id, "error", err)
+	}
 	if fallback := c.fallback(); strings.TrimSpace(result.Overview) == "" && fallback != "" && fallback != language {
 		var translated tmdbTV
 		fallbackParams := url.Values{"api_key": {apiKey}, "language": {fallback}, "append_to_response": {"credits"}}
@@ -453,8 +462,11 @@ func (c *Client) TV(ctx context.Context, id string) (TVDetails, error) {
 	if len(result.Networks) > 0 {
 		network = strings.TrimSpace(result.Networks[0].Name)
 	}
-	details := TVDetails{Candidate: result.candidate(), Genres: genres, BackdropURL: imageURL(result.BackdropPath), Rating: optionalFloat(result.VoteAverage), Votes: optionalInt(result.VoteCount), Status: strings.TrimSpace(result.Status), Network: network, Cast: cast}
-	c.logger.Info("TMDb TV details mapped", "tv_id", id, "season_count", len(result.Seasons), "cast_count", len(cast), "has_rating", details.Rating != nil)
+	details := TVDetails{Candidate: result.candidate(), TVDBID: strconv.Itoa(externalIDs.TVDBID), IMDbID: strings.TrimSpace(externalIDs.IMDbID), Genres: genres, BackdropURL: imageURL(result.BackdropPath), Rating: optionalFloat(result.VoteAverage), Votes: optionalInt(result.VoteCount), Status: strings.TrimSpace(result.Status), Network: network, Cast: cast}
+	if externalIDs.TVDBID == 0 {
+		details.TVDBID = ""
+	}
+	c.logger.Info("TMDb TV details mapped", "tv_id", id, "tvdb_id", details.TVDBID, "season_count", len(result.Seasons), "cast_count", len(cast), "has_rating", details.Rating != nil)
 	return details, nil
 }
 

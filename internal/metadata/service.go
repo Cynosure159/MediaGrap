@@ -108,6 +108,8 @@ type TVRecord struct {
 	ShowID        int64              `json:"showId"`
 	Provider      string             `json:"provider"`
 	ProviderID    string             `json:"providerId"`
+	TVDBID        string             `json:"tvdbId"`
+	IMDbID        string             `json:"imdbId"`
 	Title         string             `json:"title"`
 	OriginalTitle string             `json:"originalTitle"`
 	Year          *int               `json:"year"`
@@ -202,7 +204,7 @@ func (s *Service) ConfigureFanart(apiKey, language, proxy string) error {
 	return nil
 }
 
-func (s *Service) ConfigureProviders(apiKey, fanartAPIKey, language, fallbackLanguage, proxy, noProxy string) error {
+func (s *Service) ConfigureProviders(apiKey, fanartAPIKey, fanartPersonalAPIKey, language, fallbackLanguage, proxy, noProxy string) error {
 	client, err := NewOutboundClient(proxy, noProxy)
 	if err != nil {
 		return err
@@ -216,8 +218,8 @@ func (s *Service) ConfigureProviders(apiKey, fanartAPIKey, language, fallbackLan
 	s.artworkClient = client
 	s.artworkMu.Unlock()
 	if s.fanart != nil {
-		s.fanart.Configure(client, fanartAPIKey, language)
-	} else if strings.TrimSpace(fanartAPIKey) != "" {
+		s.fanart.ConfigureKeys(client, fanartAPIKey, fanartPersonalAPIKey, language)
+	} else if strings.TrimSpace(fanartAPIKey) != "" || strings.TrimSpace(fanartPersonalAPIKey) != "" {
 		return errors.New("Fanart.tv provider is unavailable")
 	}
 	return nil
@@ -257,6 +259,7 @@ func (s *Service) SetJobService(queue artworkJobQueue) {
 	s.jobQueue = queue
 	if queue != nil {
 		queue.RegisterJobHandler("artwork_download", s.handleArtworkDownloadJob)
+		queue.RegisterJobHandler("tv_artwork_download", s.handleTVArtworkDownloadJob)
 	}
 }
 
@@ -318,6 +321,13 @@ func (s *Service) SelectTV(ctx context.Context, showID int64, providerID string,
 		s.logger.Warn("TMDb TV metadata replacement failed", "show_id", showID, "provider_id", providerID, "error", err)
 		return TVRecord{}, err
 	}
+	existing, _ := s.TVRecord(ctx, showID)
+	if details.TVDBID == "" {
+		details.TVDBID = existing.TVDBID
+	}
+	if details.IMDbID == "" {
+		details.IMDbID = existing.IMDbID
+	}
 	episodes := make([]TVEpisodeDetails, 0)
 	for _, season := range seasons {
 		remote, fetchErr := provider.TVSeason(ctx, providerID, season)
@@ -327,7 +337,7 @@ func (s *Service) SelectTV(ctx context.Context, showID int64, providerID string,
 		}
 		episodes = append(episodes, remote...)
 	}
-	record := TVRecord{ShowID: showID, Provider: "tmdb", ProviderID: details.ID, Title: details.Title, OriginalTitle: details.OriginalTitle, Year: details.Year, Overview: details.Overview, Genres: details.Genres, PosterURL: details.PosterURL, BackdropURL: details.BackdropURL, Rating: details.Rating, Votes: details.Votes, Status: details.Status, Network: details.Network, Cast: details.Cast, Episodes: episodes}
+	record := TVRecord{ShowID: showID, Provider: "tmdb", ProviderID: details.ID, TVDBID: details.TVDBID, IMDbID: details.IMDbID, Title: details.Title, OriginalTitle: details.OriginalTitle, Year: details.Year, Overview: details.Overview, Genres: details.Genres, PosterURL: details.PosterURL, BackdropURL: details.BackdropURL, Rating: details.Rating, Votes: details.Votes, Status: details.Status, Network: details.Network, Cast: details.Cast, Episodes: episodes}
 	saved, err := s.SaveTV(ctx, record)
 	if err != nil {
 		s.logger.Warn("TMDb TV metadata replacement save failed", "show_id", showID, "error", err)
@@ -478,7 +488,7 @@ func (s *Service) ReadExistingTVNFO(showID int64, inputs []TVNFOInput) (TVRecord
 				return TVRecord{}, false, errors.New("existing TV show NFO has no title")
 			}
 			record.Title, record.OriginalTitle, record.Year, record.Overview = show.Title, show.OriginalTitle, show.Year, show.Plot
-			record.ProviderID, record.Genres, record.PosterURL, record.BackdropURL = show.TMDbID, show.Genres, show.PosterURL, show.BackdropURL
+			record.ProviderID, record.TVDBID, record.Genres, record.PosterURL, record.BackdropURL = show.TMDbID, show.TVDBID, show.Genres, show.PosterURL, show.BackdropURL
 			record.Rating, record.Votes, record.Status, record.Network, record.Cast = show.Rating, show.Votes, show.Status, show.Network, metadataPeople(show.Cast)
 			found = true
 		case "episode":
@@ -583,7 +593,7 @@ func (s *Service) PreviewTVNFO(ctx context.Context, record TVRecord, inputs []TV
 func tvNFOContent(record TVRecord, input TVNFOInput) ([]byte, error) {
 	switch input.Kind {
 	case "show":
-		return nfo.WriteTVShow(nfo.TVShow{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Genres: record.Genres, TMDbID: record.ProviderID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, Status: record.Status, Network: record.Network, Cast: kodiPeople(record.Cast)})
+		return nfo.WriteTVShow(nfo.TVShow{Title: record.Title, OriginalTitle: record.OriginalTitle, Year: record.Year, Plot: record.Overview, Genres: record.Genres, TMDbID: record.ProviderID, TVDBID: record.TVDBID, PosterURL: record.PosterURL, BackdropURL: record.BackdropURL, Rating: record.Rating, Votes: record.Votes, Status: record.Status, Network: record.Network, Cast: kodiPeople(record.Cast)})
 	case "season":
 		return nfo.WriteSeason(fmt.Sprintf("Season %d", input.SeasonNumber), input.SeasonNumber)
 	case "episode":
@@ -878,7 +888,11 @@ func (s *Service) OpenArtworkPreview(ctx context.Context, itemID int64, candidat
 	if err != nil || candidate.MediaItemID != itemID {
 		return ArtworkPreview{}, errors.New("artwork candidate not found")
 	}
-	if err := validateArtworkSource(candidate.Provider, candidate.PreviewURL); err != nil {
+	return s.openArtworkPreview(ctx, candidate.Provider, candidate.PreviewURL)
+}
+
+func (s *Service) openArtworkPreview(ctx context.Context, provider, previewURL string) (ArtworkPreview, error) {
+	if err := validateArtworkSource(provider, previewURL); err != nil {
 		return ArtworkPreview{}, err
 	}
 	s.artworkMu.RLock()
@@ -887,7 +901,7 @@ func (s *Service) OpenArtworkPreview(ctx context.Context, itemID int64, candidat
 	if client == nil {
 		return ArtworkPreview{}, errors.New("artwork client is unavailable")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, candidate.PreviewURL, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, previewURL, nil)
 	if err != nil {
 		return ArtworkPreview{}, errors.New("create artwork preview request")
 	}

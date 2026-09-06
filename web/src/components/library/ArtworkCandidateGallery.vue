@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import * as api from '@/api/library'
-import type { ArtworkCandidate } from '@/api/library'
+export interface ArtworkCandidateView {
+  id: string
+  kind: string
+  language: string
+  likes: number
+  width: number
+  height: number
+}
 
-defineProps<{
-  groups: { kind: ArtworkCandidate['kind']; items: ArtworkCandidate[] }[]
+const props = defineProps<{
+  groups: { kind: string; items: ArtworkCandidateView[] }[]
   selected: Record<string, string>
   labels: Record<string, string>
-  existingKinds?: Partial<Record<ArtworkCandidate['kind'], boolean>>
+  previewUrl?: (candidate: ArtworkCandidateView) => string
+  existingKinds?: Partial<Record<string, boolean>>
 }>()
-const emit = defineEmits<{ select: [candidate: ArtworkCandidate] }>()
+const emit = defineEmits<{ select: [candidate: ArtworkCandidateView] }>()
 
-function labelFor(kind: ArtworkCandidate['kind'], labels: Record<string, string>) {
-  const keys: Record<ArtworkCandidate['kind'], string> = { poster: 'poster', fanart: 'fanart', clearlogo: 'clearLogo', clearart: 'clearArt', discart: 'discArt', banner: 'banner', landscape: 'landscape' }
+function labelFor(kind: string, labels: Record<string, string>) {
+  const keys: Record<string, string> = { poster: 'poster', fanart: 'fanart', clearlogo: 'clearLogo', logo: 'logo', clearart: 'clearArt', discart: 'discArt', banner: 'banner', landscape: 'landscape', character: 'character', season_poster: 'seasonPoster', season_banner: 'seasonBanner', season_landscape: 'seasonLandscape' }
   return labels[keys[kind]] || kind
+}
+
+function candidatePreviewUrl(candidate: ArtworkCandidateView) {
+  return props.previewUrl?.(candidate) ?? ''
 }
 </script>
 
@@ -36,7 +47,7 @@ function labelFor(kind: ArtworkCandidate['kind'], labels: Record<string, string>
       </div>
       <div class="candidate-grid">
         <button v-for="candidate in group.items" :key="candidate.id" type="button" class="candidate-card" :class="{ selected: selected[group.kind] === candidate.id }" @click="emit('select', candidate)">
-          <img :src="api.artworkPreviewUrl(candidate.mediaItemId, candidate.id)" :alt="labelFor(group.kind, labels)" loading="lazy">
+          <img :src="candidatePreviewUrl(candidate)" :alt="labelFor(group.kind, labels)" loading="lazy">
           <span class="candidate-meta"><b>{{ selected[group.kind] === candidate.id ? labels.artworkSelected : labels.artworkSelect }}</b><small>{{ candidate.width }}×{{ candidate.height }} · {{ candidate.language || '00' }} · ♥ {{ candidate.likes }}</small></span>
         </button>
       </div>

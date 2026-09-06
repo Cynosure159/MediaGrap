@@ -17,19 +17,20 @@ const (
 )
 
 type Config struct {
-	ConfigDir        string
-	CacheDir         string
-	Listen           string
-	LogFormat        string
-	LogLevel         string
-	MediaRoots       []string
-	TMDbAPIKey       string
-	FanartTVAPIKey   string
-	TMDbLanguage     string
-	FallbackLanguage string
-	OutboundProxy    string
-	NoProxy          string
-	FFprobePath      string
+	ConfigDir              string
+	CacheDir               string
+	Listen                 string
+	LogFormat              string
+	LogLevel               string
+	MediaRoots             []string
+	TMDbAPIKey             string
+	FanartTVAPIKey         string
+	FanartTVPersonalAPIKey string
+	TMDbLanguage           string
+	FallbackLanguage       string
+	OutboundProxy          string
+	NoProxy                string
+	FFprobePath            string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -58,6 +59,7 @@ func LoadConfig(args []string) (Config, error) {
 	config.MediaRoots = cleanMediaRoots(envOrDefault("MEDIAGRAP_MEDIA_ROOTS", "/media"))
 	config.TMDbAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_TMDB_API_KEY"))
 	config.FanartTVAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_FANARTTV_API_KEY"))
+	config.FanartTVPersonalAPIKey = strings.TrimSpace(os.Getenv("MEDIAGRAP_FANARTTV_PERSONAL_API_KEY"))
 	config.TMDbLanguage = envOrDefault("MEDIAGRAP_TMDB_LANGUAGE", "en-US")
 	config.FallbackLanguage = envOrDefault("MEDIAGRAP_FALLBACK_LANGUAGE", "en-US")
 	config.OutboundProxy = strings.TrimSpace(os.Getenv("MEDIAGRAP_OUTBOUND_PROXY"))

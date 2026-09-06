@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -14,6 +15,12 @@ import (
 	"github.com/mediagrap/mediagrap/internal/library"
 	"github.com/mediagrap/mediagrap/internal/metadata"
 )
+
+type tvArtworkPlanRequest struct {
+	Scope        string                        `json:"scope"`
+	SeasonNumber *int                          `json:"seasonNumber"`
+	Selections   []metadata.TVArtworkSelection `json:"selections"`
+}
 
 func (s *server) listTVShows(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r, false); !ok {
@@ -98,6 +105,127 @@ func (s *server) getTVShow(w http.ResponseWriter, r *http.Request) {
 
 func tvArtworkURL(showID int64, assetID string) string {
 	return "/api/v1/tv/shows/" + strconv.FormatInt(showID, 10) + "/artwork/" + assetID
+}
+
+func (s *server) getTVArtworkCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	showID, scope, seasonNumber, ok := tvArtworkTargetScope(w, r)
+	if !ok {
+		return
+	}
+	items, err := s.metadata.CachedTVArtworkCandidates(r.Context(), showID, scope, seasonNumber)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "tv_artwork_candidates_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *server) scrapeTVArtworkCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	showID, scope, seasonNumber, ok := tvArtworkTargetScope(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.library.TVShow(r.Context(), showID); err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return
+	}
+	items, err := s.metadata.TVArtworkCandidates(r.Context(), showID, scope, seasonNumber)
+	if err != nil {
+		s.logger.Warn("TV artwork candidates scrape failed", "show_id", showID, "scope", scope, "season_number", seasonNumber, "error", err)
+		writeError(w, http.StatusBadRequest, "tv_artwork_candidates_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *server) getTVArtworkPreview(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	showID, _, _, ok := tvArtworkTargetScope(w, r)
+	if !ok {
+		return
+	}
+	preview, err := s.metadata.OpenTVArtworkPreview(r.Context(), showID, r.PathValue("candidate"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "tv_artwork_preview_failed", err.Error())
+		return
+	}
+	defer preview.Body.Close()
+	w.Header().Set("Content-Type", preview.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if preview.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(preview.ContentLength, 10))
+	}
+	_, _ = io.Copy(w, preview.Body)
+}
+
+func (s *server) previewTVArtworkPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	showID, _, _, ok := tvArtworkTargetScope(w, r)
+	if !ok {
+		return
+	}
+	var body tvArtworkPlanRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Scope == "" {
+		body.Scope = "show"
+	}
+	detail, err := s.library.TVShow(r.Context(), showID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "show_not_found", "TV show not found")
+		return
+	}
+	root, err := s.tvSourceRoot(r.Context(), detail.Show.SourceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "source_not_found", "TV source not found")
+		return
+	}
+	plan, err := s.metadata.PreviewTVArtworkSelection(r.Context(), showID, body.Scope, body.SeasonNumber, body.Selections, filepath.Join(root, detail.Show.RelativePath), detail.Writable)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "tv_artwork_preview_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, plan)
+}
+
+func tvArtworkTargetScope(w http.ResponseWriter, r *http.Request) (int64, string, *int, bool) {
+	showID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || showID < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_show", "Invalid TV show id")
+		return 0, "", nil, false
+	}
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if scope == "" {
+		scope = "show"
+	}
+	var seasonNumber *int
+	if raw := strings.TrimSpace(r.URL.Query().Get("season")); raw != "" {
+		value, parseErr := strconv.Atoi(raw)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_season", "Invalid season number")
+			return 0, "", nil, false
+		}
+		seasonNumber = &value
+	}
+	if scope == "show" && seasonNumber == nil {
+		return showID, scope, nil, true
+	}
+	if scope == "season" && seasonNumber != nil && *seasonNumber >= 0 {
+		return showID, scope, seasonNumber, true
+	}
+	writeError(w, http.StatusBadRequest, "invalid_artwork_scope", "Artwork scope must be show or a non-negative season")
+	return 0, "", nil, false
 }
 
 func (s *server) getTVShowCandidates(w http.ResponseWriter, r *http.Request) {

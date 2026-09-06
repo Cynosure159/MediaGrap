@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TVArtwork, TVSelection } from '@/api/types'
 import TVArtworkPanel from '../TVArtworkPanel.vue'
+import TVArtworkPicker from './TVArtworkPicker.vue'
 
 defineProps<{
   showId: number
@@ -11,9 +12,12 @@ defineProps<{
   bannerUrl?: string
   seasonPosterUrl?: string
   scopedArtwork: TVArtwork[]
+  csrfToken: string
+  writable: boolean
   labels: Record<string, string>
   episodeTitleText?: string
 }>()
+const emit = defineEmits<{ applied: [] }>()
 </script>
 
 <template>
@@ -27,6 +31,7 @@ defineProps<{
           {{ selection?.kind === 'episode' ? (episodeTitleText || '单集图片') : selection?.kind === 'season' ? `第 ${selection.seasonNumber} 季专属图片资源` : 'Manage TV series posters, backdrops, logos and banners' }}
         </span>
       </div>
+      <TVArtworkPicker :show-id="showId" :selection="selection" :scoped-artwork="scopedArtwork" :csrf-token="csrfToken" :writable="writable" :labels="labels" @applied="emit('applied')" />
     </div>
 
     <div class="artwork-layout-grid">

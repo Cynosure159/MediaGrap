@@ -40,5 +40,8 @@ The library now has separate Movie and TV shows tabs. Desktop retains the catalo
 
 ## Deferred Phase 3 work
 
-- Season/episode artwork downloads.
+- Episode-specific artwork downloads beyond the existing TMDb still image.
 - Missing-episode reporting, batch selection, persisted scrape jobs, cancellation, and retry-only-failed behavior.
+
+Show and season Fanart.tv artwork downloads are implemented through the TV
+Artwork workshop and durable safe-write jobs.

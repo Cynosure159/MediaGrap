@@ -56,3 +56,27 @@ func (s *server) applyArtworkPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, plan)
 }
+
+func (s *server) getTVArtworkPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, false); !ok {
+		return
+	}
+	plan, err := s.metadata.TVArtworkPlan(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "plan_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *server) applyTVArtworkPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r, true); !ok {
+		return
+	}
+	plan, err := s.metadata.QueueTVArtwork(r.Context(), r.PathValue("id"), s.library.Allowed)
+	if err != nil {
+		writeError(w, http.StatusConflict, "tv_artwork_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}

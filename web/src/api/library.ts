@@ -15,6 +15,8 @@ TVSelection,
   WritePlan,
   ArtworkPlan,
   ArtworkCandidate,
+	TVArtworkCandidate,
+	TVArtworkPlan,
   Settings,
   SettingsUpdate,
   AuditEntry,
@@ -225,6 +227,37 @@ export const mediaArtworkUrl = (mediaId: number, relativePath: string) => {
 
 export const artworkPreviewUrl = (mediaId: number, candidateId: string) =>
   `/api/v1/media/${mediaId}/artwork-preview/${encodeURIComponent(candidateId)}`
+
+export const tvArtworkCandidates = (showId: number, scope: 'show' | 'season', seasonNumber?: number) =>
+  request<{ items: TVArtworkCandidate[] }>(`/api/v1/tv/shows/${showId}/artwork-candidates?${tvArtworkQuery(scope, seasonNumber)}`)
+
+export const scrapeTVArtworkCandidates = (csrf: string, showId: number, scope: 'show' | 'season', seasonNumber?: number) =>
+  request<{ items: TVArtworkCandidate[] }>(`/api/v1/tv/shows/${showId}/artwork-candidates?${tvArtworkQuery(scope, seasonNumber)}`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+export const tvArtworkPreviewUrl = (showId: number, candidateId: string) =>
+  `/api/v1/tv/shows/${showId}/artwork-preview/${encodeURIComponent(candidateId)}`
+
+export const previewTVArtworkSelection = (csrf: string, showId: number, scope: 'show' | 'season', seasonNumber: number | undefined, selections: { kind: TVArtworkCandidate['kind']; candidateId: string }[]) =>
+  request<TVArtworkPlan>(`/api/v1/tv/shows/${showId}/artwork-plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ scope, seasonNumber, selections }),
+  })
+
+export const applyTVArtwork = (csrf: string, planId: string) =>
+  request<TVArtworkPlan>(`/api/v1/tv/artwork-plans/${planId}/apply`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrf },
+  })
+
+function tvArtworkQuery(scope: 'show' | 'season', seasonNumber?: number) {
+  const query = new URLSearchParams({ scope })
+  if (scope === 'season' && seasonNumber !== undefined) query.set('season', String(seasonNumber))
+  return query.toString()
+}
 
 export const tvNfoRaw = (showId: number, selection: TVSelection) => {
   const params = new URLSearchParams({ kind: selection.kind })

@@ -36,7 +36,7 @@ func (s *server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
 		return
 	}
-	if err := s.metadata.ConfigureProviders(current.TMDbAPIKey, current.FanartTVAPIKey, current.TMDbLanguage, current.FallbackLanguage, current.OutboundProxy, current.NoProxy); err != nil {
+	if err := s.metadata.ConfigureProviders(current.TMDbAPIKey, current.FanartTVAPIKey, current.FanartTVPersonalAPIKey, current.TMDbLanguage, current.FallbackLanguage, current.OutboundProxy, current.NoProxy); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
 		return
 	}

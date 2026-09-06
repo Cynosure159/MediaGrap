@@ -14,6 +14,7 @@ type TVShow struct {
 	Plot          string
 	Genres        []string
 	TMDbID        string
+	TVDBID        string
 	PosterURL     string
 	BackdropURL   string
 	Rating        *float64
@@ -47,6 +48,7 @@ type tvShowXML struct {
 	Genres        []string   `xml:"genre,omitempty"`
 	Actors        []actorXML `xml:"actor,omitempty"`
 	UniqueID      []idXML    `xml:"uniqueid"`
+	TVDBID        string     `xml:"tvdbid,omitempty"`
 	Thumb         []thumbXML `xml:"thumb"`
 }
 
@@ -83,8 +85,13 @@ func ParseTVShow(input []byte) (TVShow, error) {
 	for _, id := range decoded.UniqueID {
 		if strings.EqualFold(id.Type, "tmdb") {
 			show.TMDbID = strings.TrimSpace(id.Value)
-			break
 		}
+		if strings.EqualFold(id.Type, "tvdb") {
+			show.TVDBID = strings.TrimSpace(id.Value)
+		}
+	}
+	if show.TVDBID == "" {
+		show.TVDBID = strings.TrimSpace(decoded.TVDBID)
 	}
 	for _, thumb := range decoded.Thumb {
 		switch strings.ToLower(thumb.Aspect) {
@@ -115,7 +122,10 @@ func WriteTVShow(show TVShow) ([]byte, error) {
 		Network:       strings.TrimSpace(show.Network),
 	}
 	if show.TMDbID != "" {
-		encoded.UniqueID = []idXML{{Type: "tmdb", Default: "true", Value: show.TMDbID}}
+		encoded.UniqueID = append(encoded.UniqueID, idXML{Type: "tmdb", Default: "true", Value: show.TMDbID})
+	}
+	if show.TVDBID != "" {
+		encoded.UniqueID = append(encoded.UniqueID, idXML{Type: "tvdb", Value: show.TVDBID})
 	}
 	if show.PosterURL != "" {
 		encoded.Thumb = append(encoded.Thumb, thumbXML{Aspect: "poster", Value: show.PosterURL})

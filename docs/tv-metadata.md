@@ -9,7 +9,13 @@
 3. 明确选择一个候选。系统请求剧详情，并只请求本地已经发现的季。
 4. 标题、评分、演员和已匹配集的标题/时长立即替换为所选 TMDb 元数据；随后写入 `tvshow.nfo`、每季的 `season.nfo` 和每个媒体文件对应的单集 NFO。
 
-当前元数据保存在 SQLite 的 `tv_metadata` 与 `tv_episode_metadata`。每次选择候选都会完整替换这两张表中该剧的现有元数据，并以同目录临时文件和原子重命名替换已有普通 NFO。目标路径、软链接、文件类型和媒体源权限会在写入前重新校验，且每项写入均保留审计记录。图片和视频文件不会创建、下载或覆盖。
+当前元数据保存在 SQLite 的 `tv_metadata` 与 `tv_episode_metadata`。`tv_metadata` 同时保存 TMDb、TheTVDB 和 IMDb 外部 ID；TMDb 匹配时通过 external IDs 自动补齐，已有 NFO 中的 `uniqueid type="tvdb"` 或旧式 `tvdbid` 可作为回退。每次选择候选都会完整替换这两张表中该剧的现有元数据，并以同目录临时文件和原子重命名替换已有普通 NFO。目标路径、软链接、文件类型和媒体源权限会在写入前重新校验，且每项写入均保留审计记录。
+
+## Fanart.tv 图片
+
+已具备 TheTVDB ID 的剧可以在图片工坊加载 Fanart.tv v3.2 候选。剧层级提供海报、背景、透明 Logo、ClearArt、横幅、横版图和角色图；季层级按 Fanart.tv 返回的 `season` 数字提供季海报、季横幅和季横版图。候选按首选语言、中性语言、英文回退、其他语言分级，同级按点赞数降序排列。
+
+用户明确选择后，系统先创建可复核计划。剧级图片写入剧目录；季级图片使用 `seasonNN-poster`、`seasonNN-banner` 和 `seasonNN-landscape`。应用计划会创建持久化下载作业，并复用 HTTPS 主机限制、MIME/魔数验证、25 MiB 限制、同目录暂存、冲突复检、原子替换和审计记录。Fanart.tv 不提供按单集选择的这一组 TV 图片，因此单集图片继续使用 TMDb still 与本地同名单集图片。
 
 尚未选择 TMDb 元数据时，工作台会读取现有的 `tvshow.nfo` 和单集 `episodedetails` NFO 来显示标题、剧情、评分、演员及单集标题，并在 SQLite 尚无记录时缓存该本地读取结果；工作台也会只读展示剧目录和已发现季目录中的 JPEG、PNG、WebP 图片。
 
