@@ -84,6 +84,10 @@ export function useMediaInspection(itemId: () => number | null, csrfToken: () =>
     if (id) void load(id, controller.signal, requestGeneration)
   }, { immediate: true })
 
+  function clearRenamePlan() {
+    renamePlan.value = null
+  }
+
   return {
     inspection: readonly(inspection),
     namingPreview: readonly(namingPreview),
@@ -94,6 +98,7 @@ export function useMediaInspection(itemId: () => number | null, csrfToken: () =>
     error: readonly(error),
     previewNaming,
     previewRename,
+    clearRenamePlan,
     applyRename,
   }
 }

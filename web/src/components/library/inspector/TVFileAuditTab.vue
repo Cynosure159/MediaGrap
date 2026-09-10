@@ -161,11 +161,11 @@ async function executeRename() {
       {{ actionMessage }}
     </div>
 
-    <!-- Naming pattern card -->
+    <!-- ── 1. Naming Pattern Engine ──────────────────────────────── -->
     <div class="rename-engine-card">
       <div class="card-header-bar">
         <div class="header-left-bar">
-          <span class="header-title">{{ labels.namingPattern || 'Naming Pattern Engine' }}</span>
+          <span class="header-title">{{ labels.namingPattern || '命名规则引擎' }}</span>
           <span class="scope-pill font-code">
             <span class="dot-ok"></span>
             {{ currentScopeInfo.label }}
@@ -174,25 +174,26 @@ async function executeRename() {
 
         <div class="selectors-row">
           <div class="select-wrapper">
-            <label class="control-label font-code">{{ labels.patternPreset || 'Preset' }}:</label>
+            <label class="control-label font-code">{{ labels.patternPreset || '预设' }}:</label>
             <select v-model="selectedPreset" class="preset-select font-code" @change="onPresetChange">
-              <option value="kodiTitle">{{ labels.presetKodiTVWithTitle || 'Kodi (with Title)' }}</option>
-              <option value="kodi">{{ labels.presetKodiTV || 'Kodi Standard' }}</option>
-              <option value="plex">{{ labels.presetPlexTV || 'Plex Standard' }}</option>
+              <option value="kodiTitle">{{ labels.presetKodiTVWithTitle || 'Kodi 标准（带单集标题）' }}</option>
+              <option value="kodi">{{ labels.presetKodiTV || 'Kodi 标准' }}</option>
+              <option value="plex">{{ labels.presetPlexTV || 'Plex 标准' }}</option>
               <option value="jellyfin">{{ labels.presetJellyfinTV || 'Jellyfin / Emby' }}</option>
-              <option value="flat">{{ labels.presetFlatTV || 'Flat (No Season folder)' }}</option>
-              <option value="custom">{{ labels.presetCustom || 'Custom' }}</option>
+              <option value="flat">{{ labels.presetFlatTV || '平铺（无 Season 目录）' }}</option>
+              <option value="custom">{{ labels.presetCustom || '自定义' }}</option>
             </select>
           </div>
         </div>
       </div>
 
       <div class="card-body">
-        <label class="field-label font-code" for="tv-naming-pattern">{{ labels.patternTemplate || 'PATTERN TEMPLATE' }}</label>
+        <label class="field-label font-code" for="tv-naming-pattern">{{ labels.patternTemplate || '文件名模板' }}</label>
         <div class="pattern-action-row">
           <input id="tv-naming-pattern" v-model="patternInput" type="text" class="pattern-input font-code" />
           <button class="btn btn-primary" :disabled="previewLoading" type="button" @click="runDryRun">
-            {{ previewLoading ? (labels.previewing || 'Previewing…') : (labels.dryRunSimulation || 'Dry Run Simulation') }}
+            <span v-if="previewLoading" class="btn-spinner"></span>
+            <span>{{ previewLoading ? (labels.previewing || '正在计算…') : (labels.dryRunSimulation || '模拟预览') }}</span>
           </button>
         </div>
 
@@ -208,47 +209,50 @@ async function executeRename() {
           </button>
         </div>
       </div>
+    </div>
 
-      <!-- Dry run preview section with collapse & close -->
-      <div v-if="renamePlan" class="rename-preview">
-        <div class="preview-summary-bar" :class="{ 'preview-summary--conflict': hasConflicts }">
-          <div class="summary-title font-code">
+    <!-- ── 2. Dry Run Simulation Result Card ──────────────────────── -->
+    <div v-if="renamePlan" class="rename-plan-card">
+      <div class="card-header-bar plan-header" :class="{ 'plan-header--conflict': hasConflicts }">
+        <div class="plan-header-left">
+          <span class="header-title">{{ labels.renamePlanPreview || '执行方案预览' }}</span>
+          <span class="spec-pill" :class="hasConflicts ? 'spec-pill--error' : 'spec-pill--success'">
             <span class="dot-ok" :class="{ 'dot-conflict': hasConflicts }"></span>
-            {{ hasConflicts ? (labels.conflictsDetected || 'Conflicts detected — cannot execute') : (labels.noConflictsDetected || 'No conflicts detected') }} ({{ renamePlan.items.length }} {{ labels.files || 'files' }})
-          </div>
-          <div class="summary-actions">
-            <button class="btn-preview-action font-code" type="button" @click="isPreviewCollapsed = !isPreviewCollapsed">
-              {{ isPreviewCollapsed ? (labels.expandPreview || '展开预览') : (labels.collapsePreview || '收起预览') }}
-            </button>
-            <button class="btn-preview-action font-code" type="button" :title="labels.closePreview || '关闭预览'" @click="clearPreview">
-              ✕
-            </button>
-          </div>
+            {{ hasConflicts ? (labels.conflictsDetected || '存在冲突 — 无法执行') : (labels.noConflictsDetected || '未发现冲突') }} ({{ renamePlan.items.length }} {{ labels.files || '个文件' }})
+          </span>
         </div>
+        <div class="plan-header-actions">
+          <button class="btn-preview-action font-code" type="button" @click="isPreviewCollapsed = !isPreviewCollapsed">
+            {{ isPreviewCollapsed ? (labels.expandPreview || '展开预览') : (labels.collapsePreview || '收起预览') }}
+          </button>
+          <button class="btn-preview-action font-code btn-dismiss" type="button" :title="labels.closePreview || '关闭预览'" @click="clearPreview">
+            ✕ {{ labels.closePreview || '关闭预览' }}
+          </button>
+        </div>
+      </div>
 
-        <div v-show="!isPreviewCollapsed" class="preview-items-list">
-          <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row">
-            <span
-              class="operation-tag font-code"
-              :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`"
-            >
-              {{ entry.operation === 'rename' ? (labels.renameFile || 'RENAME FILE') : (entry.operation === 'rename_dir' ? (labels.renameDir || 'RENAME DIR') : entry.operation.toUpperCase()) }}
-            </span>
-            <div class="rename-paths font-code">
-              <span class="current-path">{{ entry.currentPath }}</span>
-              <span class="path-arrow">→</span>
-              <span class="planned-path">{{ entry.plannedPath }}</span>
-            </div>
+      <div v-show="!isPreviewCollapsed" class="preview-items-list">
+        <div v-for="entry in renamePlan.items" :key="entry.currentPath" class="rename-row" :class="{ 'rename-row--conflict': entry.conflict }">
+          <span
+            class="operation-tag font-code"
+            :class="`operation-tag--${entry.operation.replace(' ', '_').toLowerCase()}`"
+          >
+            {{ entry.operation === 'rename' ? (labels.renameFile || 'RENAME FILE') : (entry.operation === 'rename_dir' ? (labels.renameDir || 'RENAME DIR') : entry.operation.toUpperCase()) }}
+          </span>
+          <div class="rename-paths font-code">
+            <span class="current-path" :title="entry.currentPath">{{ entry.currentPath }}</span>
+            <span class="path-arrow">→</span>
+            <span class="planned-path" :title="entry.plannedPath">{{ entry.plannedPath }}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Current Structure Card -->
+    <!-- ── 3. Current Structure Card ──────────────────────────────── -->
     <div class="structure-card">
       <div class="card-header-bar">
-        <span class="header-title">{{ labels.currentFiles || 'Current File & Sidecar Assets' }}</span>
-        <span class="item-count font-code">{{ episodes.length }} {{ labels.episodes || 'episodes' }}</span>
+        <span class="header-title">{{ labels.currentFiles || '当前文件与 Sidecar 审计' }}</span>
+        <span class="item-count font-code">{{ episodes.length }} {{ labels.episodes || '集' }}</span>
       </div>
 
       <div class="file-audit-list">
@@ -260,15 +264,15 @@ async function executeRename() {
       </div>
     </div>
 
-    <!-- Embedded Streams Probe Card -->
+    <!-- ── 4. Embedded Streams Probe Card ─────────────────────────── -->
     <div class="probe-card">
       <div class="card-header-bar">
-        <span class="header-title">{{ labels.mediaStreams || 'Embedded media streams' }}</span>
-        <span v-if="inspection?.cached" class="item-count font-code">{{ labels.cachedProbe || 'CACHED' }}</span>
+        <span class="header-title">{{ labels.mediaStreams || '内嵌媒体流' }}</span>
+        <span v-if="inspection?.cached" class="item-count font-code">{{ labels.cachedProbe || '已缓存' }}</span>
       </div>
-      <div v-if="inspectionLoading" class="empty-row">{{ labels.inspectingMedia || 'Inspecting media…' }}</div>
+      <div v-if="inspectionLoading" class="empty-row">{{ labels.inspectingMedia || '正在探测媒体…' }}</div>
       <div v-else-if="inspection?.probeStatus !== 'ready'" class="empty-row">
-        {{ inspectionError || inspection?.probeError || labels.mediaInfoUnavailable || 'ffprobe media information is unavailable.' }}
+        {{ inspectionError || inspection?.probeError || labels.mediaInfoUnavailable || 'ffprobe 媒体信息不可用。' }}
       </div>
       <div v-else class="probe-summary font-code">
         <span v-for="stream in inspection.video" :key="`video-${stream.index}`" class="probe-pill">
@@ -277,21 +281,28 @@ async function executeRename() {
         <span v-for="stream in inspection.audio" :key="`audio-${stream.index}`" class="probe-pill">
           {{ labels.audio || 'Audio' }} {{ stream.codec.toUpperCase() }} {{ stream.channelLayout || `${stream.channels} ch` }}
         </span>
-        <span v-if="!inspection.video.length && !inspection.audio.length" class="empty-row">{{ labels.mediaInfoUnavailable || 'No stream metadata.' }}</span>
+        <span v-if="!inspection.video.length && !inspection.audio.length" class="empty-row">{{ labels.mediaInfoUnavailable || '无媒体流信息。' }}</span>
       </div>
     </div>
 
-    <!-- Sticky action bar -->
+    <!-- ── 5. Sticky Confirmation & Execution Action Bar ──────────── -->
     <div v-if="renamePlan && !hasConflicts" class="sticky-action-bar">
       <div class="action-bar-left">
-        <span class="spec-pill spec-pill--success"><span class="dot-ok"></span>{{ labels.noConflictsDetected || 'No conflicts detected' }} ({{ renamePlan.items.length }})</span>
+        <span class="spec-pill spec-pill--success font-code">
+          <span class="dot-ok"></span>
+          {{ labels.noConflictsDetected || '未发现冲突' }} ({{ renamePlan.items.length }} {{ labels.files || '个文件' }})
+        </span>
       </div>
       <div class="action-bar-right">
+        <button class="btn btn-ghost" type="button" @click="clearPreview">
+          {{ labels.closePreview || '关闭预览' }}
+        </button>
         <button class="btn btn-outline" :disabled="previewLoading || isApplying" type="button" @click="runDryRun">
-          {{ labels.dryRunSimulation || 'Dry Run Simulation' }}
+          {{ labels.dryRunSimulation || '重新模拟' }}
         </button>
         <button class="btn btn-success" :disabled="isApplying" type="button" @click="executeRename">
-          {{ isApplying ? (labels.loading || 'Applying…') : (labels.executeRename || 'Execute Safe Rename & Move') }}
+          <span v-if="isApplying" class="btn-spinner"></span>
+          <span>{{ isApplying ? (labels.loading || '正在执行…') : (labels.executeRename || '执行安全重命名与移动') }}</span>
         </button>
       </div>
     </div>
@@ -334,7 +345,8 @@ async function executeRename() {
 
 .rename-engine-card,
 .structure-card,
-.probe-card {
+.probe-card,
+.rename-plan-card {
   background: var(--surface-container, #191f31);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: var(--radius-md, 0.375rem);
@@ -348,7 +360,7 @@ async function executeRename() {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: var(--surface-container-high, #23293c);
   border-bottom: 1px solid var(--outline-variant, #2e3447);
 }
@@ -470,71 +482,90 @@ async function executeRename() {
   border-color: var(--secondary, #4edea3);
 }
 
-.rename-preview {
-  border-top: 1px solid var(--outline-variant, #2e3447);
+/* ── Rename Plan Card & Diff List ─────────────────────────────────── */
+.rename-plan-card {
+  border-color: color-mix(in srgb, var(--primary, #c0c1ff) 40%, var(--outline-variant, #2e3447));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
-.preview-summary-bar {
+.plan-header {
+  background: var(--surface-container-high, #23293c);
+}
+
+.plan-header--conflict {
+  background: color-mix(in srgb, var(--error, #ffb4ab) 12%, var(--surface-container-high, #23293c));
+}
+
+.plan-header-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  background: color-mix(in srgb, var(--secondary, #4edea3) 8%, transparent);
-  color: var(--secondary, #4edea3);
-  font-size: 11px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.preview-summary--conflict {
-  background: color-mix(in srgb, var(--error, #ffb4ab) 8%, transparent);
-  color: var(--error, #ffb4ab);
-}
-
-.summary-title {
+.plan-header-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.dot-conflict {
-  background: var(--error, #ffb4ab) !important;
-  box-shadow: 0 0 6px var(--error, #ffb4ab) !important;
-}
-
-.summary-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .btn-preview-action {
-  background: var(--surface-container-high, #23293c);
+  background: var(--surface-container-low, #151b2d);
   border: 1px solid var(--outline-variant, #2e3447);
   border-radius: 3px;
   color: var(--on-surface, #dce1fb);
-  padding: 2px 6px;
-  font-size: 10px;
+  padding: 3px 8px;
+  font-size: 11px;
   cursor: pointer;
+  transition: all 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .btn-preview-action:hover {
   background: var(--surface-container-highest, #2d3347);
+  color: var(--primary, #c0c1ff);
+}
+
+.btn-dismiss:hover {
+  color: var(--error, #ffb4ab);
+  border-color: color-mix(in srgb, var(--error, #ffb4ab) 40%, transparent);
+}
+
+.preview-items-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface-container-lowest, #070d1f);
 }
 
 .rename-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 12px;
-  border-top: 1px solid color-mix(in srgb, var(--outline-variant, #2e3447) 60%, transparent);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant, #2e3447) 40%, transparent);
+  transition: background 0.1s ease;
+}
+
+.rename-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rename-row--conflict {
+  background: color-mix(in srgb, var(--error, #ffb4ab) 6%, transparent);
 }
 
 .operation-tag {
-  min-width: 52px;
+  min-width: 74px;
   border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 9px;
+  padding: 2px 6px;
+  font-size: 9.5px;
   text-align: center;
-  font-weight: 600;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .operation-tag--keep {
@@ -543,41 +574,58 @@ async function executeRename() {
 }
 
 .operation-tag--rename,
-.operation-tag--rename_file,
-.operation-tag--rename_dir {
-  background: color-mix(in srgb, var(--secondary, #4edea3) 10%, transparent);
+.operation-tag--rename_file {
+  background: color-mix(in srgb, var(--secondary, #4edea3) 15%, transparent);
   color: var(--secondary, #4edea3);
+  border: 1px solid color-mix(in srgb, var(--secondary, #4edea3) 30%, transparent);
+}
+
+.operation-tag--rename_dir {
+  background: color-mix(in srgb, var(--primary, #c0c1ff) 15%, transparent);
+  color: var(--primary, #c0c1ff);
+  border: 1px solid color-mix(in srgb, var(--primary, #c0c1ff) 30%, transparent);
 }
 
 .operation-tag--conflict {
-  background: color-mix(in srgb, var(--error, #ffb4ab) 10%, transparent);
+  background: color-mix(in srgb, var(--error, #ffb4ab) 15%, transparent);
   color: var(--error, #ffb4ab);
+  border: 1px solid color-mix(in srgb, var(--error, #ffb4ab) 30%, transparent);
 }
 
 .rename-paths {
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 6px;
-  font-size: 10px;
-}
-
-.current-path,
-.planned-path {
-  overflow-wrap: anywhere;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
 }
 
 .current-path {
   color: var(--on-surface-variant, #c7c4d7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planned-path {
-  color: var(--on-surface, #dce1fb);
+  color: var(--secondary, #4edea3);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .path-arrow {
   color: var(--outline, #908fa0);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.dot-conflict {
+  background: var(--error, #ffb4ab) !important;
+  box-shadow: 0 0 6px var(--error, #ffb4ab) !important;
 }
 
 .file-audit-list {
@@ -664,18 +712,40 @@ async function executeRename() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--outline-variant, #2e3447);
   background: var(--surface-container, #191f31);
-  z-index: 10;
+  z-index: 25;
   margin-top: 8px;
   border-radius: var(--radius-md, 0.375rem);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.4);
 }
 
 .action-bar-right {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .stream-groups {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
@@ -685,13 +755,14 @@ async function executeRename() {
   .card-header-bar {
     align-items: stretch;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
   .rename-paths {
     grid-template-columns: 1fr;
   }
   .path-arrow {
     transform: rotate(90deg);
+    margin: 0 auto;
   }
 }
 </style>

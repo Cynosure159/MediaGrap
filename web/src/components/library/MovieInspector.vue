@@ -52,6 +52,7 @@ const {
   error: inspectionError,
   previewNaming,
   previewRename,
+  clearRenamePlan,
   applyRename,
 } = useMediaInspection(() => props.itemId, () => props.csrfToken)
 
@@ -364,6 +365,7 @@ async function handleApplyNfo() {
         :is-applying="isApplying"
         @preview-rename="previewRename"
         @apply-rename="applyRename"
+        @clear-rename="clearRenamePlan"
       />
     </div>
 
