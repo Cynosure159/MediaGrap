@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SettingsIntegrations from './SettingsIntegrations.vue'
+import AutomationApprovals from './AutomationApprovals.vue'
 import { onMounted, shallowRef } from 'vue'
 import { useLibrary } from '@/composables/useLibrary'
 import { useSettings } from '@/composables/useSettings'
@@ -114,6 +116,8 @@ onMounted(initialize)
           />
         </div>
       </div>
+      <SettingsIntegrations v-if="!isLoading" :csrf-token="csrfToken" :sources="sourceItems" :locale="locale" />
+      <AutomationApprovals v-if="!isLoading" :csrf-token="csrfToken" :locale="locale" />
     </div>
   </main>
 </template>

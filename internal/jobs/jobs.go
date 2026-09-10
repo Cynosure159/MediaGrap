@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/mediagrap/mediagrap/internal/events"
 )
 
 // State constants for durable jobs
@@ -51,11 +53,12 @@ type Event struct {
 type HandlerFunc func(ctx context.Context, job Job, updateProgress func(current int, message string)) error
 
 type Service struct {
-	db       *sql.DB
-	logger   *slog.Logger
-	handlers map[string]HandlerFunc
-	cancels  map[int64]context.CancelFunc
-	mu       sync.RWMutex
+	outboxLimit int
+	db          *sql.DB
+	logger      *slog.Logger
+	handlers    map[string]HandlerFunc
+	cancels     map[int64]context.CancelFunc
+	mu          sync.RWMutex
 }
 
 func NewService(db *sql.DB, logger *slog.Logger) *Service {
@@ -63,10 +66,11 @@ func NewService(db *sql.DB, logger *slog.Logger) *Service {
 		logger = slog.Default()
 	}
 	return &Service{
-		db:       db,
-		logger:   logger,
-		handlers: make(map[string]HandlerFunc),
-		cancels:  make(map[int64]context.CancelFunc),
+		db:          db,
+		outboxLimit: 100000,
+		logger:      logger,
+		handlers:    make(map[string]HandlerFunc),
+		cancels:     make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -80,7 +84,23 @@ func (s *Service) Queue(ctx context.Context, kind string, sourceID *int64) (Job,
 	return s.QueuePayload(ctx, kind, sourceID, []byte(`{}`))
 }
 
+func (s *Service) SetOutboxLimit(limit int) {
+	if limit > 0 {
+		s.outboxLimit = limit
+	}
+}
+
 func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64, payload []byte) (Job, error) {
+	var backlog int
+	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM system_events WHERE dispatched_at IS NULL)+(SELECT COUNT(*) FROM webhook_deliveries WHERE state IN ('queued','retry_wait','delivering'))`).Scan(&backlog); err != nil {
+		return Job{}, err
+	}
+	if backlog >= s.outboxLimit {
+		return Job{}, errors.New("integration backlog capacity reached")
+	}
+	if backlog >= s.outboxLimit*8/10 {
+		s.logger.Warn("integration backlog approaching capacity", "pending", backlog)
+	}
 	if len(payload) == 0 {
 		payload = []byte(`{}`)
 	}
@@ -184,10 +204,13 @@ func (s *Service) Retry(ctx context.Context, id int64) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	if job.Kind == "automation_apply" || job.Kind == "automation_task" {
+		return Job{}, errors.New("automation jobs require their scoped retry or a new approved plan")
+	}
 	if job.State != StateFailed && job.State != StateCancelled && job.State != StateInterrupted {
 		return Job{}, errors.New("only failed, cancelled, or interrupted jobs can be retried")
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', progress_current=0, message='Retry queued', error_message='', started_at=NULL, completed_at=NULL, next_run_at=NULL, retry_count=retry_count+1, updated_at=datetime('now') WHERE id=?`, id)
+	_, err = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', progress_current=0, message='Retry queued', error_message='', started_at=NULL, completed_at=NULL, next_run_at=NULL, retry_count=retry_count+1, updated_at=datetime('now') WHERE id=? AND state IN ('failed','cancelled','interrupted')`, id)
 	if err != nil {
 		return Job{}, fmt.Errorf("retry job: %w", err)
 	}
@@ -267,11 +290,7 @@ func (s *Service) runOne(ctx context.Context) {
 	}
 
 	if !exists {
-		_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='failed', error_message='no handler registered for job kind', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`, id)
-		s.logger.Error("no handler for job", "job_id", id, "kind", kind)
-		if failed, getErr := s.Get(ctx, id); getErr == nil {
-			s.recordEvent(ctx, failed, failed.ErrorMessage)
-		}
+		s.finish(ctx, id, StateFailed, "no handler registered for job kind")
 		return
 	}
 
@@ -288,7 +307,10 @@ func (s *Service) runOne(ctx context.Context) {
 		s.mu.Unlock()
 	}()
 	progressFn := func(current int, message string) {
-		result, _ := s.db.ExecContext(ctx, `UPDATE jobs SET progress_current=?, message=?, updated_at=datetime('now') WHERE id=? AND state='running'`, current, message, id)
+		result, updateErr := s.db.ExecContext(ctx, `UPDATE jobs SET progress_current=?, message=?, updated_at=datetime('now') WHERE id=? AND state='running'`, current, message, id)
+		if updateErr != nil {
+			return
+		}
 		if changed, _ := result.RowsAffected(); changed > 0 {
 			if currentJob, getErr := s.Get(ctx, id); getErr == nil {
 				s.recordEvent(ctx, currentJob, message)
@@ -301,7 +323,7 @@ func (s *Service) runOne(ctx context.Context) {
 			return
 		}
 		if kind == "artwork_download" && job.RetryCount < job.MaxRetries && !errors.Is(execErr, context.Canceled) {
-			_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', retry_count=retry_count+1, error_message=?, next_run_at=datetime('now', '+5 seconds'), updated_at=datetime('now') WHERE id=?`, execErr.Error(), id)
+			_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', retry_count=retry_count+1, error_message=?, next_run_at=datetime('now', '+5 seconds'), updated_at=datetime('now') WHERE id=? AND state='running'`, execErr.Error(), id)
 			s.logger.Warn("job retry scheduled", "job_id", id, "kind", kind, "retry_count", job.RetryCount+1)
 			if retried, getErr := s.Get(ctx, id); getErr == nil {
 				s.recordEvent(ctx, retried, "Automatic retry scheduled")
@@ -312,20 +334,45 @@ func (s *Service) runOne(ctx context.Context) {
 		if errors.Is(execErr, context.Canceled) {
 			state = StateCancelled
 		}
-		_, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state=?, error_message=?, completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`, state, execErr.Error(), id)
-		s.logger.Error("job failed", "job_id", id, "kind", kind, "error", execErr)
-		if failed, getErr := s.Get(ctx, id); getErr == nil {
-			s.recordEvent(ctx, failed, failed.ErrorMessage)
-		}
+		s.finish(ctx, id, state, execErr.Error())
 		return
 	}
+	s.finish(ctx, id, StateSucceeded, "")
+}
 
-	result, _ = s.db.ExecContext(ctx, `UPDATE jobs SET state='succeeded', message='Job completed', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND state='running'`, id)
-	if changed, _ := result.RowsAffected(); changed == 0 {
-		return
+// A failed outbox/SSE insert rolls back the terminal state. Never replay the
+// handler to recover a database failure: it may already have changed files.
+func (s *Service) finish(ctx context.Context, id int64, state, detail string) {
+	if err := s.commitTerminal(ctx, id, state, detail); err != nil {
+		s.logger.Error("job terminal commit failed; recovery required", "job_id", id)
 	}
-	s.logger.Info("job completed", "job_id", id, "kind", kind)
-	if finished, getErr := s.Get(ctx, id); getErr == nil {
-		s.recordEvent(ctx, finished, finished.Message)
+}
+
+func (s *Service) commitTerminal(ctx context.Context, id int64, state, detail string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE jobs SET state=?, error_message=?, message=?, completed_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND state='running'`, state, detail, "Job "+state, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil || n == 0 {
+		return err
+	}
+	if state == StateSucceeded || state == StateFailed {
+		if err = events.JobCompleted(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO job_events(job_id,state,progress_current,progress_total,message) SELECT id,state,progress_current,progress_total,message FROM jobs WHERE id=?`, id); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	s.logger.Info("job terminal state committed", "job_id", id, "state", state)
+	return nil
 }

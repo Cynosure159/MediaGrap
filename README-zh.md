@@ -139,6 +139,7 @@ MediaGrap 是一个轻量、自托管的媒体信息刮削与媒体库管理工�
 - [Phase 3 电视剧发现](docs/phase-3-tv-discovery.md)
 - [Phase 5A 作业与运维可见性](docs/phase-5a-operations.md)
 - [设置说明](docs/settings.md)
+- [Webhook 与 MCP 集成](docs/integrations.md)
 - [ADR 0001：基础技术栈](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch 参考边界

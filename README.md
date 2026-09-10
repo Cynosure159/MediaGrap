@@ -139,6 +139,7 @@ See the detailed [delivery roadmap](docs/roadmap.md).
 - [Phase 3 TV discovery](docs/phase-3-tv-discovery.md)
 - [Phase 5A jobs and operations visibility](docs/phase-5a-operations.md)
 - [Settings](docs/settings.md)
+- [Webhook and MCP integrations](docs/integrations.md)
 - [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
 
 ## MediaElch reference boundary

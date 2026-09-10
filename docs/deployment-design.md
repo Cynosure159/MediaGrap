@@ -103,3 +103,9 @@ First-run setup is security-sensitive. The implementation should either require 
 - Go server and Vite dev server run separately with API proxying and hot reload.
 - A production-like local command builds frontend assets, embeds them, migrates a temporary SQLite database, and starts the single binary.
 - Integration tests use temporary directories as media roots; they must never point at a developer's real media library.
+
+## Webhook signing and MCP
+
+Webhook delivery requires a separately backed-up, mode-0600 master key file containing a 32-byte key encoded as hex. Mount it read-only and set `MEDIAGRAP_WEBHOOK_KEY_FILE`; the process will not replace a missing key. Webhook network policy is configured by deployment environment, independently of provider proxies. Expose MCP `/mcp` through TLS and restrict accepted browser origins; static API Tokens are managed through the authenticated settings page.
+
+See [integration deployment variables and limits](integrations.md) for the complete configuration. The feature adds no container or external worker. Browser UI approval is required before an MCP movie file plan may execute.

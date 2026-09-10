@@ -4,9 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/mediagrap/mediagrap/internal/webhooks"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -17,20 +20,23 @@ const (
 )
 
 type Config struct {
-	ConfigDir              string
-	CacheDir               string
-	Listen                 string
-	LogFormat              string
-	LogLevel               string
-	MediaRoots             []string
-	TMDbAPIKey             string
-	FanartTVAPIKey         string
-	FanartTVPersonalAPIKey string
-	TMDbLanguage           string
-	FallbackLanguage       string
-	OutboundProxy          string
-	NoProxy                string
-	FFprobePath            string
+	IntegrationBacklogLimit int
+	ConfigDir               string
+	CacheDir                string
+	Listen                  string
+	LogFormat               string
+	LogLevel                string
+	MediaRoots              []string
+	TMDbAPIKey              string
+	FanartTVAPIKey          string
+	FanartTVPersonalAPIKey  string
+	TMDbLanguage            string
+	FallbackLanguage        string
+	OutboundProxy           string
+	NoProxy                 string
+	FFprobePath             string
+	Webhooks                webhooks.Config
+	MCPOrigins              []string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -64,6 +70,39 @@ func LoadConfig(args []string) (Config, error) {
 	config.FallbackLanguage = envOrDefault("MEDIAGRAP_FALLBACK_LANGUAGE", "en-US")
 	config.OutboundProxy = strings.TrimSpace(os.Getenv("MEDIAGRAP_OUTBOUND_PROXY"))
 	config.NoProxy = envOrDefault("MEDIAGRAP_NO_PROXY", os.Getenv("NO_PROXY"))
+	config.IntegrationBacklogLimit = 100000
+	if value := os.Getenv("MEDIAGRAP_INTEGRATION_BACKLOG_LIMIT"); value != "" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit < 100 {
+			return Config{}, errors.New("invalid integration backlog limit")
+		}
+		config.IntegrationBacklogLimit = limit
+	}
+	config.Webhooks.KeyFile = strings.TrimSpace(os.Getenv("MEDIAGRAP_WEBHOOK_KEY_FILE"))
+	config.Webhooks.Paused = os.Getenv("MEDIAGRAP_WEBHOOK_PAUSED") == "true"
+	config.Webhooks.Policy.AllowHTTP = os.Getenv("MEDIAGRAP_WEBHOOK_ALLOW_HTTP") == "true"
+	for _, target := range strings.Split(os.Getenv("MEDIAGRAP_WEBHOOK_ALLOWED_TARGETS"), ",") {
+		if target = strings.TrimSpace(target); target != "" {
+			if _, _, err := net.SplitHostPort(target); err != nil {
+				return Config{}, errors.New("invalid webhook allowed target")
+			}
+			config.Webhooks.Policy.AllowedTargets = append(config.Webhooks.Policy.AllowedTargets, target)
+		}
+	}
+	for _, raw := range strings.Split(os.Getenv("MEDIAGRAP_WEBHOOK_ALLOWED_CIDRS"), ",") {
+		if raw = strings.TrimSpace(raw); raw != "" {
+			prefix, err := netip.ParsePrefix(raw)
+			if err != nil {
+				return Config{}, errors.New("invalid webhook allowed CIDR")
+			}
+			config.Webhooks.Policy.AllowedCIDRs = append(config.Webhooks.Policy.AllowedCIDRs, prefix)
+		}
+	}
+	for _, origin := range strings.Split(os.Getenv("MEDIAGRAP_MCP_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			config.MCPOrigins = append(config.MCPOrigins, origin)
+		}
+	}
 	config.FFprobePath = envOrDefault("MEDIAGRAP_FFPROBE_PATH", "ffprobe")
 	if strings.EqualFold(config.FFprobePath, "off") || strings.EqualFold(config.FFprobePath, "disabled") {
 		config.FFprobePath = ""

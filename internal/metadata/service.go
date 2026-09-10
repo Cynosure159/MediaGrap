@@ -759,6 +759,11 @@ func (s *Service) Plan(ctx context.Context, id string) (WritePlan, error) {
 	return s.repo.GetWritePlan(ctx, id)
 }
 func (s *Service) Apply(ctx context.Context, id string, allowed func(string) bool) (WritePlan, error) {
+	release, lockErr := files.LockMutation(ctx)
+	if lockErr != nil {
+		return WritePlan{}, lockErr
+	}
+	defer release()
 	plan, err := s.Plan(ctx, id)
 	if err != nil {
 		return WritePlan{}, err
@@ -1072,6 +1077,11 @@ func (s *Service) handleArtworkDownloadJob(ctx context.Context, job jobs.Job, up
 }
 
 func (s *Service) applyArtworkFiles(ctx context.Context, plan ArtworkPlan, updateProgress func(int, string)) (ArtworkPlan, error) {
+	release, lockErr := files.LockMutation(ctx)
+	if lockErr != nil {
+		return ArtworkPlan{}, lockErr
+	}
+	defer release()
 	lockValue, _ := s.artworkLocks.LoadOrStore(plan.MediaItemID, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()

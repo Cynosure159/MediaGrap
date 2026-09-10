@@ -3,6 +3,9 @@ package httpapi
 import (
 	"database/sql"
 	"embed"
+	"github.com/mediagrap/mediagrap/internal/automation"
+	"github.com/mediagrap/mediagrap/internal/tokens"
+	"github.com/mediagrap/mediagrap/internal/webhooks"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -20,8 +23,11 @@ type BuildInfo struct {
 }
 
 type RuntimePaths struct {
-	ConfigDir string
-	CacheDir  string
+	Automation *automation.Service
+	ConfigDir  string
+	CacheDir   string
+	Webhooks   *webhooks.Service
+	MCP        http.Handler
 }
 
 type server struct {
@@ -33,6 +39,8 @@ type server struct {
 	metadata        MetadataService
 	settingsService SettingsService
 	runtime         RuntimePaths
+	webhooks        *webhooks.Service
+	tokens          *tokens.Service
 }
 
 func NewServer(
@@ -58,7 +66,16 @@ func NewServer(
 		application.runtime = runtime[0]
 	}
 
+	application.webhooks = application.runtime.Webhooks
+	if application.webhooks == nil {
+		application.webhooks = webhooks.New(db, webhooks.Config{}, logger)
+	}
+	application.tokens = tokens.New(db)
 	mux := http.NewServeMux()
+	application.integrationRoutes(mux)
+	if application.runtime.MCP != nil {
+		mux.Handle("/mcp", application.runtime.MCP)
+	}
 
 	// Health & System
 	mux.HandleFunc("GET /healthz", application.health)

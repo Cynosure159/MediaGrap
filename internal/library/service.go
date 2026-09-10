@@ -257,6 +257,8 @@ func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
 // QueuePayload and RegisterJobHandler let adjacent bounded-context services
 // use the same durable worker without exposing the jobs implementation to the
 // HTTP layer.
+func (s *Service) SetOutboxLimit(limit int) { s.jobs.SetOutboxLimit(limit) }
+
 func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64, payload []byte) (Job, error) {
 	return s.jobs.QueuePayload(ctx, kind, sourceID, payload)
 }
@@ -574,8 +576,10 @@ func (s *Service) sidecars(ctx context.Context, id int64) ([]Sidecar, error) {
 }
 
 func (s *Service) RunWorker(ctx context.Context) {
-	go s.runScheduler(ctx)
+	schedulerDone := make(chan struct{})
+	go func() { s.runScheduler(ctx); close(schedulerDone) }()
 	s.jobs.RunWorker(ctx)
+	<-schedulerDone
 }
 
 func (s *Service) runScheduler(ctx context.Context) {
@@ -809,4 +813,9 @@ func episodeTitleHint(filename string) string {
 func isWritable(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir() && unix.Access(path, unix.W_OK) == nil
+}
+
+// ScanForAutomation reuses discovery with the persisted automation job identity.
+func (s *Service) ScanForAutomation(ctx context.Context, jobID, sourceID int64, progress func(int, string)) error {
+	return s.scan(ctx, jobID, sourceID, "incremental", progress)
 }

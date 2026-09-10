@@ -52,3 +52,9 @@ The standard image bundles a statically linked, metadata-only ffprobe at `/usr/b
 ## Interface preferences
 
 Display language and theme (`dark`, `light`, or `system`) are persisted per authenticated user and cached locally for immediate rendering. They do not affect TMDb data language; configure that separately in Provider settings.
+
+## External integrations and file approvals
+
+The settings page now includes Webhook endpoint management, scoped MCP API Tokens and administrator approval of automation movie file plans. Secrets are shown once after creation or rotation; they are not saved in browser storage. File approval displays the frozen relative paths, overwrite markers, NFO contents or artwork preview and requires explicit review before granting a five-minute approval. MCP cannot approve its own plans.
+
+See [Webhook and MCP configuration](integrations.md) for key-file setup, network allowlists, token scopes, task tools and recovery limits.

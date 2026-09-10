@@ -236,6 +236,11 @@ func (s *Service) handleTVArtworkDownloadJob(ctx context.Context, job jobs.Job, 
 }
 
 func (s *Service) applyTVArtworkFiles(ctx context.Context, plan TVArtworkPlan, updateProgress func(int, string)) (TVArtworkPlan, error) {
+	release, lockErr := files.LockMutation(ctx)
+	if lockErr != nil {
+		return TVArtworkPlan{}, lockErr
+	}
+	defer release()
 	lockValue, _ := s.artworkLocks.LoadOrStore(fmt.Sprintf("tv:%d", plan.ShowID), &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()

@@ -195,3 +195,13 @@ Mutating endpoints use idempotency keys where duplicate submission would be harm
 
 Security tests and limits are part of each feature, not a final hardening phase.
 
+
+## External integrations
+
+`internal/events` records job terminal events in the same transaction as job state and SSE history. `internal/webhooks` fans out the outbox into a separate leased delivery queue with encrypted signing keys and deployment-owned network policy. Its workers share the application process but do not occupy the media job runner.
+
+`internal/mcp` uses the official Go SDK with the pinned `2025-11-25` protocol and calls source-scoped application queries plus `internal/automation`. `internal/tokens` owns hashed Bearer credentials and normalized source grants; deleting a source revokes its grants even if SQLite later reuses its numeric ID. Browser administration and plan approval continue to require Session and CSRF credentials.
+
+Automation tasks persist their actor and idempotency identity. Movie file plans freeze relative operations, metadata/file fingerprints and a digest. A Web administrator approves that digest before apply can atomically consume approval and enqueue work. Browser writers and automation writers share a bounded mutation lane. Rooted filesystem handles confine automated writes; operation records allow startup reconciliation of already-published results without blindly replaying mutations.
+
+The automation movie plan engine currently supplements the older Web write-plan paths. It does not imply that legacy TV batches, whole-directory renames or arbitrary NAS failures support the same recovery guarantees. See [integration operations and limits](integrations.md).

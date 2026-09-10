@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mediagrap/mediagrap/internal/files"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ type RenamePlanItem struct {
 	PlannedPath string `json:"plannedPath"` // source-relative planned path
 	Operation   string `json:"operation"`   // keep, rename, rename_dir, conflict
 	Conflict    bool   `json:"conflict"`
-	Status      string `json:"status"`      // pending, success, failed, skipped
+	Status      string `json:"status"` // pending, success, failed, skipped
 }
 
 // renderNamingTemplate replaces tokens, sanitizes path segments, and separates directory and filename parts.
@@ -547,6 +548,11 @@ func moveFile(src, dst string) error {
 }
 
 func (s *Service) ApplyRenamePlan(ctx context.Context, planID string, progressFn func(int, string)) error {
+	release, lockErr := files.LockMutation(ctx)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 	plan, err := s.GetRenamePlan(ctx, planID)
 	if err != nil {
 		return err

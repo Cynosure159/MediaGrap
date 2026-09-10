@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -194,5 +195,85 @@ func TestCancelRunningJobPropagatesContext(t *testing.T) {
 	current, err := service.Get(t.Context(), job.ID)
 	if err != nil || current.State != StateCancelled {
 		t.Fatalf("unexpected cancelled state: %+v err=%v", current, err)
+	}
+}
+
+func TestTerminalOutboxRollbackAndRetryVersion(t *testing.T) {
+	s := newTestJobsService(t)
+	job, err := s.Queue(t.Context(), "scan", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE jobs SET state='running' WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`CREATE TRIGGER reject_outbox BEFORE INSERT ON system_events BEGIN SELECT RAISE(ABORT,'injected'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.commitTerminal(t.Context(), job.ID, StateSucceeded, ""); err == nil {
+		t.Fatal("expected outbox failure")
+	}
+	current, _ := s.Get(t.Context(), job.ID)
+	if current.State != StateRunning {
+		t.Fatal("state escaped rollback")
+	}
+	if _, err = s.db.Exec(`DROP TRIGGER reject_outbox`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err = s.commitTerminal(t.Context(), job.ID, StateFailed, "secret=/host/private"); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.commitTerminal(t.Context(), job.ID, StateFailed, ""); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			if _, err = s.Retry(t.Context(), job.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.db.Exec(`UPDATE jobs SET state='running' WHERE id=?`, job.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var count, version int
+	if err = s.db.QueryRow(`SELECT COUNT(*),MAX(aggregate_version) FROM system_events`).Scan(&count, &version); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 || version != 2 {
+		t.Fatalf("events=%d version=%d", count, version)
+	}
+	var body string
+	if err = s.db.QueryRow(`SELECT payload_bytes FROM system_events LIMIT 1`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "secret") || strings.Contains(body, "/host") {
+		t.Fatal("sensitive detail in outbox")
+	}
+}
+
+func TestCancellationWinsTerminalRace(t *testing.T) {
+	for _, state := range []string{StateSucceeded, StateFailed} {
+		t.Run(state, func(t *testing.T) {
+			s := newTestJobsService(t)
+			job, err := s.Queue(t.Context(), "scan", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.db.Exec(`UPDATE jobs SET state='running' WHERE id=?`, job.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Cancel(t.Context(), job.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.commitTerminal(t.Context(), job.ID, state, ""); err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			s.db.QueryRow(`SELECT COUNT(*) FROM system_events`).Scan(&count)
+			if count != 0 {
+				t.Fatal("cancelled job emitted terminal event")
+			}
+		})
 	}
 }
