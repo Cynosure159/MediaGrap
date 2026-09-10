@@ -73,13 +73,13 @@ func (s *server) getRenamePlan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_plan_id", "invalid plan id")
 		return
 	}
-	
+
 	plan, err := s.library.GetRenamePlan(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "plan not found")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, plan)
 }
 
@@ -92,13 +92,13 @@ func (s *server) applyRenamePlan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_plan_id", "invalid plan id")
 		return
 	}
-	
+
 	payload, _ := json.Marshal(map[string]string{"planId": id})
 	job, err := s.library.QueuePayload(r.Context(), "rename_execute", nil, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusAccepted, job)
 }

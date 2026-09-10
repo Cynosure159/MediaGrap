@@ -60,9 +60,9 @@ func TestRename_NamingTokenPattern(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		pattern        string
-		expectedStem   string
+		name            string
+		pattern         string
+		expectedStem    string
 		expectedUnknown string
 		expectedUnavail string
 	}{
@@ -151,7 +151,7 @@ func TestRename_DirectoryTemplateSplitting(t *testing.T) {
 
 func TestRename_CaseInsensitiveCollisionDetection(t *testing.T) {
 	plannedPaths := make(map[string]bool)
-	
+
 	path1 := "Movies/The Matrix (1999)/The Matrix (1999).mkv"
 	path2 := "movies/the matrix (1999)/the matrix (1999).mkv"
 
@@ -231,4 +231,3 @@ func TestRename_TVTokensAndPresets(t *testing.T) {
 		})
 	}
 }
-
