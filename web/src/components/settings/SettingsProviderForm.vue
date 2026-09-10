@@ -132,52 +132,6 @@ const emit = defineEmits<{ save: []; test: [target: ConnectionTest['target']] }>
           </label>
         </div>
 
-        <!-- Outbound Proxy -->
-        <div class="field-group">
-          <div class="field-header">
-            <label for="outbound-proxy" class="field-label">{{ labels.outboundProxy }}</label>
-            <span
-              class="status-pill"
-              :class="settings?.outboundProxyConfigured ? 'status-pill--configured' : 'status-pill--unset'"
-            >
-              <span
-                class="status-dot"
-                :class="settings?.outboundProxyConfigured ? 'status-dot--ok' : 'status-dot--neutral'"
-              ></span>
-              {{ settings?.outboundProxyConfigured ? labels.configured : labels.notSet }}
-            </span>
-          </div>
-          <input
-            id="outbound-proxy"
-            v-model="model.outboundProxy"
-			type="text"
-            autocomplete="off"
-            class="input-control font-code"
-            :placeholder="settings?.outboundProxyConfigured ? labels.proxyConfigured : labels.proxyPlaceholder"
-          />
-          <p v-if="!settings?.outboundProxyConfigured" class="field-hint">{{ labels.proxyPlaceholder }}</p>
-          <label v-if="settings?.outboundProxyConfigured" class="custom-checkbox-row">
-            <input v-model="model.clearOutboundProxy" type="checkbox" class="sr-only" />
-            <span class="custom-checkbox-box" :class="{ 'custom-checkbox-box--checked': model.clearOutboundProxy }">
-              <svg v-if="model.clearOutboundProxy" viewBox="0 0 24 24" fill="currentColor" width="11" height="11">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-              </svg>
-            </span>
-            <span class="custom-checkbox-label" :class="{ 'custom-checkbox-label--checked': model.clearOutboundProxy }">
-              {{ labels.clearProxy }}
-            </span>
-          </label>
-		  <button type="button" class="btn btn-outline btn-sm test-btn" :disabled="testingTarget !== null || !settings?.outboundProxyConfigured" @click="emit('test', 'proxy')">{{ testingTarget === 'proxy' ? labels.testingConnection : labels.testProxy }}</button>
-		  <p v-if="connectionTests.proxy" class="test-result" :class="`test-result--${connectionTests.proxy.status}`">{{ labels[`connection_${connectionTests.proxy.status}`] }} · {{ connectionTests.proxy.durationMs }} ms</p>
-        </div>
-
-		<div class="field-group">
-		  <div class="field-header"><label for="no-proxy" class="field-label">NO_PROXY</label><span class="status-pill" :class="settings?.noProxyConfigured ? 'status-pill--configured' : 'status-pill--unset'">{{ settings?.noProxyConfigured ? labels.configured : labels.notSet }}</span></div>
-		  <input id="no-proxy" v-model="model.noProxy" type="text" autocomplete="off" class="input-control font-code" :placeholder="labels.noProxyPlaceholder" />
-		  <p class="field-hint">{{ labels.noProxyHelp }}</p>
-		  <label v-if="settings?.noProxyConfigured" class="custom-checkbox-row"><input v-model="model.clearNoProxy" type="checkbox" class="sr-only" /><span class="custom-checkbox-label">{{ labels.clearNoProxy }}</span></label>
-		</div>
-
         <!-- Submit Button -->
         <div class="form-actions">
           <button type="submit" class="btn btn-primary save-btn" :disabled="saving">

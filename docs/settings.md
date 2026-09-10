@@ -58,3 +58,5 @@ Display language and theme (`dark`, `light`, or `system`) are persisted per auth
 The settings page now includes Webhook endpoint management, scoped MCP API Tokens and administrator approval of automation movie file plans. Secrets are shown once after creation or rotation; they are not saved in browser storage. File approval displays the frozen relative paths, overwrite markers, NFO contents or artwork preview and requires explicit review before granting a five-minute approval. MCP cannot approve its own plans.
 
 See [Webhook and MCP configuration](integrations.md) for key-file setup, network allowlists, token scopes, task tools and recovery limits.
+
+The connection sidebar displays the latest test result (reachable, failed, or not configured) and duration for TMDb and the proxy. API Tokens distinguish active, expired, and revoked credentials; expiry status updates while the page remains open.

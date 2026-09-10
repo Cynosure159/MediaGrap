@@ -54,13 +54,24 @@ function submit() {
 
 <template>
   <form class="integration-form" @submit.prevent="submit">
-    <label>
-      {{ zh ? '名称' : 'Name' }}
-      <input v-model="form.name" required maxlength="100" :disabled="busy" />
-    </label>
+    <div class="field-group">
+      <label class="field-label">
+        {{ zh ? '名称' : 'Name' }}
+      </label>
+      <input
+        v-model="form.name"
+        required
+        maxlength="100"
+        :disabled="busy"
+        class="input-control"
+        :placeholder="zh ? '例如：Plex Webhook 或 AI Assistant' : 'e.g., Plex Webhook or AI Assistant'"
+      />
+    </div>
 
-    <label v-if="kind === 'webhook'">
-      Webhook URL
+    <div v-if="kind === 'webhook'" class="field-group">
+      <label class="field-label">
+        Webhook URL
+      </label>
       <input
         v-model="form.url"
         type="url"
@@ -69,85 +80,223 @@ function submit() {
         :placeholder="endpoint ? (zh ? '留空保留当前 URL' : 'Leave blank to keep current URL') : 'https://…'"
         autocomplete="off"
         :disabled="busy"
+        class="input-control font-code"
       />
-    </label>
-    <label v-else>
-      {{ zh ? '有效期' : 'Expires after' }}
-      <select v-model="form.days" :disabled="busy">
-        <option :value="7">7 {{ zh ? '天' : 'days' }}</option>
-        <option :value="30">30 {{ zh ? '天' : 'days' }}</option>
-        <option :value="90">90 {{ zh ? '天' : 'days' }}</option>
-      </select>
-    </label>
+    </div>
 
-    <label v-if="kind === 'token'">
-      {{ zh ? '访问权限' : 'Access' }}
-      <select v-model="form.access" :disabled="busy">
-        <option value="read">{{ zh ? '只读' : 'Read only' }}</option>
-        <option value="tasks">{{ zh ? '查询和后台任务' : 'Queries and background tasks' }}</option>
-        <option value="plans">{{ zh ? '文件计划（每次需网页审批）' : 'File plans (Web approval required)' }}</option>
-      </select>
-    </label>
+    <div v-else class="form-grid">
+      <div class="field-group">
+        <label class="field-label">
+          {{ zh ? '有效期' : 'Expires after' }}
+        </label>
+        <div class="select-wrapper">
+          <select v-model="form.days" :disabled="busy" class="form-select">
+            <option :value="7">7 {{ zh ? '天' : 'days' }}</option>
+            <option :value="30">30 {{ zh ? '天' : 'days' }}</option>
+            <option :value="90">90 {{ zh ? '天' : 'days' }}</option>
+          </select>
+          <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 10l5 5 5-5z"/>
+          </svg>
+        </div>
+      </div>
 
-    <fieldset :disabled="busy">
-      <legend>{{ zh ? '授权媒体源（必选）' : 'Authorized sources (required)' }}</legend>
-      <label v-for="source in sources" :key="source.id" class="source-option">
-        <input v-model="form.sourceIds" type="checkbox" :value="source.id" />
-        {{ source.name }}
-      </label>
-      <p v-if="!sources.length">{{ zh ? '请先添加媒体源。' : 'Add a media source first.' }}</p>
+      <div class="field-group">
+        <label class="field-label">
+          {{ zh ? '访问权限' : 'Access' }}
+        </label>
+        <div class="select-wrapper">
+          <select v-model="form.access" :disabled="busy" class="form-select">
+            <option value="read">{{ zh ? '只读 (Read only)' : 'Read only' }}</option>
+            <option value="tasks">{{ zh ? '查询和后台任务 (Tasks)' : 'Queries and background tasks' }}</option>
+            <option value="plans">{{ zh ? '文件计划 (需网页审批)' : 'File plans (Web approval required)' }}</option>
+          </select>
+          <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 10l5 5 5-5z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <fieldset class="options-fieldset" :disabled="busy">
+      <legend class="options-legend">{{ zh ? '授权媒体源（必选）' : 'Authorized sources (required)' }}</legend>
+      <div class="options-list">
+        <label v-for="source in sources" :key="source.id" class="source-option">
+          <input v-model="form.sourceIds" type="checkbox" :value="source.id" class="custom-check" />
+          <span class="source-option__name">{{ source.name }}</span>
+        </label>
+      </div>
+      <p v-if="!sources.length" class="empty-field-msg">{{ zh ? '请先在上方添加媒体源。' : 'Add a media source first.' }}</p>
     </fieldset>
 
-    <fieldset v-if="kind === 'webhook'" :disabled="busy">
-      <legend>{{ zh ? '订阅事件' : 'Events' }}</legend>
-      <label
-        v-for="event in ['job.succeeded', 'job.failed', 'write_plan.applied', 'artwork_plan.applied', 'rename_plan.applied']"
-        :key="event"
-        class="source-option"
-      >
-        <input v-model="form.eventTypes" type="checkbox" :value="event" />
-        {{ event }}
-      </label>
+    <fieldset v-if="kind === 'webhook'" class="options-fieldset" :disabled="busy">
+      <legend class="options-legend">{{ zh ? '订阅事件' : 'Events' }}</legend>
+      <div class="options-list">
+        <label
+          v-for="event in ['job.succeeded', 'job.failed', 'write_plan.applied', 'artwork_plan.applied', 'rename_plan.applied']"
+          :key="event"
+          class="source-option"
+        >
+          <input v-model="form.eventTypes" type="checkbox" :value="event" class="custom-check" />
+          <span class="source-option__name font-code">{{ event }}</span>
+        </label>
+      </div>
     </fieldset>
 
-    <button class="btn-primary" type="submit" :disabled="busy || !valid">
-      {{ endpoint ? (zh ? '保存修改' : 'Save changes') : (zh ? '创建' : 'Create') }}
-    </button>
+    <div class="form-actions">
+      <button class="btn btn-primary form-submit" type="submit" :disabled="busy || !valid">
+        <span>{{ endpoint ? (zh ? '保存修改' : 'Save changes') : (zh ? '创建集成' : 'Create') }}</span>
+      </button>
+    </div>
   </form>
 </template>
 
 <style scoped>
 .integration-form {
-  display: grid;
-  gap: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.integration-form label {
+
+.form-grid {
   display: grid;
-  gap: 0.3rem;
-  font-size: 0.8rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
-.integration-form input:not([type=checkbox]),
-.integration-form select {
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface-variant, #c7c4d7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.input-control {
   width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 0.55rem;
-  color: var(--on-surface);
-  background: var(--surface-container-high);
-  border: 1px solid var(--outline-variant);
-  border-radius: 0.35rem;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--surface-container-lowest, #070d1f);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  color: var(--on-surface, #dce1fb);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.15s ease;
 }
-.integration-form fieldset {
-  border: 1px solid var(--outline-variant);
-  border-radius: 0.35rem;
+
+.input-control:focus {
+  border-color: var(--primary, #c0c1ff);
+  box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.15);
+}
+
+.font-code {
+  font-family: var(--font-data, monospace);
+  font-size: 11px;
+}
+
+.select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.form-select {
+  width: 100%;
+  height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-lowest, #070d1f);
+  color: var(--on-surface, #dce1fb);
+  font-size: 12px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.form-select:focus {
+  border-color: var(--primary, #c0c1ff);
+}
+
+.select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--outline, #908fa0);
+  pointer-events: none;
+}
+
+.options-fieldset {
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 10px 12px;
+  background: var(--surface-container-lowest, #070d1f);
+}
+
+.options-legend {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary, #c0c1ff);
+  padding: 0 4px;
+}
+
+.options-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  font-size: 0.8rem;
+  gap: 8px 14px;
+  margin-top: 4px;
 }
-.integration-form .source-option {
-  display: flex;
+
+.source-option {
+  display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--on-surface, #dce1fb);
+}
+
+.custom-check {
+  cursor: pointer;
+  accent-color: var(--primary-container, #6366f1);
+}
+
+.source-option__name {
+  user-select: none;
+}
+
+.empty-field-msg {
+  margin: 0;
+  font-size: 11px;
+  color: var(--outline, #908fa0);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+
+.form-submit {
+  height: 32px;
+  padding: 0 16px;
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

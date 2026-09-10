@@ -24,32 +24,53 @@ function changeLocale(value: Locale) {
           <span class="eyebrow">{{ labels.interfaceEyebrow }}</span>
         </div>
         <h2 class="section-title">{{ labels.interfaceSettings }}</h2>
+        <p class="section-hint">{{ labels.interfaceHint || (locale === 'zh-CN' ? '自定义语言偏好与深浅主题显示效果。' : 'Customize interface language and theme preferences.') }}</p>
       </div>
     </div>
 
     <div class="card-body">
-      <div class="field-group locale-group">
-        <label for="interface-language" class="field-label">{{ labels.interfaceLanguage }}</label>
-        <div class="select-wrapper">
-          <select
-            id="interface-language"
-            class="form-select"
-			:value="model.locale || locale"
-			@change="changeLocale(($event.target as HTMLSelectElement).value as Locale)"
-          >
-            <option value="zh-CN">简体中文 (zh-CN)</option>
-            <option value="en">English (en)</option>
-          </select>
-          <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7 10l5 5 5-5z"/>
-          </svg>
+      <div class="form-grid">
+        <div class="field-group">
+          <label for="interface-language" class="field-label">{{ labels.interfaceLanguage }}</label>
+          <div class="select-wrapper">
+            <select
+              id="interface-language"
+              class="form-select"
+              :value="model.locale || locale"
+              @change="changeLocale(($event.target as HTMLSelectElement).value as Locale)"
+            >
+              <option value="zh-CN">简体中文 (zh-CN)</option>
+              <option value="en">English (en)</option>
+            </select>
+            <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 10l5 5 5-5z"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="interface-theme" class="field-label">{{ labels.interfaceTheme }}</label>
+          <div class="select-wrapper">
+            <select id="interface-theme" v-model="model.theme" class="form-select" @change="emit('changeTheme', model.theme)">
+              <option value="dark">{{ labels.themeDark }}</option>
+              <option value="light">{{ labels.themeLight }}</option>
+              <option value="system">{{ labels.themeSystem }}</option>
+            </select>
+            <svg class="select-chevron" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 10l5 5 5-5z"/>
+            </svg>
+          </div>
         </div>
       </div>
-	  <div class="field-group locale-group">
-		<label for="interface-theme" class="field-label">{{ labels.interfaceTheme }}</label>
-		<div class="select-wrapper"><select id="interface-theme" v-model="model.theme" class="form-select" @change="emit('changeTheme', model.theme)"><option value="dark">{{ labels.themeDark }}</option><option value="light">{{ labels.themeLight }}</option><option value="system">{{ labels.themeSystem }}</option></select></div>
-	  </div>
-	  <button type="button" class="btn btn-primary preference-save" :disabled="saving" @click="emit('save')">{{ saving ? labels.saving : labels.savePreferences }}</button>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary preference-save" :disabled="saving" @click="emit('save')">
+          <svg v-if="saving" viewBox="0 0 24 24" fill="currentColor" width="14" height="14" class="spin-slow">
+            <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+          </svg>
+          <span>{{ saving ? labels.saving : labels.savePreferences }}</span>
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -106,21 +127,34 @@ function changeLocale(value: Locale) {
   letter-spacing: -0.01em;
 }
 
-.card-body {
-  padding: 24px;
+.section-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--on-surface-variant, #c7c4d7);
+  line-height: 1.4;
 }
 
-.locale-group {
+.card-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 22rem;
 }
-.card-body { display: grid; gap: 16px; }
-.preference-save { width: fit-content; }
 
 .field-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--on-surface-variant, #c7c4d7);
   text-transform: uppercase;
@@ -162,5 +196,21 @@ function changeLocale(value: Locale) {
   height: 18px;
   color: var(--outline, #908fa0);
   pointer-events: none;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+}
+
+.preference-save {
+  height: 36px;
+  padding: 0 18px;
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
