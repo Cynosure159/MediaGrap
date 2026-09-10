@@ -205,3 +205,11 @@ Security tests and limits are part of each feature, not a final hardening phase.
 Automation tasks persist their actor and idempotency identity. Movie file plans freeze relative operations, metadata/file fingerprints and a digest. A Web administrator approves that digest before apply can atomically consume approval and enqueue work. Browser writers and automation writers share a bounded mutation lane. Rooted filesystem handles confine automated writes; operation records allow startup reconciliation of already-published results without blindly replaying mutations.
 
 The automation movie plan engine currently supplements the older Web write-plan paths. It does not imply that legacy TV batches, whole-directory renames or arbitrary NAS failures support the same recovery guarantees. See [integration operations and limits](integrations.md).
+
+### Operations and catalog component boundaries
+
+`JobCenter` owns job filtering and forwards cancellation/retry events. `JobFilterBar` receives counts and a selected-filter model; `ActiveJobCard` owns progress rendering and cancellation controls; `JobHistoryRow` owns terminal-state presentation and retry controls. Each child owns its scoped styles, including history-row mobile layout.
+
+`AuditCenter` owns search, category filtering and the single expanded-entry ID. `AuditEntryRow` receives an entry and expanded state and emits a toggle event, keeping the accessible disclosure button and recovery details together.
+
+Movie and TV catalogs keep their distinct filtering and tree logic. `useDismissiblePopover` shares popover state, outside-click handling and listener cleanup. The workspace remains the sole owner of the catalogs' mobile width breakpoint.

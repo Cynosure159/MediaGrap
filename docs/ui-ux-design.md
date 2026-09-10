@@ -63,3 +63,7 @@ MediaGrap is a web-first, self-hosted media metadata manager designed to deliver
 ### 2.4 字体规范
 - **界面文本**: `Inter`。
 - **技术规格 / 分辨率 / XML / 文件路径**: `JetBrains Mono`。
+
+### Library layout and audit accessibility
+
+The library workspace owns the 760px mobile breakpoint, including full-width movie and TV catalogs and selection drill-down. Catalog components do not define independent mobile width breakpoints. Audit recovery details use native focusable buttons with `aria-expanded` and `aria-controls`; Enter or Space toggles details.

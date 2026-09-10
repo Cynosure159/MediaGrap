@@ -205,7 +205,9 @@ const streamSummary = computed(() => {
             </svg>
           </div>
           <div class="file-details">
-            <p class="file-path font-code" :title="item.relativePath">{{ item.relativePath }}</p>
+            <div class="file-path-row">
+              <p class="file-path font-code" :title="item.relativePath">{{ item.relativePath }}</p>
+            </div>
             <div class="file-specs">
               <span class="dot" :class="inspection ? (inspection.video.length ? 'dot-ok' : 'dot-warning') : 'dot-ok'"></span>
               <span class="status-txt">{{ inspection ? (inspection.video.length ? (labels.fileHealthy || 'HEALTHY') : (labels.fileUnprobed || 'UNPROBED')) : (labels.fileHealthy || 'HEALTHY') }}</span>

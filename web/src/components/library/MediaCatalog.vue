@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import type { Job, MediaItem } from '@/api/library'
+import { useDismissiblePopover } from '@/composables/useDismissiblePopover'
 import SearchBar from '@/components/common/SearchBar.vue'
 
 const props = defineProps<{
@@ -17,7 +18,13 @@ const emit = defineEmits<{
 }>()
 
 const query = shallowRef('')
-const filterMode = shallowRef<'all' | 'unscraped' | 'nfo_missing'>('all')
+type FilterType = 'all' | 'unscraped' | 'nfo_missing' | 'poster_missing' | '4k' | '1080p'
+const filterMode = shallowRef<FilterType>('all')
+type SortType = 'title' | 'year' | 'size'
+const sortMode = shallowRef<SortType>('title')
+const { open: showFilterMenu, container: filterDropdownRef } = useDismissiblePopover()
+
+const isFilterActive = computed(() => filterMode.value !== 'all' || sortMode.value !== 'title')
 
 function submitSearch() {
   emit('search', query.value)
@@ -27,23 +34,47 @@ function hasSidecar(item: MediaItem, kind: string): boolean {
   return item.sidecars.some(s => s.kind === kind || s.relativePath.toLowerCase().includes(kind))
 }
 
-const filteredItems = computed(() => {
-  if (filterMode.value === 'unscraped' || filterMode.value === 'nfo_missing') {
-    return props.items.filter(item => !hasSidecar(item, 'nfo'))
-  }
-  return props.items
-})
-
-const unscrapedCount = computed(() => {
-  return props.items.filter(item => !hasSidecar(item, 'nfo')).length
-})
-
 function getResolution(item: MediaItem): string {
   const path = item.relativePath.toLowerCase()
   if (path.includes('2160p') || path.includes('4k') || path.includes('uhd')) return '4K'
   if (path.includes('1080p') || path.includes('fhd')) return '1080p'
   if (path.includes('720p')) return '720p'
   return 'HD'
+}
+
+const filteredItems = computed(() => {
+  let list = [...props.items]
+
+  // Filter
+  if (filterMode.value === 'unscraped' || filterMode.value === 'nfo_missing') {
+    list = list.filter(item => !hasSidecar(item, 'nfo'))
+  } else if (filterMode.value === 'poster_missing') {
+    list = list.filter(item => !hasSidecar(item, 'poster') && !hasSidecar(item, 'jpg') && !hasSidecar(item, 'png'))
+  } else if (filterMode.value === '4k') {
+    list = list.filter(item => getResolution(item) === '4K')
+  } else if (filterMode.value === '1080p') {
+    list = list.filter(item => getResolution(item) === '1080p')
+  }
+
+  // Sort
+  if (sortMode.value === 'year') {
+    list.sort((a, b) => (b.yearHint || 0) - (a.yearHint || 0))
+  } else if (sortMode.value === 'size') {
+    list.sort((a, b) => (b.fileSize || 0) - (a.fileSize || 0))
+  } else {
+    list.sort((a, b) => (a.title || a.titleHint || '').localeCompare(b.title || b.titleHint || ''))
+  }
+
+  return list
+})
+
+const unscrapedCount = computed(() => {
+  return props.items.filter(item => !hasSidecar(item, 'nfo')).length
+})
+
+function setFilter(f: FilterType) {
+  filterMode.value = f
+  showFilterMenu.value = false
 }
 </script>
 
@@ -61,28 +92,116 @@ function getResolution(item: MediaItem): string {
       <!-- Count & Actions Bar -->
       <div class="catalog-toolbar">
         <div class="catalog-stats">
-          <span class="count-main">{{ items.length }} {{ labels.movies || '电影' }}</span>
+          <span class="count-main">{{ filteredItems.length }} {{ labels.movies || '电影' }}</span>
           <span v-if="unscrapedCount > 0" class="count-unscraped">({{ unscrapedCount }} {{ labels.unscraped || '未刮削' }})</span>
         </div>
         <div class="toolbar-actions">
-          <button
-            class="icon-action-btn"
-            :class="{ active: filterMode !== 'all' }"
-            :title="labels.filterByStatus || 'Filter'"
-            type="button"
-            @click="filterMode = filterMode === 'all' ? 'unscraped' : 'all'"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
-            </svg>
-          </button>
+          <!-- Filter Menu Trigger -->
+          <div ref="filterDropdownRef" class="filter-dropdown-wrap">
+            <button
+              class="icon-action-btn"
+              :class="{ active: isFilterActive || showFilterMenu }"
+              :title="labels.filterByStatus || 'Filter'"
+              type="button"
+              @click.stop="showFilterMenu = !showFilterMenu"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
+              </svg>
+              <span v-if="isFilterActive" class="active-dot"></span>
+            </button>
+
+            <!-- Dropdown Popover with Animation -->
+            <Transition name="dropdown-fade">
+              <div v-if="showFilterMenu" class="filter-popover" @click.stop>
+                <div class="popover-section">
+                  <span class="popover-label">{{ labels.filterByStatus || 'Filter' }}</span>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: filterMode === 'all' }"
+                    @click="setFilter('all')"
+                  >
+                    <span>{{ labels.filterAll || 'All' }}</span>
+                    <span class="popover-count font-code">{{ items.length }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: filterMode === 'unscraped' }"
+                    @click="setFilter('unscraped')"
+                  >
+                    <span>{{ labels.filterUnscraped || 'Unscraped' }}</span>
+                    <span class="popover-count font-code text-warn">{{ unscrapedCount }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: filterMode === '4k' }"
+                    @click="setFilter('4k')"
+                  >
+                    <span>{{ labels.filter4K || '4K UHD' }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: filterMode === '1080p' }"
+                    @click="setFilter('1080p')"
+                  >
+                    <span>{{ labels.filter1080p || '1080p FHD' }}</span>
+                  </button>
+                </div>
+
+                <div class="popover-divider"></div>
+
+                <div class="popover-section">
+                  <span class="popover-label">{{ labels.sortMovies || 'Sort by' }}</span>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: sortMode === 'title' }"
+                    @click="sortMode = 'title'; showFilterMenu = false"
+                  >
+                    <span>{{ labels.sortTitle || 'Title (A-Z)' }}</span>
+                    <svg v-if="sortMode === 'title'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: sortMode === 'year' }"
+                    @click="sortMode = 'year'; showFilterMenu = false"
+                  >
+                    <span>{{ labels.sortYear || 'Year (Newest)' }}</span>
+                    <svg v-if="sortMode === 'year'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: sortMode === 'size' }"
+                    @click="sortMode = 'size'; showFilterMenu = false"
+                  >
+                    <span>{{ labels.sortSize || 'File Size' }}</span>
+                    <svg v-if="sortMode === 'size'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </Transition>
+          </div>
+
+          <!-- Scan Button -->
           <button
             class="icon-action-btn"
             :title="labels.refresh || 'Scan Library'"
             type="button"
             @click="emit('scan')"
           >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
               <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
             </svg>
           </button>
@@ -164,6 +283,10 @@ function getResolution(item: MediaItem): string {
 
       <!-- Empty State -->
       <div v-if="filteredItems.length === 0" class="catalog-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" class="empty-icon">
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="M8 4v16M16 4v16M2 12h20" />
+        </svg>
         <p>{{ labels.noFilms || 'No media items found.' }}</p>
       </div>
     </div>
@@ -190,44 +313,6 @@ function getResolution(item: MediaItem): string {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.search-box {
-  position: relative;
-  width: 100%;
-}
-
-.search-icon {
-  position: absolute;
-  left: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
-  color: var(--on-surface-variant, #c7c4d7);
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  height: 32px;
-  background: var(--surface-container-low, #151b2d);
-  border: 1px solid var(--outline-variant, #2e3447);
-  border-radius: var(--radius-sm, 0.25rem);
-  color: var(--on-surface, #dce1fb);
-  font-size: 13px;
-  padding: 0 10px 0 32px;
-  transition: all 0.15s ease;
-}
-
-.search-input:focus {
-  border-color: var(--primary, #c0c1ff);
-  outline: none;
-  box-shadow: 0 0 0 1px var(--primary, #c0c1ff);
-}
-
-.search-input::placeholder {
-  color: rgba(199, 196, 215, 0.5);
 }
 
 .catalog-toolbar {
@@ -259,9 +344,13 @@ function getResolution(item: MediaItem): string {
   gap: 4px;
 }
 
+.filter-dropdown-wrap {
+  position: relative;
+}
+
 .icon-action-btn {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-sm, 0.25rem);
   background: transparent;
   border: 1px solid transparent;
@@ -282,6 +371,70 @@ function getResolution(item: MediaItem): string {
   background: var(--surface-container-high, #23293c);
   color: var(--primary, #c0c1ff);
   border-color: var(--primary, #c0c1ff);
+}
+
+.filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 180px;
+  background: var(--surface-container-high, #23293c);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-md, 0.375rem);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 8px 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.popover-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.popover-label {
+  padding: 4px 12px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--outline, #908fa0);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: var(--on-surface, #dce1fb);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.popover-item:hover {
+  background: var(--surface-container-highest, #2e3447);
+}
+
+.popover-item.active {
+  color: var(--primary, #c0c1ff);
+  font-weight: 600;
+  background: rgba(192, 193, 255, 0.08);
+}
+
+.popover-count {
+  font-size: 10px;
+  color: var(--outline, #908fa0);
+}
+
+.popover-divider {
+  height: 1px;
+  background: var(--outline-variant, #2e3447);
+  margin: 6px 0;
 }
 
 .active-job-banner {
@@ -360,8 +513,8 @@ function getResolution(item: MediaItem): string {
 
 .thumb-box {
   position: relative;
-  width: 40px;
-  height: 56px;
+  width: 42px;
+  height: 60px;
   border-radius: var(--radius-sm, 0.25rem);
   overflow: hidden;
   background: var(--surface-container-lowest, #070d1f);
@@ -458,18 +611,19 @@ function getResolution(item: MediaItem): string {
 }
 
 .catalog-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 3rem 1rem;
   text-align: center;
   color: var(--outline, #908fa0);
   font-size: 13px;
 }
 
-@media (max-width: 700px) {
-  .catalog-panel {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    border-right: none;
-  }
+.empty-icon {
+  opacity: 0.4;
 }
+
 </style>

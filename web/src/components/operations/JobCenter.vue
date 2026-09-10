@@ -1,89 +1,231 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
+import ActiveJobCard from './ActiveJobCard.vue'
+import JobHistoryRow from './JobHistoryRow.vue'
+import JobFilterBar from './JobFilterBar.vue'
+import type { JobFilter } from './jobFilters'
 import type { Job } from '@/api/types'
 
 const props = defineProps<{ jobs: ReadonlyArray<Job>; labels: Record<string, string>; streamState: string }>()
 const emit = defineEmits<{ cancel: [id: number]; retry: [id: number] }>()
+
+const activeFilter = shallowRef<JobFilter>('all')
+
+const runningJobs = computed(() => props.jobs.filter(job => job.state === 'running'))
+const queuedJobs = computed(() => props.jobs.filter(job => job.state === 'queued'))
+const succeededJobs = computed(() => props.jobs.filter(job => job.state === 'succeeded'))
+const failedJobs = computed(() => props.jobs.filter(job => ['failed', 'cancelled', 'interrupted'].includes(job.state)))
+
 const activeJobs = computed(() => props.jobs.filter(job => job.state === 'queued' || job.state === 'running'))
 const historyJobs = computed(() => props.jobs.filter(job => job.state !== 'queued' && job.state !== 'running'))
 
-function percent(job: Job): number {
-  if (!job.progressTotal) return job.state === 'succeeded' ? 100 : 0
-  return Math.min(100, Math.round((job.progressCurrent / job.progressTotal) * 100))
-}
+const filterCounts = computed(() => ({
+  all: props.jobs.length,
+  running: runningJobs.value.length,
+  queued: queuedJobs.value.length,
+  succeeded: succeededJobs.value.length,
+  failed: failedJobs.value.length,
+}))
 
-function jobLabel(kind = ''): string {
-  return props.labels[`jobKind_${kind}`] || kind.replaceAll('_', ' ')
-}
+const filteredHistoryJobs = computed(() => {
+  if (activeFilter.value === 'all') return historyJobs.value
+  if (activeFilter.value === 'succeeded') return succeededJobs.value
+  if (activeFilter.value === 'failed') return failedJobs.value
+  return []
+})
+
+const showActiveSection = computed(() => {
+  if (activeFilter.value === 'all' || activeFilter.value === 'running' || activeFilter.value === 'queued') {
+    return activeJobs.value.length > 0
+  }
+  return false
+})
+
+const displayActiveJobs = computed(() => {
+  if (activeFilter.value === 'running') return runningJobs.value
+  if (activeFilter.value === 'queued') return queuedJobs.value
+  return activeJobs.value
+})
 </script>
 
 <template>
   <section class="ops-card job-center">
-    <header class="section-header">
-      <div>
-        <p class="eyebrow">{{ labels.jobQueue }}</p>
-        <h2>{{ labels.jobCenter }}</h2>
+    <!-- Header with Eyebrow, Title & Filter Tabs -->
+    <header class="card-header">
+      <div class="header-main">
+        <div class="title-group">
+          <p class="eyebrow">{{ labels.jobQueue || 'DURABLE WORK' }}</p>
+          <h2>{{ labels.jobCenter || 'Job Center' }}</h2>
+        </div>
+        <span class="total-badge font-code">{{ jobs.length }}</span>
       </div>
-      <span class="stream-badge" :class="`stream-badge--${streamState}`">
-        <span class="status-dot" :class="streamState === 'connected' ? 'status-dot--success' : 'status-dot--warning'"></span>
-        {{ labels[`stream_${streamState}`] }}
-      </span>
+
+      <!-- State Filter Tabs -->
+      <JobFilterBar v-model="activeFilter" :labels="labels" :counts="filterCounts" />
     </header>
 
-    <div v-if="activeJobs.length" class="job-list">
-      <article v-for="job in activeJobs" :key="job.id" class="job-row job-row--active">
-        <div class="job-row__top">
-          <div>
-            <strong>{{ jobLabel(job.kind) }}</strong>
-            <span class="job-id font-code">#{{ job.id }}</span>
-          </div>
-          <button class="btn btn-ghost btn-sm" type="button" @click="emit('cancel', job.id)">{{ labels.cancelJob }}</button>
-        </div>
-        <p>{{ job.message || labels.jobWaiting }}</p>
-        <div class="progress-track"><span :style="{ width: `${percent(job)}%` }"></span></div>
-        <div class="job-meta font-code"><span>{{ labels[`jobState_${job.state}`] || job.state }}</span><span>{{ job.progressCurrent }} / {{ job.progressTotal || '—' }}</span></div>
-      </article>
-    </div>
-    <p v-else class="empty-state">{{ labels.noActiveJobs }}</p>
+    <!-- Active Jobs Section -->
+    <div v-if="showActiveSection" class="active-jobs-section">
+      <div class="section-subhead">
+        <span class="subhead-title">{{ labels.jobQueue || 'ACTIVE QUEUE' }}</span>
+        <span class="live-tag">
+          <span class="pulse-ring"></span>
+          <span>LIVE</span>
+        </span>
+      </div>
 
-    <h3 class="history-title">{{ labels.jobHistory }}</h3>
-    <div class="history-list">
-      <article v-for="job in historyJobs" :key="job.id" class="history-row">
-        <span class="state-mark" :class="`state-mark--${job.state}`"></span>
-        <div class="history-main">
-          <strong>{{ jobLabel(job.kind) }} <span class="font-code">#{{ job.id }}</span></strong>
-          <p>{{ job.errorMessage || job.message }}</p>
-        </div>
-        <span class="history-state font-code">{{ labels[`jobState_${job.state}`] || job.state }}</span>
-        <button v-if="['failed', 'cancelled', 'interrupted'].includes(job.state)" class="btn btn-ghost btn-sm" type="button" @click="emit('retry', job.id)">{{ labels.retryJob }}</button>
-      </article>
-      <p v-if="!historyJobs.length" class="empty-state">{{ labels.noJobHistory }}</p>
+      <div class="active-job-grid">
+        <ActiveJobCard v-for="job in displayActiveJobs" :key="job.id" :job="job" :labels="labels" @cancel="emit('cancel', $event)" />
+      </div>
+    </div>
+
+    <!-- Job History Section -->
+    <div v-if="activeFilter !== 'running' && activeFilter !== 'queued'" class="history-section">
+      <div class="section-subhead">
+        <span class="subhead-title">{{ labels.jobHistory || 'JOB HISTORY' }}</span>
+      </div>
+
+      <div v-if="filteredHistoryJobs.length" class="history-list">
+        <JobHistoryRow v-for="job in filteredHistoryJobs" :key="job.id" :job="job" :labels="labels" @retry="emit('retry', $event)" />
+      </div>
+
+      <div v-else class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28" class="empty-icon">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+        <p>{{ labels.noJobHistory || 'No completed jobs recorded yet.' }}</p>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.ops-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-container); overflow: hidden; }
-.section-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.1rem; border-bottom: 1px solid var(--border-subtle); }
-.eyebrow { margin: 0 0 .2rem; color: var(--primary); font: 700 .65rem/1 var(--font-data); letter-spacing: .08em; text-transform: uppercase; }
-h2, h3, p { margin: 0; } h2 { font-size: 1rem; color: var(--on-surface); }
-.stream-badge { display: inline-flex; align-items: center; gap: .4rem; border-radius: 999px; padding: .3rem .55rem; background: var(--surface-container-high); color: var(--on-surface-variant); font: 600 .67rem/1 var(--font-data); }
-.job-list, .history-list { display: grid; }
-.job-row { padding: .9rem 1.1rem; border-bottom: 1px solid var(--border-subtle); }
-.job-row--active { border-left: 2px solid var(--primary); }
-.job-row__top { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.job-row strong, .history-row strong { color: var(--on-surface); font-size: .8rem; text-transform: capitalize; }
-.job-id { margin-left: .4rem; color: var(--outline); font-size: .68rem; }
-.job-row p, .history-row p { margin-top: .3rem; color: var(--on-surface-variant); font-size: .72rem; }
-.progress-track { height: 4px; margin-top: .7rem; overflow: hidden; border-radius: 999px; background: var(--surface-container-highest); }
-.progress-track span { display: block; height: 100%; background: var(--primary); transition: width .2s ease; }
-.job-meta { display: flex; justify-content: space-between; margin-top: .35rem; color: var(--outline); font-size: .65rem; }
-.history-title { padding: .85rem 1.1rem .55rem; color: var(--on-surface-variant); font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; }
-.history-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: .75rem; padding: .7rem 1.1rem; border-top: 1px solid var(--border-subtle); }
-.history-main { min-width: 0; } .history-main p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-state { color: var(--outline); font-size: .65rem; }
-.state-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--outline); }
-.state-mark--succeeded { background: var(--secondary); } .state-mark--failed { background: var(--error); } .state-mark--cancelled, .state-mark--interrupted { background: var(--tertiary); }
-.empty-state { padding: 1rem 1.1rem; color: var(--outline); font-size: .75rem; }
-@media (max-width: 700px) { .history-row { grid-template-columns: 8px minmax(0, 1fr) auto; } .history-state { display: none; } }
+.job-center {
+  background: var(--surface-container, #191f31);
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-lg, 0.5rem);
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.card-header {
+  padding: 16px 20px;
+  background: var(--surface-container-low, #151b2d);
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--primary, #c0c1ff);
+  font: 700 0.65rem/1 var(--font-data);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--on-surface, #dce1fb);
+}
+
+.total-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-container-highest, #2e3447);
+  color: var(--on-surface, #dce1fb);
+  font-size: 11px;
+}
+
+.section-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px 8px;
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+  background: rgba(12, 19, 36, 0.2);
+}
+
+.subhead-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--outline, #908fa0);
+}
+
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--secondary, #4edea3);
+  letter-spacing: 0.05em;
+}
+
+.pulse-ring {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--secondary, #4edea3);
+  box-shadow: 0 0 0 0 rgba(78, 222, 163, 0.6);
+  animation: pulse-green 1.8s infinite;
+}
+
+.active-jobs-section {
+  border-bottom: 1px solid var(--outline-variant, #2e3447);
+}
+
+.active-job-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--outline, #908fa0);
+  font-size: 12px;
+}
+
+.empty-icon {
+  opacity: 0.4;
+}
+
+@media (max-width: 600px) {
+  .card-header {
+    padding: 12px 14px;
+  }
+  .active-job-grid {
+    padding: 12px 14px;
+  }
+}
 </style>

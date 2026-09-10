@@ -185,6 +185,13 @@ onMounted(async () => {
 
 /* ── Mobile Responsive Logic ──────────────────────────────── */
 @media (max-width: 760px) {
+  .split-pane-layout :deep(.catalog-panel) {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    border-right: none;
+  }
+
   .workspace-shell {
     height: auto;
     min-height: 100vh;

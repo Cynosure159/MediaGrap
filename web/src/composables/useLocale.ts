@@ -25,6 +25,15 @@ const messages = {
     executeRename: 'Execute Safe Rename & Move', dryRunSimulation: 'Dry Run Simulation', noConflictsDetected: 'No conflicts detected', conflictsDetected: 'Conflicts detected — cannot execute', renameQueued: 'Rename job queued. Track progress in the Jobs panel.', renameDir: 'RENAME DIR', renameFile: 'RENAME FILE', presetKodi: 'Kodi Standard', presetPlex: 'Plex Standard', presetCustom: 'Custom', patternPreset: 'Preset',
     collapsePreview: 'Collapse preview', expandPreview: 'Expand preview', closePreview: 'Close preview',
     renameScope: 'Rename scope', scopeAllEpisodes: 'Whole show (All episodes)', scopeSeason: 'Season', scopeSingleEpisode: 'Selected episode', presetKodiTV: 'Kodi Standard', presetKodiTVWithTitle: 'Kodi (with Title)', presetPlexTV: 'Plex Standard', presetJellyfinTV: 'Jellyfin / Emby', presetFlatTV: 'Flat (No Season folder)',
+    allJobs: 'All', runningJobs: 'Running', queuedJobs: 'Queued', succeededJobs: 'Succeeded', failedJobs: 'Failed',
+    auditSearchPlaceholder: 'Search path, action, or target…', auditFilterAll: 'All actions', auditFilterNfo: 'NFO writes', auditFilterRename: 'Renames',
+    viewDiff: 'View details', closeDiff: 'Close details', noAuditMatch: 'No audit records match the filter.', storageHealth: 'Storage & System Health',
+    jobDetail: 'Job details', elapsedTime: 'Elapsed',
+    sortMovies: 'Sort by', sortTitle: 'Title (A-Z)', sortYear: 'Year (Newest)', sortSize: 'File size (Largest)',
+    filterAll: 'All', filterUnscraped: 'Unscraped', filterMissingNfo: 'Missing NFO', filterMissingPoster: 'Missing Poster', filter4K: '4K UHD', filter1080p: '1080p FHD',
+    copyPath: 'Copy path', pathCopied: 'Copied!',
+    allEpisodesScraped: 'Scraped', episodesScrapedProgress: 'scraped',
+    showOverview: 'Show overview', seasonOverview: 'Season overview', episodeOverview: 'Episode overview', airDate: 'Air date', guestStars: 'Guest stars',
   },
   'zh-CN': {
     opening: '正在打开 MediaGrap…', setup: '创建首个管理员', welcome: '欢迎回来', username: '用户名', password: '密码', signIn: '登录', create: '创建管理员',
@@ -48,6 +57,15 @@ const messages = {
     executeRename: '执行安全重命名与移动', dryRunSimulation: '模拟预览', noConflictsDetected: '未发现冲突', conflictsDetected: '存在冲突 — 无法执行', renameQueued: '重命名任务已加入队列，请在作业面板追踪进度。', renameDir: '重命名目录', renameFile: '重命名文件', presetKodi: 'Kodi 标准', presetPlex: 'Plex 标准', presetCustom: '自定义', patternPreset: '预设',
     collapsePreview: '收起预览', expandPreview: '展开预览', closePreview: '关闭预览',
     renameScope: '重命名范围', scopeAllEpisodes: '整部剧集（全部集）', scopeSeason: '第', scopeSingleEpisode: '选中单集', presetKodiTV: 'Kodi 标准', presetKodiTVWithTitle: 'Kodi 标准（带单集标题）', presetPlexTV: 'Plex 标准', presetJellyfinTV: 'Jellyfin / Emby', presetFlatTV: '平铺（无 Season 目录）',
+    allJobs: '全部', runningJobs: '运行中', queuedJobs: '排队中', succeededJobs: '已完成', failedJobs: '失败',
+    auditSearchPlaceholder: '搜索路径、操作或目标…', auditFilterAll: '全部操作', auditFilterNfo: 'NFO 写入', auditFilterRename: '重命名',
+    viewDiff: '查看详情', closeDiff: '关闭详情', noAuditMatch: '未找到匹配的审计记录。', storageHealth: '存储与系统健康',
+    jobDetail: '作业详情', elapsedTime: '耗时',
+    sortMovies: '排序方式', sortTitle: '片名 (A-Z)', sortYear: '年份 (最新)', sortSize: '文件大小 (从大到小)',
+    filterAll: '全部', filterUnscraped: '未刮削', filterMissingNfo: '缺少 NFO', filterMissingPoster: '缺少海报', filter4K: '4K 超高清', filter1080p: '1080p 全高清',
+    copyPath: '复制路径', pathCopied: '已复制！',
+    allEpisodesScraped: '已刮削', episodesScrapedProgress: '已刮削',
+    showOverview: '剧集总览', seasonOverview: '季度总览', episodeOverview: '单集概览', airDate: '首播日期', guestStars: '客串演职员',
   }
 } as const
 
