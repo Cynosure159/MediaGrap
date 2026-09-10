@@ -27,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const query = shallowRef('')
+const scanning = shallowRef(false)
 const selectedMovieId = computed(() => props.selectedMovieId ?? null)
 const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
 const activeTab = computed(() => props.activeTab ?? 'overview')
@@ -40,9 +41,21 @@ async function search(value = '') {
   await refresh(query.value)
 }
 
-async function scanActiveSource() {
-  const source = sourceItems.value[0]
-  if (source) await queueScan(source.id, query.value)
+async function scanSources() {
+  if (scanning.value) return
+  scanning.value = true
+  error.value = null
+  try {
+    for (const source of sourceItems.value.filter(item => item.enabled)) {
+      try {
+        await queueScan(source.id, query.value)
+      } catch (caught) {
+        error.value = caught instanceof Error ? caught.message : 'Unable to scan library'
+      }
+    }
+  } finally {
+    scanning.value = false
+  }
 }
 
 onMounted(async () => {
@@ -52,6 +65,7 @@ onMounted(async () => {
 
 <template>
   <div class="workspace-shell">
+    <p v-if="error" role="alert">{{ error }}</p>
     <!-- If no sources exist -->
     <div v-if="!hasSources && !hasSelection" class="source-onboarding">
       <div class="onboarding-card">
@@ -74,7 +88,7 @@ onMounted(async () => {
           :labels="labels"
           @search="search"
           @select="emit('selectMovie', $event)"
-          @scan="scanActiveSource"
+          @scan="scanSources"
         />
         <MovieInspector
           :item-id="selectedMovieId"
@@ -96,7 +110,7 @@ onMounted(async () => {
           :labels="labels"
           @search="search"
           @select="emit('selectTvSelection', $event)"
-          @scan="scanActiveSource"
+          @scan="scanSources"
         />
         <TVShowInspector
           :selection="selectedTvSelection"

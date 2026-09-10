@@ -60,3 +60,5 @@ The settings page now includes Webhook endpoint management, scoped MCP API Token
 See [Webhook and MCP configuration](integrations.md) for key-file setup, network allowlists, token scopes, task tools and recovery limits.
 
 The connection sidebar displays the latest test result (reachable, failed, or not configured) and duration for TMDb and the proxy. API Tokens distinguish active, expired, and revoked credentials; expiry status updates while the page remains open.
+
+The Movies and TV shows catalog refresh buttons scan every enabled media source, including sources with no indexed items yet. Settings retains per-source scanning. Repeated catalog clicks during an active scan request do not queue duplicate scans.
