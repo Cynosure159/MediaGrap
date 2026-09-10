@@ -29,3 +29,6 @@ internal/httpapi/ui/dist/*
 .idea/
 .vscode/
 *.swp
+
+# Native development state
+/.local/

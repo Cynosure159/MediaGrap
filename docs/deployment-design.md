@@ -109,3 +109,15 @@ First-run setup is security-sensitive. The implementation should either require 
 Webhook delivery requires a separately backed-up, mode-0600 master key file containing a 32-byte key encoded as hex. Mount it read-only and set `MEDIAGRAP_WEBHOOK_KEY_FILE`; the process will not replace a missing key. Webhook network policy is configured by deployment environment, independently of provider proxies. Expose MCP `/mcp` through TLS and restrict accepted browser origins; static API Tokens are managed through the authenticated settings page.
 
 See [integration deployment variables and limits](integrations.md) for the complete configuration. The feature adds no container or external worker. Browser UI approval is required before an MCP movie file plan may execute.
+
+### Native development startup
+
+From the repository root, run `npm run dev` (or `npm start -- dev`) to start the Go API and Vite together. Install frontend dependencies first with `npm --prefix web install`. Running `npm --prefix web run dev` alone starts only Vite; media access is handled by the Go API.
+
+The Makefile reads the ignored `.env.local` file for local media allowlists:
+
+```dotenv
+MEDIAGRAP_MEDIA_ROOTS=/path/to/media/movies,/path/to/media/shows
+```
+
+Add those absolute paths as sources in Settings once, then scan them. Source configuration persists in `.local/config`; caches use `.local/cache`. Changing the allowlist does not automatically create sources or modify media files. Restart the development services after changing `.env.local`.

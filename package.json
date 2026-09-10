@@ -1,0 +1,8 @@
+{
+  "name": "mediagrap-dev",
+  "private": true,
+  "scripts": {
+    "dev": "make dev",
+    "start": "make"
+  }
+}

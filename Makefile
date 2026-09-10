@@ -1,3 +1,6 @@
+-include .env.local
+export MEDIAGRAP_MEDIA_ROOTS
+
 .PHONY: dev api web build test test-go test-web typecheck format docker-build prepare-ui
 
 dev:
