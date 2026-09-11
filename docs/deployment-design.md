@@ -47,6 +47,8 @@ services:
 
 The exact image name and version are placeholders until publishing is configured. Production documentation should recommend a pinned version, not `latest`.
 
+The `healthcheck` command probes `/readyz` on the running process rather than opening a separate SQLite pool. Use `MEDIAGRAP_LISTEN` for a custom container listener; host port mappings do not change that listener. See [database diagnostics](database-diagnostics.md) for short-timeout probes and pool-exhaustion troubleshooting.
+
 ## Permissions
 
 - Run as a non-root numeric UID/GID and document ownership requirements.

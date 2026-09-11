@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mediagrap/mediagrap/internal/platform/database"
 	"golang.org/x/sys/unix"
 )
 
@@ -232,7 +233,7 @@ func (s *server) operationsStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"application": map[string]string{"name": "MediaGrap", "version": s.build.Version, "commit": s.build.Commit, "builtAt": s.build.BuiltAt},
-		"database":    map[string]any{"ready": s.db.PingContext(ctx) == nil, "latestMigration": latestMigration, "sizeBytes": databaseBytes, "walMode": strings.EqualFold(journalMode, "wal"), "journalMode": journalMode},
+		"database":    map[string]any{"ready": s.db.PingContext(ctx) == nil, "latestMigration": latestMigration, "sizeBytes": databaseBytes, "walMode": strings.EqualFold(journalMode, "wal"), "journalMode": journalMode, "pool": database.Stats(s.db)},
 		"cache":       cache,
 		"mounts":      mounts,
 		"providers": []map[string]any{

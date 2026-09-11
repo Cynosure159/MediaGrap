@@ -90,6 +90,8 @@ func (s *Service) SetOutboxLimit(limit int) {
 	}
 }
 
+var ErrScanAlreadyActive = errors.New("a scan for this source is already queued or running")
+
 func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64, payload []byte) (Job, error) {
 	var backlog int
 	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM system_events WHERE dispatched_at IS NULL)+(SELECT COUNT(*) FROM webhook_deliveries WHERE state IN ('queued','retry_wait','delivering'))`).Scan(&backlog); err != nil {
@@ -104,9 +106,16 @@ func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64
 	if len(payload) == 0 {
 		payload = []byte(`{}`)
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO jobs(kind, source_id, state, payload, max_retries) VALUES(?, ?, ?, ?, 2)`, kind, sourceID, StateQueued, string(payload))
+	result, err := s.db.ExecContext(ctx, `INSERT INTO jobs(kind, source_id, state, payload, max_retries) SELECT ?, ?, ?, ?, 2 WHERE ? != 'scan' OR NOT EXISTS(SELECT 1 FROM jobs WHERE kind='scan' AND source_id=? AND state IN ('queued','running'))`, kind, sourceID, StateQueued, string(payload), kind, sourceID)
 	if err != nil {
 		return Job{}, fmt.Errorf("queue job: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return Job{}, err
+	}
+	if changed == 0 {
+		return Job{}, ErrScanAlreadyActive
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
@@ -210,9 +219,14 @@ func (s *Service) Retry(ctx context.Context, id int64) (Job, error) {
 	if job.State != StateFailed && job.State != StateCancelled && job.State != StateInterrupted {
 		return Job{}, errors.New("only failed, cancelled, or interrupted jobs can be retried")
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', progress_current=0, message='Retry queued', error_message='', started_at=NULL, completed_at=NULL, next_run_at=NULL, retry_count=retry_count+1, updated_at=datetime('now') WHERE id=? AND state IN ('failed','cancelled','interrupted')`, id)
+	result, err := s.db.ExecContext(ctx, `UPDATE jobs SET state='queued', progress_current=0, message='Retry queued', error_message='', started_at=NULL, completed_at=NULL, next_run_at=NULL, retry_count=retry_count+1, updated_at=datetime('now') WHERE id=? AND state IN ('failed','cancelled','interrupted') AND (kind!='scan' OR NOT EXISTS(SELECT 1 FROM jobs active WHERE active.kind='scan' AND active.source_id=jobs.source_id AND active.state IN ('queued','running')))`, id)
 	if err != nil {
 		return Job{}, fmt.Errorf("retry job: %w", err)
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return Job{}, err
+	} else if n == 0 {
+		return Job{}, errors.New("job state changed or another scan is active")
 	}
 	job, err = s.Get(ctx, id)
 	if err == nil {

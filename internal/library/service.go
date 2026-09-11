@@ -170,10 +170,18 @@ func (s *Service) ListSources(ctx context.Context) ([]Source, error) {
 		}
 		source.Enabled = enabled == 1
 		source.ScheduleEnabled = scheduleEnabled == 1
-		source.Writable = isWritable(source.RootPath)
 		result = append(result, source)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range result {
+		result[i].Writable = isWritable(result[i].RootPath)
+	}
+	return result, nil
 }
 
 func (s *Service) UpdateSourcePolicy(ctx context.Context, sourceID int64, policy SourcePolicy) (Source, error) {
@@ -245,6 +253,8 @@ func (s *Service) DeleteSource(ctx context.Context, sourceID int64) error {
 	return nil
 }
 
+var ErrScanAlreadyActive = jobs.ErrScanAlreadyActive
+
 func (s *Service) QueueScan(ctx context.Context, sourceID int64) (Job, error) {
 	var mode string
 	if err := s.db.QueryRowContext(ctx, `SELECT scan_mode FROM sources WHERE id = ? AND enabled = 1`, sourceID).Scan(&mode); err != nil {
@@ -310,10 +320,18 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		if err != nil {
 			return Page{}, err
 		}
-		item.Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, item.SourceID), item.RelativePath)
 		items = append(items, item)
 	}
-	return Page{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Page{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return Page{}, err
+	}
+	for i := range items {
+		items[i].Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, items[i].SourceID), items[i].RelativePath)
+	}
+	return Page{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 func (s *Service) ListTVShows(ctx context.Context, query string) ([]TVShow, error) {
@@ -361,8 +379,7 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 		return TVShowDetail{}, err
 	}
 	defer rows.Close()
-	root := s.sourceRoot(ctx, show.SourceID)
-	detail := TVShowDetail{Show: *show, Writable: s.sourceWritable(ctx, show.SourceID), Episodes: []TVEpisode{}, Artwork: []TVArtwork{}}
+	detail := TVShowDetail{Show: *show, Episodes: []TVEpisode{}, Artwork: []TVArtwork{}}
 	for rows.Next() {
 		var episode TVEpisode
 		var year sql.NullInt64
@@ -373,11 +390,18 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 			value := int(year.Int64)
 			episode.YearHint = &value
 		}
-		episode.Sidecars = currentSidecarsForMedia(root, episode.RelativePath)
 		detail.Episodes = append(detail.Episodes, episode)
 	}
 	if err := rows.Err(); err != nil {
 		return TVShowDetail{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return TVShowDetail{}, err
+	}
+	root := s.sourceRoot(ctx, show.SourceID)
+	detail.Writable = isWritable(root)
+	for i := range detail.Episodes {
+		detail.Episodes[i].Sidecars = currentSidecarsForMedia(root, detail.Episodes[i].RelativePath)
 	}
 	detail.Artwork = s.tvArtwork(ctx, detail)
 	return detail, nil
@@ -392,16 +416,22 @@ func currentSidecarsForMedia(root, relative string) []Sidecar {
 	}
 	directory := filepath.Dir(filepath.Join(root, relative))
 	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
-	matches, _ := filepath.Glob(filepath.Join(directory, base+".*"))
-	if directoryHasOneVideo(directory) {
-		entries, _ := os.ReadDir(directory)
-		for _, entry := range entries {
-			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-				continue
-			}
-			if _, ok := sidecarExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; ok {
-				matches = append(matches, filepath.Join(directory, entry.Name()))
-			}
+	// One directory read instead of Glob + video count + another ReadDir.
+	// Match literal basenames: release names can contain glob metacharacters.
+	entries, _ := os.ReadDir(directory)
+	videos := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 && videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] {
+			videos++
+		}
+	}
+	matches := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if _, ok := sidecarExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; ok && (videos == 1 || strings.HasPrefix(entry.Name(), base+".")) {
+			matches = append(matches, filepath.Join(directory, entry.Name()))
 		}
 	}
 	assets := []Sidecar{}
@@ -676,7 +706,9 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 		if err != nil {
 			return err
 		}
-		s.recordSidecars(ctx, itemID, root, relative)
+		if err := s.recordSidecars(ctx, itemID, root, relative); err != nil {
+			return fmt.Errorf("index sidecars for media %d: %w", itemID, err)
+		}
 		s.recordTVEpisode(ctx, itemID, sourceID, relative)
 		if s.metadataHydrator != nil {
 			if _, _, _, isEpisode := parseEpisodeHint(filepath.Base(relative)); !isEpisode {
@@ -697,11 +729,23 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 	}
 	return err
 }
-func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) {
-	s.db.ExecContext(ctx, `DELETE FROM sidecar_assets WHERE media_item_id=?`, itemID)
-	for _, asset := range currentSidecarsForMedia(root, relative) {
-		s.db.ExecContext(ctx, `INSERT OR IGNORE INTO sidecar_assets(media_item_id,relative_path,kind) VALUES(?,?,?)`, itemID, asset.RelativePath, asset.Kind)
+func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) error {
+	// Finish filesystem work before acquiring a connection/transaction.
+	assets := currentSidecarsForMedia(root, relative)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sidecar_assets WHERE media_item_id=?`, itemID); err != nil {
+		return err
+	}
+	for _, asset := range assets {
+		if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO sidecar_assets(media_item_id,relative_path,kind) VALUES(?,?,?)`, itemID, asset.RelativePath, asset.Kind); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Service) recordTVEpisode(ctx context.Context, itemID, sourceID int64, relative string) {

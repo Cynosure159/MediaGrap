@@ -48,6 +48,10 @@ The Jobs navigation item opens the responsive Operations page. `OperationsPage` 
 
 At mobile widths the sections become a single-column flow above the existing bottom navigation. All visible values come from authenticated APIs; unavailable data is never replaced with prototype success text.
 
+## 0.0.2 database starvation protection
+
+See [database diagnostics and validation](database-diagnostics.md) for shared-pool readiness, numeric connection statistics, bounded probes, atomic scan deduplication, catalog connection-lifetime fixes, and sidecar I/O improvements.
+
 ## Remaining Phase 5A work
 
 - Backup creation/retention and restore operations once their file safety plan/apply boundary is implemented.

@@ -10,3 +10,8 @@ internal/httpapi/ui/dist
 coverage.*
 *.test
 .DS_Store
+.env
+.env.*
+.pi
+compose*.yaml
+compose*.yml

@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"github.com/mediagrap/mediagrap/internal/automation"
+	"github.com/mediagrap/mediagrap/internal/platform/database"
 	"github.com/mediagrap/mediagrap/internal/tokens"
 	"github.com/mediagrap/mediagrap/internal/webhooks"
 	"io/fs"
@@ -167,11 +170,16 @@ func (s *server) health(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *server) ready(writer http.ResponseWriter, request *http.Request) {
-	if err := s.db.PingContext(request.Context()); err != nil {
-		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+	defer cancel()
+	var one int
+	if err := s.db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+		stats := database.Stats(s.db)
+		s.logger.Warn("database readiness check failed", "error", err, "db_open_connections", stats.OpenConnections, "db_in_use", stats.InUse, "db_wait_count", stats.WaitCount, "db_saturated", stats.Saturated)
+		writeJSON(writer, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "database": stats})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
+	writeJSON(writer, http.StatusOK, map[string]any{"status": "ready", "database": database.Stats(s.db)})
 }
 
 func (s *server) systemInfo(writer http.ResponseWriter, request *http.Request) {
@@ -187,12 +195,17 @@ func (s *server) systemSummary(writer http.ResponseWriter, request *http.Request
 	var sourceCount, mediaCount, showCount int
 	var queuedJobs, runningJobs, failedJobs int
 	ctx := request.Context()
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sources`).Scan(&sourceCount)
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items WHERE missing=0`).Scan(&mediaCount)
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tv_shows`).Scan(&showCount)
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='queued'`).Scan(&queuedJobs)
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='running'`).Scan(&runningJobs)
-	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE state='failed'`).Scan(&failedJobs)
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM sources),
+		(SELECT COUNT(*) FROM media_items WHERE missing=0),
+		(SELECT COUNT(*) FROM tv_shows),
+		(SELECT COUNT(*) FROM jobs WHERE state='queued'),
+		(SELECT COUNT(*) FROM jobs WHERE state='running'),
+		(SELECT COUNT(*) FROM jobs WHERE state='failed')`).Scan(&sourceCount, &mediaCount, &showCount, &queuedJobs, &runningJobs, &failedJobs)
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "Database query did not complete")
+		return
+	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"status": "ready",
@@ -243,7 +256,18 @@ func serveFallback(writer http.ResponseWriter) {
 func (s *server) withRequestLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		startedAt := time.Now()
+		if request.Method == http.MethodGet && request.URL.Path == "/api/v1/system/summary" {
+			ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+			defer cancel()
+			request = request.WithContext(ctx)
+		}
 		next.ServeHTTP(writer, request)
-		s.logger.Debug("HTTP request", "method", request.Method, "path", request.URL.Path, "duration", time.Since(startedAt))
+		duration := time.Since(startedAt)
+		if errors.Is(request.Context().Err(), context.DeadlineExceeded) {
+			stats := database.Stats(s.db)
+			s.logger.Warn("HTTP request timed out", "method", request.Method, "path", request.URL.Path, "duration_ms", duration.Milliseconds(), "db_open_connections", stats.OpenConnections, "db_in_use", stats.InUse, "db_wait_count", stats.WaitCount, "db_saturated", stats.Saturated)
+			return
+		}
+		s.logger.Debug("HTTP request", "method", request.Method, "path", request.URL.Path, "duration", duration)
 	})
 }

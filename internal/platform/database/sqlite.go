@@ -15,14 +15,42 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+const MaxOpenConns = 4
+
+type PoolStats struct {
+	MaxOpenConnections int   `json:"maxOpenConnections"`
+	OpenConnections    int   `json:"openConnections"`
+	InUse              int   `json:"inUse"`
+	Idle               int   `json:"idle"`
+	WaitCount          int64 `json:"waitCount"`
+	WaitDurationMS     int64 `json:"waitDurationMs"`
+	Saturated          bool  `json:"saturated"`
+}
+
+// Stats reports the shared database/sql pool state. Saturation means every
+// configured connection is checked out; a rising wait count confirms callers
+// have waited for a connection. It does not explain why holders are blocked.
+func Stats(db *sql.DB) PoolStats {
+	stats := db.Stats()
+	return PoolStats{
+		MaxOpenConnections: stats.MaxOpenConnections,
+		OpenConnections:    stats.OpenConnections,
+		InUse:              stats.InUse,
+		Idle:               stats.Idle,
+		WaitCount:          int64(stats.WaitCount),
+		WaitDurationMS:     stats.WaitDuration.Milliseconds(),
+		Saturated:          stats.MaxOpenConnections > 0 && stats.InUse >= stats.MaxOpenConnections,
+	}
+}
+
 func Open(path string) (*sql.DB, error) {
 	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(MaxOpenConns)
+	db.SetMaxIdleConns(MaxOpenConns)
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping sqlite database: %w", err)

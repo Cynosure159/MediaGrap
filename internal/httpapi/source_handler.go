@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -91,6 +92,10 @@ func (s *server) scanSource(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := s.library.QueueScan(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, library.ErrScanAlreadyActive) {
+			writeError(w, http.StatusConflict, "scan_already_active", err.Error())
+			return
+		}
 		writeError(w, http.StatusNotFound, "source_not_found", err.Error())
 		return
 	}

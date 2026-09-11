@@ -59,7 +59,7 @@ func runHealthcheck() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := app.CheckDatabase(ctx, config.DatabasePath()); err != nil {
+	if err := app.CheckReadiness(ctx, config.Listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
