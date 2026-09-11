@@ -5,7 +5,7 @@ services:
       target: ffprobe
       args:
         VERSION: dev
-    image: mediagrap:latest
+    image: cynosure159/mediagrap:latest
     container_name: mediagrap
     restart: unless-stopped
     ports:
