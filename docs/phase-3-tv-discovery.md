@@ -24,7 +24,7 @@ The scanner still skips symbolic links and only reads filesystem metadata. It do
 
 ## APIs and UI
 
-- GET /api/v1/tv/shows?q= returns indexed TV shows with season and episode counts.
+- GET /api/v1/tv/shows?q= returns indexed TV shows with season and episode counts. The optional `title` is the saved metadata title; `titleHint` remains the original filename/directory hint. Catalog rows, tooltips, and alphabetical sorting prefer `title`. Search matches both names and the indexed path. After scraping or saving metadata, the workspace refreshes the show list and expanded episode caches without requiring a rescan or page reload.
 - GET /api/v1/tv/shows/{id} returns the read-only episode list.
 - The TV catalog is an expandable show → season → episode tree. Selecting any
   level scopes the inspector to that show, season, or episode.

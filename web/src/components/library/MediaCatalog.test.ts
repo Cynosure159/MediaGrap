@@ -16,6 +16,26 @@ const movies = Array.from({ length: 500 }, (_, i) => ({
 }));
 
 describe("MediaCatalog", () => {
+  it("prefers metadata year and falls back to filename hints", async () => {
+    const item = {
+      ...movies[0]!,
+      title: "Blade Runner 2049",
+      yearHint: 2049,
+      year: 2017,
+    };
+    const wrapper = mount(MediaCatalog, {
+      props: {
+        items: [item],
+        selectedId: null,
+        activeJob: undefined,
+        labels: {},
+      },
+    });
+    expect(wrapper.get(".year-txt").text()).toBe("2017");
+    await wrapper.setProps({ items: [{ ...item, year: undefined }] });
+    expect(wrapper.get(".year-txt").text()).toBe("2049");
+    wrapper.unmount();
+  });
   it("shows the server total while bounding rows and lazy images", async () => {
     const wrapper = mount(MediaCatalog, {
       props: {

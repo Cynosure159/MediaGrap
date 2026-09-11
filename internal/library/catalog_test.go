@@ -66,4 +66,30 @@ func TestCatalogBatchesHaveStableOrderAndGlobalFilters(t *testing.T) {
 	if result.Items[0].FileSize != 137 {
 		t.Fatal("not globally sorted")
 	}
+	id := result.Items[0].ID
+	if _, err := db.Exec(`UPDATE media_items SET year_hint=2049 WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO media_metadata(media_item_id,title,year) VALUES(?,'Blade Runner 2049',2017)`, id); err != nil {
+		t.Fatal(err)
+	}
+	result, err = s.ListMedia(t.Context(), "", 1, 50, CatalogOptions{Sort: "year"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Items[0].ID == id {
+		t.Fatal("sorted by filename year instead of metadata year")
+	}
+	found := false
+	for _, item := range result.Items {
+		if item.ID == id {
+			found = true
+			if item.Year == nil || *item.Year != 2017 || item.YearHint == nil || *item.YearHint != 2049 {
+				t.Fatalf("metadata year or original hint lost: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected metadata-year item in first batch")
+	}
 }

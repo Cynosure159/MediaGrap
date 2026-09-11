@@ -33,7 +33,7 @@ const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
 const activeTab = computed(() => props.activeTab ?? 'overview')
 const hasSelection = computed(() => props.mediaKind === 'shows' ? selectedTvSelection.value !== null : selectedMovieId.value !== null)
 
-const { sourceItems, mediaItems, mediaTotal, mediaLoading, mediaError, mediaHasMore, loadMoreMedia, refreshMedia, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
+const { sourceItems, mediaItems, mediaTotal, mediaLoading, mediaError, mediaHasMore, loadMoreMedia, refreshMedia, refreshTVShows, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
 const activeJobs = computed(() => jobItems.value.filter(job => job.state === 'queued' || job.state === 'running'))
 
 async function search(value = '', options?: CatalogOptions) {
@@ -121,6 +121,7 @@ onMounted(async () => {
         />
         <TVShowInspector
           :selection="selectedTvSelection"
+          @metadata-saved="refreshTVShows(query)"
           :active-tab="activeTab"
           :csrf-token="csrfToken"
           :labels="labels"

@@ -216,17 +216,14 @@ func (r *sqliteRepository) GetMediaLocation(ctx context.Context, id int64) (Medi
 }
 
 func (r *sqliteRepository) ListTVShows(ctx context.Context, query string) ([]TVShow, error) {
-	trimmed := strings.TrimSpace(query)
-	var selectQuery string
-	var args []any
-	if trimmed == "" {
-		selectQuery = `SELECT s.id, s.source_id, s.relative_path, s.title_hint, s.year_hint, (SELECT COUNT(DISTINCT e.season_number) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0), (SELECT COUNT(e.id) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0), COALESCE(meta.poster_url, '') FROM tv_shows s LEFT JOIN tv_metadata meta ON meta.show_id = s.id ORDER BY s.title_hint COLLATE NOCASE`
-	} else {
-		pattern := "%" + trimmed + "%"
-		selectQuery = `SELECT s.id, s.source_id, s.relative_path, s.title_hint, s.year_hint, (SELECT COUNT(DISTINCT e.season_number) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0), (SELECT COUNT(e.id) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0), COALESCE(meta.poster_url, '') FROM tv_shows s LEFT JOIN tv_metadata meta ON meta.show_id = s.id WHERE s.title_hint LIKE ? OR s.relative_path LIKE ? OR meta.title LIKE ? ORDER BY s.title_hint COLLATE NOCASE`
-		args = []any{pattern, pattern, pattern}
-	}
-	rows, err := r.db.QueryContext(ctx, selectQuery, args...)
+	pattern := "%" + strings.TrimSpace(query) + "%"
+	selectQuery := `SELECT s.id, s.source_id, s.relative_path, s.title_hint, s.year_hint,
+		(SELECT COUNT(DISTINCT e.season_number) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0),
+		(SELECT COUNT(e.id) FROM tv_episodes e JOIN media_items m ON m.id = e.media_item_id WHERE e.show_id = s.id AND m.missing = 0),
+		COALESCE(meta.poster_url, ''), COALESCE(meta.title, '') FROM tv_shows s LEFT JOIN tv_metadata meta ON meta.show_id = s.id
+		WHERE s.title_hint LIKE ? OR s.relative_path LIKE ? OR meta.title LIKE ?
+		ORDER BY COALESCE(NULLIF(meta.title, ''), s.title_hint) COLLATE NOCASE, s.id`
+	rows, err := r.db.QueryContext(ctx, selectQuery, pattern, pattern, pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +233,7 @@ func (r *sqliteRepository) ListTVShows(ctx context.Context, query string) ([]TVS
 	for rows.Next() {
 		var show TVShow
 		var year sql.NullInt64
-		if err := rows.Scan(&show.ID, &show.SourceID, &show.RelativePath, &show.TitleHint, &year, &show.SeasonCount, &show.EpisodeCount, &show.PosterURL); err != nil {
+		if err := rows.Scan(&show.ID, &show.SourceID, &show.RelativePath, &show.TitleHint, &year, &show.SeasonCount, &show.EpisodeCount, &show.PosterURL, &show.Title); err != nil {
 			return nil, err
 		}
 		if year.Valid {

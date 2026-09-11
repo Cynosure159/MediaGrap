@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -858,13 +859,17 @@ func (s *Service) ArtworkCandidates(ctx context.Context, itemID int64) ([]Artwor
 	if err != nil {
 		return nil, err
 	}
-	if record.Provider != "tmdb" || strings.TrimSpace(record.ProviderID) == "" {
-		return nil, errors.New("select TMDb metadata before loading artwork candidates")
+	// NFO hydration stores the explicitly typed TMDb uniqueid in ProviderID,
+	// while retaining "nfo" provenance. It does not require a second scrape.
+	tmdbID := strings.TrimSpace(record.ProviderID)
+	numericID, parseErr := strconv.ParseInt(tmdbID, 10, 64)
+	if (record.Provider != "tmdb" && record.Provider != "nfo") || parseErr != nil || numericID <= 0 || strings.ContainsAny(tmdbID, "+-") {
+		return nil, errors.New("a valid TMDb movie ID is required; match the movie or import an NFO with a TMDb ID")
 	}
 	if s.fanart == nil {
 		return nil, errors.New("Fanart.tv provider is unavailable")
 	}
-	assets, err := s.fanart.Movie(ctx, record.ProviderID)
+	assets, err := s.fanart.Movie(ctx, tmdbID)
 	if err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ function isEpisodeActive(seasonNumber: number, episodeId: number): boolean {
         <img
           v-if="show.posterUrl || detail?.metadata?.posterUrl"
           :src="show.posterUrl || detail?.metadata?.posterUrl"
-          :alt="show.titleHint"
+          :alt="show.title || show.titleHint"
           class="thumb-img"
           loading="lazy"
         />
@@ -93,8 +93,8 @@ function isEpisodeActive(seasonNumber: number, episodeId: number): boolean {
 
       <!-- TV Show Info -->
       <div class="row-info">
-        <div class="title-primary" :title="show.titleHint">
-          {{ show.titleHint }}
+        <div class="title-primary" :title="show.title || show.titleHint">
+          {{ show.title || show.titleHint }}
         </div>
         <div class="title-sub" :title="show.relativePath">
           {{ show.relativePath }}

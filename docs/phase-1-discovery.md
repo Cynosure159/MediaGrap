@@ -21,6 +21,12 @@ Browser mutations require an authenticated session cookie and `X-CSRF-Token`; fi
 
 The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. For a one-video movie directory, every supported local image (`jpg`, `jpeg`, `png`, or `webp`) is indexed, not only poster/fanart names. For a movie with no existing SQLite metadata, it parses a local Kodi NFO and persists the parsed fields in SQLite; discovered image paths remain in the SQLite sidecar index and are served through an authenticated opaque-asset URL. This rebuilds list and detail data after a source is removed and added again, without changing media files.
 
+## Sample clips and supplemental folders
+
+Sample clips are not trailers by definition, and neither should inflate the main-movie catalog. Scans exclude case-insensitive final filename tokens `-sample`, `.sample`, `_sample`, and the standalone `sample` basename. Names such as `The Sample (2024)` are retained. An exact `Extra` or `Extras` directory is skipped only when its parent contains a regular non-sample video; a source or standalone show named `Extras` is not excluded merely for its name. Other similarly named directories are retained.
+
+Run a source scan after upgrading to reclassify old duplicates. Both incremental and full scans mark previously indexed supplemental entries inactive using the existing `missing` index flag; they retain metadata/audit references and never delete, rename or move media or NFO files. Catalog/source totals exclude these inactive entries. Supplemental videos are not currently presented as a separate extras collection. Directory-level NFO/artwork detection counts only main videos, so a sample beside the feature no longer prevents `movie.nfo` or artwork from being attached to the feature.
+
 ## Movie catalog browsing
 
 The movie catalog now uses [continuous scrolling and lazy rendering](catalog-scrolling.md) with true server totals, global filters/sorts, and bounded background batches rather than stopping at the first 50 items. There are no page-number controls.

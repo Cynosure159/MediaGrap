@@ -38,6 +38,7 @@ const filteredItems = computed(() => {
 
   if (normalized) {
     list = list.filter(show =>
+      (show.title || '').toLowerCase().includes(normalized) ||
       show.titleHint.toLowerCase().includes(normalized) ||
       show.relativePath.toLowerCase().includes(normalized)
     )
@@ -53,21 +54,33 @@ const filteredItems = computed(() => {
   if (sortMode.value === 'seasons') {
     return [...list].sort((a, b) => b.seasonCount - a.seasonCount)
   }
-  return [...list].sort((a, b) => (a.titleHint || '').localeCompare(b.titleHint || ''))
+  return [...list].sort((a, b) => (a.title || a.titleHint || '').localeCompare(b.title || b.titleHint || ''))
 })
 
 
+
+let detailGeneration = 0
+watch(() => props.items, () => {
+  detailGeneration++
+  detailsByShowId.clear()
+  loadingShowIds.clear()
+  for (const show of props.items) {
+    if (expandedShowIds.has(show.id)) void ensureShowExpanded(show.id)
+  }
+})
 
 async function ensureShowExpanded(showId: number) {
   expandedShowIds.add(showId)
   if (detailsByShowId.has(showId) || loadingShowIds.has(showId)) return
   loadingShowIds.add(showId)
+  const generation = detailGeneration
   try {
-    detailsByShowId.set(showId, await api.tvShowDetail(showId))
+    const detail = await api.tvShowDetail(showId)
+    if (generation === detailGeneration) detailsByShowId.set(showId, detail)
   } catch {
     // The inspector owns the visible error state for a stale/deleted URL selection.
   } finally {
-    loadingShowIds.delete(showId)
+    if (generation === detailGeneration) loadingShowIds.delete(showId)
   }
 }
 

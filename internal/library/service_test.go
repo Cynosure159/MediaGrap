@@ -84,6 +84,15 @@ func TestScanIndexesTVSeparatelyFromMovies(t *testing.T) {
 	if err != nil || len(detail.Artwork) != 1 || detail.Artwork[0].Kind != "poster" || len(detail.Episodes[0].Sidecars) != 1 || detail.Episodes[0].Sidecars[0].Kind != "nfo" {
 		t.Fatalf("unexpected TV detail: %#v err=%v", detail, err)
 	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO tv_metadata(show_id,title) VALUES(?,?)`, shows[0].ID, "刮削后的剧名"); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"", "刮削后的剧名", "Example Show"} {
+		updated, err := service.ListTVShows(t.Context(), query)
+		if err != nil || len(updated) != 1 || updated[0].Title != "刮削后的剧名" || updated[0].TitleHint != "Example Show" {
+			t.Fatalf("updated title/search: %+v %v", updated, err)
+		}
+	}
 }
 
 func TestDirectoryLevelKodiSidecarsBelongToOnlyMovieInDirectory(t *testing.T) {

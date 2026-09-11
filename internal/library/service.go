@@ -53,6 +53,7 @@ type MediaItem struct {
 	RelativePath string    `json:"relativePath"`
 	TitleHint    string    `json:"titleHint"`
 	YearHint     *int      `json:"yearHint"`
+	Year         *int      `json:"year,omitempty"`
 	Title        string    `json:"title,omitempty"`
 	PosterURL    string    `json:"posterUrl,omitempty"`
 	FileSize     int64     `json:"fileSize"`
@@ -81,6 +82,7 @@ type TVShow struct {
 	SourceID     int64  `json:"sourceId"`
 	RelativePath string `json:"relativePath"`
 	TitleHint    string `json:"titleHint"`
+	Title        string `json:"title,omitempty"`
 	YearHint     *int   `json:"yearHint"`
 	EpisodeCount int    `json:"episodeCount"`
 	SeasonCount  int    `json:"seasonCount"`
@@ -324,7 +326,7 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		}
 		switch options[0].Sort {
 		case "year":
-			order = "COALESCE(m.year_hint,0) DESC, m.id"
+			order = "COALESCE(mm.year,m.year_hint,0) DESC, m.id"
 		case "size":
 			order = "m.file_size DESC, m.id"
 		}
@@ -334,7 +336,7 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*)"+where, "%"+query+"%", "%"+query+"%").Scan(&total); err != nil {
 		return Page{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url`+where+" ORDER BY "+order+" LIMIT ? OFFSET ?", "%"+query+"%", "%"+query+"%", pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url, mm.year`+where+" ORDER BY "+order+" LIMIT ? OFFSET ?", "%"+query+"%", "%"+query+"%", pageSize, (page-1)*pageSize)
 	if err != nil {
 		return Page{}, err
 	}
@@ -361,9 +363,11 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 
 func (s *Service) ListTVShows(ctx context.Context, query string) ([]TVShow, error) {
 	query = strings.TrimSpace(query)
-	rows, err := s.db.QueryContext(ctx, `SELECT sh.id, sh.source_id, sh.relative_path, sh.title_hint, sh.year_hint, COUNT(DISTINCT e.media_item_id), COUNT(DISTINCT e.season_number)
+	rows, err := s.db.QueryContext(ctx, `SELECT sh.id, sh.source_id, sh.relative_path, sh.title_hint, sh.year_hint, COUNT(DISTINCT e.media_item_id), COUNT(DISTINCT e.season_number), COALESCE(meta.title, '')
 		FROM tv_shows sh JOIN tv_episodes e ON e.show_id=sh.id JOIN media_items m ON m.id=e.media_item_id
-		WHERE m.missing=0 AND sh.title_hint LIKE ? GROUP BY sh.id ORDER BY sh.title_hint COLLATE NOCASE`, "%"+query+"%")
+		LEFT JOIN tv_metadata meta ON meta.show_id=sh.id
+		WHERE m.missing=0 AND (sh.title_hint LIKE ? OR meta.title LIKE ? OR sh.relative_path LIKE ?)
+		GROUP BY sh.id ORDER BY COALESCE(NULLIF(meta.title, ''), sh.title_hint) COLLATE NOCASE, sh.id`, "%"+query+"%", "%"+query+"%", "%"+query+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +376,7 @@ func (s *Service) ListTVShows(ctx context.Context, query string) ([]TVShow, erro
 	for rows.Next() {
 		var show TVShow
 		var year sql.NullInt64
-		if err := rows.Scan(&show.ID, &show.SourceID, &show.RelativePath, &show.TitleHint, &year, &show.EpisodeCount, &show.SeasonCount); err != nil {
+		if err := rows.Scan(&show.ID, &show.SourceID, &show.RelativePath, &show.TitleHint, &year, &show.EpisodeCount, &show.SeasonCount, &show.Title); err != nil {
 			return nil, err
 		}
 		if year.Valid {
@@ -446,7 +450,7 @@ func currentSidecarsForMedia(root, relative string) []Sidecar {
 	entries, _ := os.ReadDir(directory)
 	videos := 0
 	for _, entry := range entries {
-		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 && videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] {
+		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 && videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] && !isSampleVideo(entry.Name()) {
 			videos++
 		}
 	}
@@ -490,7 +494,7 @@ func directoryHasOneVideo(directory string) bool {
 	}
 	count := 0
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] || isSampleVideo(entry.Name()) {
 			continue
 		}
 		count++
@@ -548,7 +552,7 @@ func (s *Service) tvArtwork(ctx context.Context, detail TVShowDetail) []TVArtwor
 	return assets
 }
 func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id=m.id WHERE m.id=? AND m.missing=0`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url, mm.year FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id=m.id WHERE m.id=? AND m.missing=0`, id)
 	item, err := scanItem(row)
 	if err != nil {
 		return MediaItem{}, errors.New("media item not found")
@@ -597,13 +601,18 @@ func scanItem(row interface{ Scan(...any) error }) (MediaItem, error) {
 	var item MediaItem
 	var year sql.NullInt64
 	var title, posterURL sql.NullString
-	err := row.Scan(&item.ID, &item.SourceID, &item.RelativePath, &item.TitleHint, &year, &item.FileSize, &item.ModifiedAt, &title, &posterURL)
+	var metadataYear sql.NullInt64
+	err := row.Scan(&item.ID, &item.SourceID, &item.RelativePath, &item.TitleHint, &year, &item.FileSize, &item.ModifiedAt, &title, &posterURL, &metadataYear)
 	if err != nil {
 		return MediaItem{}, err
 	}
 	if year.Valid {
 		v := int(year.Int64)
 		item.YearHint = &v
+	}
+	if metadataYear.Valid {
+		v := int(metadataYear.Int64)
+		item.Year = &v
 	}
 	if title.Valid {
 		item.Title = title.String
@@ -712,6 +721,20 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 			if path != root && entry.Type()&fs.ModeSymlink != 0 {
 				return filepath.SkipDir
 			}
+			if isSupplementalDirectory(root, path) {
+				relative, err := filepath.Rel(root, path)
+				if err != nil {
+					return err
+				}
+				prefix := relative + string(filepath.Separator)
+				// Retain historical metadata/audits; retire previously indexed extras
+				// during incremental scans too. No filesystem mutation occurs.
+				if _, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=? AND substr(relative_path,1,length(?))=?`, sourceID, prefix, prefix); err != nil {
+					return err
+				}
+				s.logger.Debug("supplemental directory excluded from catalog", "source_id", sourceID, "job_id", jobID)
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if entry.Type()&fs.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(path))] {
@@ -723,6 +746,10 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
+			return err
+		}
+		if isSampleVideo(entry.Name()) {
+			_, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=? AND relative_path=?`, sourceID, relative)
 			return err
 		}
 		title, year := parseHint(filepath.Base(path))

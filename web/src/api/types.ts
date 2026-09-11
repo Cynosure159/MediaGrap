@@ -33,6 +33,7 @@ export interface MediaItem {
   relativePath: string
   titleHint: string
   yearHint: number | null
+  year?: number | null
   title?: string
   posterUrl?: string
   fileSize: number
@@ -120,6 +121,7 @@ export interface TVShow {
   sourceId: number
   relativePath: string
   titleHint: string
+  title?: string
   yearHint: number | null
   episodeCount: number
   seasonCount: number

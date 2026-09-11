@@ -308,7 +308,7 @@ function setSort(s: SortType) {
             {{ item.relativePath.split('/').pop() }}
           </div>
           <div class="row-meta">
-            <span class="year-txt font-code">{{ item.yearHint ?? '—' }}</span>
+            <span class="year-txt font-code">{{ item.year ?? item.yearHint ?? '—' }}</span>
             <div class="status-dots">
               <!-- NFO Status Dot -->
               <span

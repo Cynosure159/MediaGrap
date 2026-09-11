@@ -47,6 +47,7 @@ func (s *server) listMedia(w http.ResponseWriter, r *http.Request) {
 				if hydrateErr := s.metadata.HydrateExistingNFO(r.Context(), result.Items[index].ID, location.AbsolutePath); hydrateErr == nil {
 					if record, recordErr := s.metadata.Record(r.Context(), result.Items[index].ID); recordErr == nil {
 						result.Items[index].Title = record.Title
+						result.Items[index].Year = record.Year
 						if record.PosterURL != "" {
 							result.Items[index].PosterURL = record.PosterURL
 						}
