@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -83,10 +84,16 @@ func (s *server) getMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	origin := "draft"
+	warning := ""
 	if record.Title == "" {
 		err = s.metadata.HydrateExistingNFO(r.Context(), id, location.AbsolutePath)
-		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "invalid_nfo", err.Error())
+		if errors.Is(err, metadata.ErrExistingNFO) {
+			// A rejected sidecar must not hide this item's indexed identity/artwork.
+			// Do not expose paths or raw XML/parser content in responses or logs.
+			warning = "invalid_nfo"
+			s.logger.Warn("movie detail falling back to indexed data", "media_item_id", id, "code", warning)
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Unable to load metadata")
 			return
 		}
 		record, err = s.metadata.Record(r.Context(), id)
@@ -101,10 +108,11 @@ func (s *server) getMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"item":           location.Item,
-		"metadata":       record,
-		"metadataOrigin": origin,
-		"writable":       location.Writable,
+		"item":            location.Item,
+		"metadata":        record,
+		"metadataOrigin":  origin,
+		"metadataWarning": warning,
+		"writable":        location.Writable,
 	})
 }
 

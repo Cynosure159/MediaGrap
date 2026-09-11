@@ -97,6 +97,7 @@ onMounted(async () => {
           @scan="scanSources"
         />
         <MovieInspector
+          :key="selectedMovieId ?? 'no-selection'"
           :item-id="selectedMovieId"
           :active-tab="activeTab"
           :csrf-token="csrfToken"

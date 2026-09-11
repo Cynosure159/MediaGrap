@@ -27,7 +27,8 @@ func TestCatalogBatchesHaveStableOrderAndGlobalFilters(t *testing.T) {
 		if i%2 == 0 {
 			quality = "4k"
 		}
-		_, err = db.Exec(`INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at,year_hint) VALUES(?,?,?,?,?,?)`, source.ID, fmt.Sprintf("Movie%03d.%s.mkv", i, quality), "Same title", i, "now", 1900+i)
+		relativePath := fmt.Sprintf("Movie%03d.%s.mkv", i, quality)
+		_, err = db.Exec(`INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at,year_hint) VALUES(?,?,?,?,?,?)`, source.ID, relativePath, "Same title", i, "now", 1900+i)
 		if err != nil {
 			t.Fatal(err)
 		}

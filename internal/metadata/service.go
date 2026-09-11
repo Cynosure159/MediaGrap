@@ -625,28 +625,37 @@ func (s *Service) Record(ctx context.Context, itemID int64) (Record, error) {
 	return s.repo.GetRecord(ctx, itemID)
 }
 
+// ErrExistingNFO identifies a rejected/unreadable local sidecar, not a database failure.
+var ErrExistingNFO = errors.New("existing NFO unavailable")
+
 // ReadExistingNFO loads the sidecar paired with a media file without changing it.
 // Symlink sidecars are rejected so an allowlisted media path cannot escape its source.
-func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (Record, bool, error) {
+func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (record Record, found bool, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w: %w", ErrExistingNFO, err)
+		}
+	}()
 	paths := []string{
 		strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath)) + ".nfo",
 		filepath.Join(filepath.Dir(mediaPath), "movie.nfo"),
 	}
-	var path string
+	var (
+		path string
+		info os.FileInfo
+	)
 	for _, candidate := range paths {
-		if _, err := os.Lstat(candidate); err == nil {
+		var lstatErr error
+		info, lstatErr = os.Lstat(candidate)
+		if lstatErr == nil {
 			path = candidate
 			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return Record{}, false, fmt.Errorf("inspect existing NFO: %w", err)
+		} else if !errors.Is(lstatErr, os.ErrNotExist) {
+			return Record{}, false, fmt.Errorf("inspect existing NFO: %w", lstatErr)
 		}
 	}
 	if path == "" {
 		return Record{}, false, nil
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return Record{}, false, fmt.Errorf("inspect existing NFO: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return Record{}, false, errors.New("existing NFO must be a regular file")

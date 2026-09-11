@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
 import ScraperModal from './ScraperModal.vue'
 import NfoPreview from './NfoPreview.vue'
@@ -28,6 +28,7 @@ const detail = shallowRef<{
   item: api.MediaItem
   metadata: api.Metadata
   metadataOrigin: 'draft' | 'nfo' | 'empty'
+  metadataWarning?: string
   writable: boolean
 } | null>(null)
 
@@ -42,6 +43,8 @@ const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
 let detailRequestSequence = 0
+let detailController: AbortController | undefined
+onBeforeUnmount(() => { detailRequestSequence++; detailController?.abort() })
 const {
   inspection,
   namingPreview,
@@ -160,16 +163,19 @@ function buildMetadataPayload(): api.Metadata {
 
 async function loadDetail(id: number) {
   const requestSequence = ++detailRequestSequence
+  detailController?.abort()
+  const controller = new AbortController()
+  detailController = controller
   isLoading.value = true
   error.value = null
   try {
-    const result = await api.mediaDetail(id)
+    const result = await api.mediaDetail(id, controller.signal)
     if (requestSequence !== detailRequestSequence || props.itemId !== id) return
     detail.value = result
     applyMetadataToDraft(result.metadata, result.item.titleHint, result.item.yearHint)
     if (result.item.posterUrl) draft.posterUrl = result.item.posterUrl
   } catch (caught) {
-    if (requestSequence !== detailRequestSequence) return
+    if (requestSequence !== detailRequestSequence || props.itemId !== id || controller.signal.aborted) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadMedia
   } finally {
     if (requestSequence === detailRequestSequence) isLoading.value = false
@@ -177,14 +183,22 @@ async function loadDetail(id: number) {
 }
 
 watch(() => props.itemId, id => {
+  // Drop all selection-owned state before requesting another movie.
+  detail.value = null
+  applyMetadataToDraft({})
+  error.value = null
+  showScraperModal.value = false
+  showNfoPreview.value = false
+  writePlan.value = null
+  isLocked.value = false
   isEditing.value = false
   if (id) {
     if (props.activeTab === undefined) localActiveTab.value = 'overview'
     loadDetail(id)
   } else {
     detailRequestSequence += 1
+    detailController?.abort()
     isLoading.value = false
-    detail.value = null
   }
 }, { immediate: true })
 
@@ -288,6 +302,10 @@ async function handleApplyNfo() {
     <!-- Error Alert -->
     <div v-if="error" class="inspector-error">
       {{ error }}
+    </div>
+
+    <div v-if="detail?.metadataWarning === 'invalid_nfo'" class="read-only-banner" role="status">
+      {{ labels.invalidNfoFallback }}
     </div>
 
     <!-- Read-Only Banner -->

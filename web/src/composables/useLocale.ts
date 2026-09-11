@@ -16,6 +16,8 @@ const messages = {
     signInIntro: "Sign in to review your library.",
     catalogLoaded: "Loaded",
     catalogRetry: "Retry loading",
+    invalidNfoFallback:
+      "The local NFO could not be read safely. Showing indexed information for this movie; no files were changed.",
     movies: "Movies",
     tvShows: "TV shows",
     sources: "Sources",
@@ -427,6 +429,8 @@ const messages = {
     signInIntro: "登录后查看和管理媒体库。",
     catalogLoaded: "已加载",
     catalogRetry: "重试加载",
+    invalidNfoFallback:
+      "本地 NFO 无法安全读取，已降级显示当前电影的索引信息；未修改任何文件。",
     movies: "电影",
     tvShows: "剧集",
     sources: "数据源",

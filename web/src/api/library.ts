@@ -100,13 +100,14 @@ export const media = (
     { signal },
   );
 
-export const mediaDetail = (id: number) =>
+export const mediaDetail = (id: number, signal?: AbortSignal) =>
   request<{
     item: MediaItem;
     metadata: Metadata;
     metadataOrigin: "draft" | "nfo" | "empty";
+    metadataWarning?: string;
     writable: boolean;
-  }>(`/api/v1/media/${id}`);
+  }>(`/api/v1/media/${id}`, { signal });
 
 export const mediaInspection = (id: number, signal?: AbortSignal) =>
   request<MediaInspection>(`/api/v1/media/${id}/inspection`, { signal });
