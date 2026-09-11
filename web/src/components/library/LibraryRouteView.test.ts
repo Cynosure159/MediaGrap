@@ -24,6 +24,7 @@ describe('LibraryRouteView', () => {
         plugins: [router],
         stubs: {
           LibraryWorkspace: {
+            props: ['labels'],
             emits: ['selectTvSelection'],
             template: '<button @click="$emit(\'selectTvSelection\', { kind: \'show\', showId: 42 })">select</button>',
           },

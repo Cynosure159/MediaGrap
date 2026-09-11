@@ -29,7 +29,7 @@ type LibraryService interface {
 	CancelJob(ctx context.Context, id int64) (library.Job, error)
 	RetryJob(ctx context.Context, id int64) (library.Job, error)
 	JobEventsAfter(ctx context.Context, cursor int64, limit int) ([]library.JobEvent, error)
-	ListMedia(ctx context.Context, query string, page, pageSize int) (library.Page, error)
+	ListMedia(ctx context.Context, query string, page, pageSize int, options ...library.CatalogOptions) (library.Page, error)
 	LocateMedia(ctx context.Context, id int64) (library.MediaLocation, error)
 	InspectMedia(ctx context.Context, id int64) (library.MediaInspection, error)
 	PreviewNaming(ctx context.Context, id int64, pattern string, values library.NamingValues) (library.NamingPreview, error)

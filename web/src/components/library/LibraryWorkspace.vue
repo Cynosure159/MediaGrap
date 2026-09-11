@@ -5,7 +5,7 @@ import MediaCatalog from './MediaCatalog.vue'
 import MovieInspector from './MovieInspector.vue'
 import TVShowCatalog from './TVShowCatalog.vue'
 import TVShowInspector from './TVShowInspector.vue'
-import type { TVSelection } from '@/api/library'
+import type { TVSelection, CatalogOptions } from '@/api/library'
 import type { InspectorTab } from '@/router'
 
 const props = defineProps<{
@@ -33,12 +33,13 @@ const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
 const activeTab = computed(() => props.activeTab ?? 'overview')
 const hasSelection = computed(() => props.mediaKind === 'shows' ? selectedTvSelection.value !== null : selectedMovieId.value !== null)
 
-const { sourceItems, mediaItems, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
+const { sourceItems, mediaItems, mediaTotal, mediaLoading, mediaError, mediaHasMore, loadMoreMedia, refreshMedia, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
 const activeJobs = computed(() => jobItems.value.filter(job => job.state === 'queued' || job.state === 'running'))
 
-async function search(value = '') {
+async function search(value = '', options?: CatalogOptions) {
   query.value = value
-  await refresh(query.value)
+  if (props.mediaKind !== 'shows') await refreshMedia(value, options)
+  else await refresh(query.value)
 }
 
 async function scanSources() {
@@ -83,6 +84,11 @@ onMounted(async () => {
       <template v-if="props.mediaKind !== 'shows'">
         <MediaCatalog
           :items="mediaItems"
+          :total="mediaTotal"
+          :loading="mediaLoading"
+          :load-error="mediaError"
+          :has-more="mediaHasMore"
+          @load-more="loadMoreMedia"
           :selected-id="selectedMovieId"
           :active-job="activeJobs[0]"
           :labels="labels"
@@ -188,7 +194,7 @@ onMounted(async () => {
   .split-pane-layout :deep(.catalog-panel) {
     width: 100%;
     min-width: 100%;
-    height: auto;
+    height: calc(100dvh - 60px);
     border-right: none;
   }
 

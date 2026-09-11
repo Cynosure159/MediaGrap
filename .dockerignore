@@ -5,6 +5,8 @@ bin
 runtime
 status-cache.json
 web/node_modules
+node_modules
+.vitest
 web/dist
 internal/httpapi/ui/dist
 coverage.*

@@ -15,7 +15,7 @@ describe('catalog scanning', () => {
       mediaItems: shallowRef([]), tvShowItems: shallowRef([]), jobItems: shallowRef([]),
       error: shallowRef(null), hasSources: shallowRef(true), refresh: vi.fn(), scan,
     } as unknown as ReturnType<typeof useLibrary>)
-    const catalog = { emits: ['scan'], template: '<button @click="$emit(\'scan\')">Scan</button>' }
+    const catalog = { props: ['labels'], emits: ['scan'], template: '<button @click="$emit(\'scan\')">Scan</button>' }
     const wrapper = mount(LibraryWorkspace, {
       props: { mediaKind, csrfToken: 'csrf', username: 'admin', labels: {} },
       global: { stubs: { MediaCatalog: catalog, TVShowCatalog: catalog, MovieInspector: true, TVShowInspector: true } },

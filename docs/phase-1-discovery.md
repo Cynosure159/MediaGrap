@@ -21,6 +21,10 @@ Browser mutations require an authenticated session cookie and `X-CSRF-Token`; fi
 
 The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. For a one-video movie directory, every supported local image (`jpg`, `jpeg`, `png`, or `webp`) is indexed, not only poster/fanart names. For a movie with no existing SQLite metadata, it parses a local Kodi NFO and persists the parsed fields in SQLite; discovered image paths remain in the SQLite sidecar index and are served through an authenticated opaque-asset URL. This rebuilds list and detail data after a source is removed and added again, without changing media files.
 
+## Movie catalog browsing
+
+The movie catalog now uses [continuous scrolling and lazy rendering](catalog-scrolling.md) with true server totals, global filters/sorts, and bounded background batches rather than stopping at the first 50 items. There are no page-number controls.
+
 ## Deferred UI localization requirement
 
 The product now requires Simplified Chinese and English UI switching. The next UI iteration must use locale message keys rather than in-component user-facing text, select browser language before sign-in, persist a signed-in user's preference, and localize validation, task, safety, and error states as well as navigation labels. Provider metadata remains in its source language unless a later scraping setting requests a specific metadata locale.

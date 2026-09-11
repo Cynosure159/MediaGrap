@@ -34,7 +34,7 @@ func (s *server) listMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	size, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
-	result, err := s.library.ListMedia(r.Context(), r.URL.Query().Get("q"), page, size)
+	result, err := s.library.ListMedia(r.Context(), r.URL.Query().Get("q"), page, size, library.CatalogOptions{Filter: r.URL.Query().Get("filter"), Sort: r.URL.Query().Get("sort")})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Unable to list media")
 		return

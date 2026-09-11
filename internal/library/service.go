@@ -297,7 +297,12 @@ func (s *Service) JobEventsAfter(ctx context.Context, cursor int64, limit int) (
 	return s.jobs.EventsAfter(ctx, cursor, limit)
 }
 
-func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize int) (Page, error) {
+type CatalogOptions struct {
+	Filter string
+	Sort   string
+}
+
+func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize int, options ...CatalogOptions) (Page, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -305,11 +310,31 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		pageSize = 30
 	}
 	query = strings.TrimSpace(query)
+	filter, order := "", "COALESCE(NULLIF(mm.title, ''), m.title_hint) COLLATE NOCASE, m.id"
+	if len(options) > 0 {
+		switch options[0].Filter {
+		case "unscraped", "nfo_missing":
+			filter = " AND NOT EXISTS(SELECT 1 FROM sidecar_assets a WHERE a.media_item_id=m.id AND a.kind='nfo')"
+		case "poster_missing":
+			filter = " AND NOT EXISTS(SELECT 1 FROM sidecar_assets a WHERE a.media_item_id=m.id AND a.kind='image')"
+		case "4k":
+			filter = " AND (lower(m.relative_path) LIKE '%2160p%' OR lower(m.relative_path) LIKE '%4k%' OR lower(m.relative_path) LIKE '%uhd%')"
+		case "1080p":
+			filter = " AND (lower(m.relative_path) LIKE '%1080p%' OR lower(m.relative_path) LIKE '%fhd%') AND NOT (lower(m.relative_path) LIKE '%2160p%' OR lower(m.relative_path) LIKE '%4k%' OR lower(m.relative_path) LIKE '%uhd%')"
+		}
+		switch options[0].Sort {
+		case "year":
+			order = "COALESCE(m.year_hint,0) DESC, m.id"
+		case "size":
+			order = "m.file_size DESC, m.id"
+		}
+	}
+	where := ` FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id = m.id WHERE m.missing = 0 AND (m.title_hint LIKE ? OR mm.title LIKE ?) AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id)` + filter
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id = m.id WHERE m.missing = 0 AND (m.title_hint LIKE ? OR mm.title LIKE ?) AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id)`, "%"+query+"%", "%"+query+"%").Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*)"+where, "%"+query+"%", "%"+query+"%").Scan(&total); err != nil {
 		return Page{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url FROM media_items m LEFT JOIN media_metadata mm ON mm.media_item_id = m.id WHERE m.missing = 0 AND (m.title_hint LIKE ? OR mm.title LIKE ?) AND NOT EXISTS(SELECT 1 FROM tv_episodes e WHERE e.media_item_id=m.id) ORDER BY COALESCE(NULLIF(mm.title, ''), m.title_hint) COLLATE NOCASE LIMIT ? OFFSET ?`, "%"+query+"%", "%"+query+"%", pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.source_id, m.relative_path, m.title_hint, m.year_hint, m.file_size, m.modified_at, mm.title, mm.poster_url`+where+" ORDER BY "+order+" LIMIT ? OFFSET ?", "%"+query+"%", "%"+query+"%", pageSize, (page-1)*pageSize)
 	if err != nil {
 		return Page{}, err
 	}

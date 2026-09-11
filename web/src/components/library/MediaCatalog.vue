@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
-import type { Job, MediaItem } from '@/api/library'
+import { computed, shallowRef, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import type { Job, MediaItem, CatalogOptions } from '@/api/library'
 import { useDismissiblePopover } from '@/composables/useDismissiblePopover'
 import SearchBar from '@/components/common/SearchBar.vue'
 
 const props = defineProps<{
   items: MediaItem[]
+  total?: number | null
+  loading?: boolean
+  hasMore?: boolean
+  loadError?: string | null
   selectedId: number | null
   activeJob: Job | undefined
   labels: Record<string, string>
 }>()
 
 const emit = defineEmits<{
-  search: [query: string]
+  search: [query: string, options: CatalogOptions]
+  loadMore: []
   select: [id: number]
   scan: []
 }>()
@@ -27,7 +32,7 @@ const { open: showFilterMenu, container: filterDropdownRef } = useDismissiblePop
 const isFilterActive = computed(() => filterMode.value !== 'all' || sortMode.value !== 'title')
 
 function submitSearch() {
-  emit('search', query.value)
+  emit('search', query.value, { filter: filterMode.value, sort: sortMode.value })
 }
 
 function hasSidecar(item: MediaItem, kind: string): boolean {
@@ -42,38 +47,79 @@ function getResolution(item: MediaItem): string {
   return 'HD'
 }
 
-const filteredItems = computed(() => {
-  let list = [...props.items]
+// Keep DOM/image work bounded even after thousands of items have been fetched.
+const listElement = shallowRef<HTMLElement | null>(null)
+const scrollTop = shallowRef(0)
+const viewportHeight = shallowRef(600)
+const stride = 60 // 56px row + 4px spacing, per the catalog design tokens
+const start = computed(() => Math.max(0, Math.floor(scrollTop.value / stride) - 5))
+const end = computed(() => Math.min(props.items.length, Math.ceil((scrollTop.value + viewportHeight.value) / stride) + 5))
+const visibleItems = computed(() => props.items.slice(start.value, end.value))
+const count = computed(() => props.total === undefined ? props.items.length : props.total)
+let resizeObserver: ResizeObserver | undefined
 
-  // Filter
-  if (filterMode.value === 'unscraped' || filterMode.value === 'nfo_missing') {
-    list = list.filter(item => !hasSidecar(item, 'nfo'))
-  } else if (filterMode.value === 'poster_missing') {
-    list = list.filter(item => !hasSidecar(item, 'poster') && !hasSidecar(item, 'jpg') && !hasSidecar(item, 'png'))
-  } else if (filterMode.value === '4k') {
-    list = list.filter(item => getResolution(item) === '4K')
-  } else if (filterMode.value === '1080p') {
-    list = list.filter(item => getResolution(item) === '1080p')
+function checkMore() {
+  const el = listElement.value
+  if (!el || el.clientHeight <= 0) return
+  if (!props.hasMore || props.loading || props.loadError) return
+
+  const remainingScroll = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (remainingScroll < 300) {
+    emit('loadMore')
   }
+}
 
-  // Sort
-  if (sortMode.value === 'year') {
-    list.sort((a, b) => (b.yearHint || 0) - (a.yearHint || 0))
-  } else if (sortMode.value === 'size') {
-    list.sort((a, b) => (b.fileSize || 0) - (a.fileSize || 0))
-  } else {
-    list.sort((a, b) => (a.title || a.titleHint || '').localeCompare(b.title || b.titleHint || ''))
+function onScroll() {
+  scrollTop.value = listElement.value?.scrollTop || 0
+  checkMore()
+}
+
+function resetScroll() {
+  if (listElement.value) {
+    listElement.value.scrollTop = 0
   }
+  scrollTop.value = 0
+}
 
-  return list
+watch([filterMode, sortMode], () => {
+  resetScroll()
+  submitSearch()
 })
 
-const unscrapedCount = computed(() => {
-  return props.items.filter(item => !hasSidecar(item, 'nfo')).length
+watch(() => props.items, async (items) => {
+  if (!items.length) {
+    resetScroll()
+  }
+  await nextTick()
+  checkMore()
 })
+
+watch(() => props.loading, async () => {
+  await nextTick()
+  checkMore()
+})
+
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      viewportHeight.value = listElement.value?.clientHeight || 600
+      checkMore()
+    })
+    if (listElement.value) {
+      resizeObserver.observe(listElement.value)
+    }
+  }
+})
+
+onBeforeUnmount(() => resizeObserver?.disconnect())
 
 function setFilter(f: FilterType) {
   filterMode.value = f
+  showFilterMenu.value = false
+}
+
+function setSort(s: SortType) {
+  sortMode.value = s
   showFilterMenu.value = false
 }
 </script>
@@ -85,15 +131,15 @@ function setFilter(f: FilterType) {
       <!-- Search Input -->
       <SearchBar
         v-model="query"
-        :placeholder="labels.searchPlaceholder || '搜索片名、年份、IMDb ID...'"
+        :placeholder="labels.search || 'Search movies…'"
         @search="submitSearch"
       />
 
       <!-- Count & Actions Bar -->
       <div class="catalog-toolbar">
         <div class="catalog-stats">
-          <span class="count-main">{{ filteredItems.length }} {{ labels.movies || '电影' }}</span>
-          <span v-if="unscrapedCount > 0" class="count-unscraped">({{ unscrapedCount }} {{ labels.unscraped || '未刮削' }})</span>
+          <span class="count-main">{{ count ?? '—' }} {{ labels.movies || '电影' }}</span>
+
         </div>
         <div class="toolbar-actions">
           <!-- Filter Menu Trigger -->
@@ -123,7 +169,6 @@ function setFilter(f: FilterType) {
                     @click="setFilter('all')"
                   >
                     <span>{{ labels.filterAll || 'All' }}</span>
-                    <span class="popover-count font-code">{{ items.length }}</span>
                   </button>
                   <button
                     type="button"
@@ -132,7 +177,7 @@ function setFilter(f: FilterType) {
                     @click="setFilter('unscraped')"
                   >
                     <span>{{ labels.filterUnscraped || 'Unscraped' }}</span>
-                    <span class="popover-count font-code text-warn">{{ unscrapedCount }}</span>
+
                   </button>
                   <button
                     type="button"
@@ -160,7 +205,7 @@ function setFilter(f: FilterType) {
                     type="button"
                     class="popover-item"
                     :class="{ active: sortMode === 'title' }"
-                    @click="sortMode = 'title'; showFilterMenu = false"
+                    @click="setSort('title')"
                   >
                     <span>{{ labels.sortTitle || 'Title (A-Z)' }}</span>
                     <svg v-if="sortMode === 'title'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
@@ -171,7 +216,7 @@ function setFilter(f: FilterType) {
                     type="button"
                     class="popover-item"
                     :class="{ active: sortMode === 'year' }"
-                    @click="sortMode = 'year'; showFilterMenu = false"
+                    @click="setSort('year')"
                   >
                     <span>{{ labels.sortYear || 'Year (Newest)' }}</span>
                     <svg v-if="sortMode === 'year'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
@@ -182,7 +227,7 @@ function setFilter(f: FilterType) {
                     type="button"
                     class="popover-item"
                     :class="{ active: sortMode === 'size' }"
-                    @click="sortMode = 'size'; showFilterMenu = false"
+                    @click="setSort('size')"
                   >
                     <span>{{ labels.sortSize || 'File Size' }}</span>
                     <svg v-if="sortMode === 'size'" class="check-icon" viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
@@ -219,12 +264,18 @@ function setFilter(f: FilterType) {
     </div>
 
     <!-- Movie Items List -->
-    <div class="catalog-list">
+    <div ref="listElement" class="catalog-list" :aria-busy="loading" @scroll.passive="onScroll">
+      <div :style="{ height: `${start * stride}px` }" aria-hidden="true"></div>
       <div
-        v-for="item in filteredItems"
+        v-for="item in visibleItems"
         :key="item.id"
         class="media-row group"
         :class="{ 'media-row--active': selectedId === item.id }"
+        role="button"
+        tabindex="0"
+        :aria-label="item.title || item.titleHint"
+        @keydown.enter="emit('select', item.id)"
+        @keydown.space.prevent="emit('select', item.id)"
         @click="emit('select', item.id)"
       >
         <!-- Poster Thumbnail with 4K badge -->
@@ -235,6 +286,7 @@ function setFilter(f: FilterType) {
             :alt="item.title || item.titleHint"
             class="thumb-img"
             loading="lazy"
+            decoding="async"
           />
           <div v-else class="thumb-placeholder">
             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" opacity="0.35">
@@ -281,8 +333,14 @@ function setFilter(f: FilterType) {
         </div>
       </div>
 
+      <div :style="{ height: `${Math.max(0, items.length - end) * stride}px` }" aria-hidden="true"></div>
+      <div class="load-status" role="status">
+        <template v-if="loading">{{ labels.loading }}</template>
+        <button v-else-if="loadError" type="button" class="btn-secondary" @click="emit('loadMore')">{{ labels.catalogRetry || 'Retry loading' }}</button>
+        <template v-else-if="count !== null">{{ labels.catalogLoaded || 'Loaded' }} {{ items.length }} / {{ count }}</template>
+      </div>
       <!-- Empty State -->
-      <div v-if="filteredItems.length === 0" class="catalog-empty">
+      <div v-if="items.length === 0 && !loading && !loadError" class="catalog-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" class="empty-icon">
           <rect x="2" y="4" width="20" height="16" rx="2" />
           <path d="M8 4v16M16 4v16M2 12h20" />
@@ -484,16 +542,20 @@ function setFilter(f: FilterType) {
   flex: 1;
   overflow-y: auto;
   padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  min-height: 0;
+  overflow-anchor: none;
 }
+
+.load-status { padding: 12px; text-align: center; font-size: 11px; color: var(--on-surface-variant); }
 
 .media-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px;
+  padding: 6px;
+  box-sizing: border-box;
+  height: 56px;
+  margin-bottom: 4px;
   border-radius: var(--radius-sm, 0.25rem);
   border-left: 2px solid transparent;
   background: transparent;
@@ -513,8 +575,8 @@ function setFilter(f: FilterType) {
 
 .thumb-box {
   position: relative;
-  width: 42px;
-  height: 60px;
+  width: 30px;
+  height: 44px;
   border-radius: var(--radius-sm, 0.25rem);
   overflow: hidden;
   background: var(--surface-container-lowest, #070d1f);
