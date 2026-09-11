@@ -5,9 +5,10 @@ export type SettingsCategory =
   | 'sources'
   | 'providers'
   | 'network'
-  | 'interface'
-  | 'integrations'
+  | 'renaming'
   | 'automation'
+  | 'integrations'
+  | 'interface'
   | 'system'
 
 const props = defineProps<{
@@ -61,12 +62,21 @@ const menuItems = computed<MenuItem[]>(() => [
     icon: 'router',
   },
   {
-    id: 'interface',
-    titleZh: '界面与偏好',
-    titleEn: 'Interface & Theme',
-    descZh: '语言与深浅主题',
-    descEn: 'Language & theme',
-    icon: 'palette',
+    id: 'renaming',
+    titleZh: '重命名规则',
+    titleEn: 'Rename Patterns',
+    descZh: '电影与剧集默认格式',
+    descEn: 'Movie & TV defaults',
+    icon: 'drive_file_rename_outline',
+  },
+  {
+    id: 'automation',
+    titleZh: '自动化安全审批',
+    titleEn: 'File Approvals',
+    descZh: '文件写入与计划审批',
+    descEn: 'Write plan review',
+    icon: 'verified_user',
+    badge: (props.pendingApprovalsCount ?? 0) > 0 ? props.pendingApprovalsCount : undefined,
   },
   {
     id: 'integrations',
@@ -77,13 +87,12 @@ const menuItems = computed<MenuItem[]>(() => [
     icon: 'hub',
   },
   {
-    id: 'automation',
-    titleZh: '自动化安全审批',
-    titleEn: 'File Approvals',
-    descZh: '文件写入与计划审批',
-    descEn: 'Write plan review',
-    icon: 'verified_user',
-    badge: (props.pendingApprovalsCount ?? 0) > 0 ? props.pendingApprovalsCount : undefined,
+    id: 'interface',
+    titleZh: '界面与偏好',
+    titleEn: 'Interface & Theme',
+    descZh: '语言与深浅主题',
+    descEn: 'Language & theme',
+    icon: 'palette',
   },
   {
     id: 'system',

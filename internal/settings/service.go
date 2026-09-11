@@ -24,6 +24,8 @@ type Defaults struct {
 }
 
 type Snapshot struct {
+	MovieRenamePattern     string
+	TVRenamePattern        string
 	TMDbAPIKey             string
 	FanartTVAPIKey         string
 	FanartTVPersonalAPIKey string
@@ -35,6 +37,8 @@ type Snapshot struct {
 }
 
 type View struct {
+	MovieRenamePattern               string   `json:"movieRenamePattern"`
+	TVRenamePattern                  string   `json:"tvRenamePattern"`
 	TMDbAPIKeyConfigured             bool     `json:"tmdbApiKeyConfigured"`
 	FanartTVAPIKeyConfigured         bool     `json:"fanartTvApiKeyConfigured"`
 	FanartTVPersonalAPIKeyConfigured bool     `json:"fanartTvPersonalApiKeyConfigured"`
@@ -48,20 +52,22 @@ type View struct {
 }
 
 type Update struct {
-	TMDbAPIKey                  string `json:"tmdbApiKey"`
-	ClearTMDbAPIKey             bool   `json:"clearTmdbApiKey"`
-	FanartTVAPIKey              string `json:"fanartTvApiKey"`
-	ClearFanartTVAPIKey         bool   `json:"clearFanartTvApiKey"`
-	FanartTVPersonalAPIKey      string `json:"fanartTvPersonalApiKey"`
-	ClearFanartTVPersonalAPIKey bool   `json:"clearFanartTvPersonalApiKey"`
-	TMDbLanguage                string `json:"tmdbLanguage"`
-	FallbackLanguage            string `json:"fallbackLanguage"`
-	OutboundProxy               string `json:"outboundProxy"`
-	ClearOutboundProxy          bool   `json:"clearOutboundProxy"`
-	NoProxy                     string `json:"noProxy"`
-	ClearNoProxy                bool   `json:"clearNoProxy"`
-	Theme                       string `json:"theme"`
-	Locale                      string `json:"locale"`
+	MovieRenamePattern          *string `json:"movieRenamePattern"`
+	TVRenamePattern             *string `json:"tvRenamePattern"`
+	TMDbAPIKey                  string  `json:"tmdbApiKey"`
+	ClearTMDbAPIKey             bool    `json:"clearTmdbApiKey"`
+	FanartTVAPIKey              string  `json:"fanartTvApiKey"`
+	ClearFanartTVAPIKey         bool    `json:"clearFanartTvApiKey"`
+	FanartTVPersonalAPIKey      string  `json:"fanartTvPersonalApiKey"`
+	ClearFanartTVPersonalAPIKey bool    `json:"clearFanartTvPersonalApiKey"`
+	TMDbLanguage                string  `json:"tmdbLanguage"`
+	FallbackLanguage            string  `json:"fallbackLanguage"`
+	OutboundProxy               string  `json:"outboundProxy"`
+	ClearOutboundProxy          bool    `json:"clearOutboundProxy"`
+	NoProxy                     string  `json:"noProxy"`
+	ClearNoProxy                bool    `json:"clearNoProxy"`
+	Theme                       string  `json:"theme"`
+	Locale                      string  `json:"locale"`
 }
 
 type Service struct {
@@ -81,7 +87,7 @@ func NewService(db *sql.DB, defaults Defaults) *Service {
 
 func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 	values := map[string]string{}
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'fanart_tv_api_key', 'fanart_tv_personal_api_key', 'tmdb_language', 'fallback_language', 'outbound_proxy', 'no_proxy')`)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM application_settings WHERE key IN ('tmdb_api_key', 'fanart_tv_api_key', 'fanart_tv_personal_api_key', 'tmdb_language', 'fallback_language', 'outbound_proxy', 'no_proxy', 'movie_rename_pattern', 'tv_rename_pattern')`)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -97,6 +103,8 @@ func (s *Service) Current(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return Snapshot{
+		MovieRenamePattern:     valueOrDefault(values, "movie_rename_pattern", DefaultMovieRenamePattern),
+		TVRenamePattern:        valueOrDefault(values, "tv_rename_pattern", DefaultTVRenamePattern),
 		TMDbAPIKey:             valueOrDefault(values, "tmdb_api_key", s.defaults.TMDbAPIKey),
 		FanartTVAPIKey:         valueOrDefault(values, "fanart_tv_api_key", s.defaults.FanartTVAPIKey),
 		FanartTVPersonalAPIKey: valueOrDefault(values, "fanart_tv_personal_api_key", s.defaults.FanartTVPersonalAPIKey),
@@ -113,7 +121,7 @@ func (s *Service) View(ctx context.Context, userID ...int64) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	view := View{TMDbAPIKeyConfigured: current.TMDbAPIKey != "", FanartTVAPIKeyConfigured: current.FanartTVAPIKey != "", FanartTVPersonalAPIKeyConfigured: current.FanartTVPersonalAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", NoProxyConfigured: current.NoProxy != "", TMDbLanguage: current.TMDbLanguage, FallbackLanguage: current.FallbackLanguage, Theme: "dark", Locale: "en", MediaRoots: current.MediaRoots}
+	view := View{MovieRenamePattern: current.MovieRenamePattern, TVRenamePattern: current.TVRenamePattern, TMDbAPIKeyConfigured: current.TMDbAPIKey != "", FanartTVAPIKeyConfigured: current.FanartTVAPIKey != "", FanartTVPersonalAPIKeyConfigured: current.FanartTVPersonalAPIKey != "", OutboundProxyConfigured: current.OutboundProxy != "", NoProxyConfigured: current.NoProxy != "", TMDbLanguage: current.TMDbLanguage, FallbackLanguage: current.FallbackLanguage, Theme: "dark", Locale: "en", MediaRoots: current.MediaRoots}
 	if len(userID) > 0 && userID[0] > 0 {
 		_ = s.db.QueryRowContext(ctx, `SELECT theme, locale FROM user_preferences WHERE user_id=?`, userID[0]).Scan(&view.Theme, &view.Locale)
 	}
@@ -168,6 +176,22 @@ func (s *Service) Update(ctx context.Context, update Update, userID ...int64) (S
 	if err := validateNoProxy(current.NoProxy); err != nil {
 		return Snapshot{}, err
 	}
+	for _, pattern := range []struct {
+		input  *string
+		target *string
+		tv     bool
+	}{
+		{update.MovieRenamePattern, &current.MovieRenamePattern, false},
+		{update.TVRenamePattern, &current.TVRenamePattern, true},
+	} {
+		if pattern.input != nil {
+			value := strings.TrimSpace(*pattern.input)
+			if err := validateRenamePattern(value, pattern.tv); err != nil {
+				return Snapshot{}, err
+			}
+			*pattern.target = value
+		}
+	}
 	theme, locale := strings.TrimSpace(update.Theme), strings.TrimSpace(update.Locale)
 	if theme != "" && theme != "dark" && theme != "light" && theme != "system" {
 		return Snapshot{}, errors.New("theme must be dark, light, or system")
@@ -180,7 +204,7 @@ func (s *Service) Update(ctx context.Context, update Update, userID ...int64) (S
 		return Snapshot{}, err
 	}
 	defer transaction.Rollback()
-	for key, value := range map[string]string{"tmdb_api_key": current.TMDbAPIKey, "fanart_tv_api_key": current.FanartTVAPIKey, "fanart_tv_personal_api_key": current.FanartTVPersonalAPIKey, "tmdb_language": current.TMDbLanguage, "fallback_language": current.FallbackLanguage, "outbound_proxy": current.OutboundProxy, "no_proxy": current.NoProxy} {
+	for key, value := range map[string]string{"movie_rename_pattern": current.MovieRenamePattern, "tv_rename_pattern": current.TVRenamePattern, "tmdb_api_key": current.TMDbAPIKey, "fanart_tv_api_key": current.FanartTVAPIKey, "fanart_tv_personal_api_key": current.FanartTVPersonalAPIKey, "tmdb_language": current.TMDbLanguage, "fallback_language": current.FallbackLanguage, "outbound_proxy": current.OutboundProxy, "no_proxy": current.NoProxy} {
 		if _, err := transaction.ExecContext(ctx, `INSERT INTO application_settings(key, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value); err != nil {
 			return Snapshot{}, fmt.Errorf("save setting: %w", err)
 		}

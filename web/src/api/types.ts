@@ -356,6 +356,8 @@ export interface TVArtworkPlan {
 }
 
 export interface Settings {
+  movieRenamePattern?: string
+  tvRenamePattern?: string
   tmdbApiKeyConfigured: boolean
   fanartTvApiKeyConfigured: boolean
   fanartTvPersonalApiKeyConfigured?: boolean
@@ -369,6 +371,8 @@ export interface Settings {
 }
 
 export interface SettingsUpdate {
+  movieRenamePattern?: string
+  tvRenamePattern?: string
   tmdbApiKey: string
   clearTmdbApiKey: boolean
   fanartTvApiKey: string

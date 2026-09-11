@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from 'vue'
+import { useRenamePattern } from '@/composables/useRenamePattern'
 import type { MediaInspection, MediaItem, RenamePlan } from '@/api/types'
 
 const props = withDefaults(defineProps<{
@@ -23,8 +24,7 @@ const emit = defineEmits<{
   clearRename: []
 }>()
 
-const patternInput = shallowRef('${title} (${year})/${title} (${year})')
-const selectedPreset = shallowRef('kodi')
+const { pattern: patternInput, selectedPreset } = useRenamePattern('movie')
 const availableTokens = ['${title}', '${originalTitle}', '${year}', '${resolution}', '${videoCodec}', '${audioCodec}', '${edition}', '${imdbId}']
 const hasConflicts = computed(() => props.renamePlan?.hasConflicts ?? false)
 

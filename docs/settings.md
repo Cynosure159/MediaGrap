@@ -62,3 +62,9 @@ See [Webhook and MCP configuration](integrations.md) for key-file setup, network
 The connection sidebar displays the latest test result (reachable, failed, or not configured) and duration for TMDb and the proxy. API Tokens distinguish active, expired, and revoked credentials; expiry status updates while the page remains open.
 
 The Movies and TV shows catalog refresh buttons scan every enabled media source, including sources with no indexed items yet. Settings retains per-source scanning. Repeated catalog clicks during an active scan request do not queue duplicate scans.
+
+## Default rename patterns
+
+The separate **Rename Patterns** settings tab (`/settings?section=renaming`) stores movie and TV templates in the server database. `movieRenamePattern` and `tvRenamePattern` are optional fields on the settings update API: omitted fields keep their values; empty or malformed templates are rejected. The settings screen lists supported tokens and provides reset buttons; reset changes must be saved.
+
+New file-audit tabs load the saved template for their media type. In-progress edits and existing immutable plans are not replaced. Saving defaults never writes media; preview, conflict checks and explicit execution remain required. `/` separates relative directories, extensions are preserved, and absolute paths, traversal and unknown tokens are rejected. Metadata-dependent tokens still require corresponding values during preview.

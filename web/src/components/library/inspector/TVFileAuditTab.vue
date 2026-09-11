@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { MediaInspection, RenamePlan, TVEpisode, TVSelection } from '@/api/types'
+import { useRenamePattern } from '@/composables/useRenamePattern'
 import * as api from '@/api/library'
 
 const props = withDefaults(defineProps<{
@@ -40,8 +41,7 @@ const presets = {
   custom: '',
 }
 
-const selectedPreset = ref<keyof typeof presets>('kodiTitle')
-const patternInput = ref(presets.kodiTitle)
+const { pattern: patternInput, selectedPreset } = useRenamePattern('tv')
 const isPreviewCollapsed = ref(false)
 
 function formatEpisodeCode(ep: TVEpisode): string {
@@ -77,7 +77,7 @@ const currentScopeInfo = computed(() => {
 
 function onPresetChange() {
   if (selectedPreset.value !== 'custom') {
-    patternInput.value = presets[selectedPreset.value]
+    patternInput.value = presets[selectedPreset.value as keyof typeof presets]
   }
 }
 

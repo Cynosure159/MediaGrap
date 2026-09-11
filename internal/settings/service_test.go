@@ -70,3 +70,45 @@ func TestUpdateRejectsUnsafeNoProxyEntry(t *testing.T) {
 		t.Fatal("expected invalid NO_PROXY entry")
 	}
 }
+
+func TestRenameDefaultsPersistAndValidate(t *testing.T) {
+	db, err := database.Open(t.TempDir() + "/mediagrap.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(db, Defaults{})
+	view, err := service.View(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.MovieRenamePattern != DefaultMovieRenamePattern || view.TVRenamePattern != DefaultTVRenamePattern {
+		t.Fatal("missing defaults")
+	}
+	movie, tv := "${title}/${title}", "${showTitle}/S${seasonNumberPad}E${episodeNumberPad}"
+	if _, err := service.Update(t.Context(), Update{MovieRenamePattern: &movie, TVRenamePattern: &tv}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(t.Context(), Update{TMDbLanguage: "zh-CN"}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = NewService(db, Defaults{}).View(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.MovieRenamePattern != movie || view.TVRenamePattern != tv {
+		t.Fatal("patterns not preserved")
+	}
+	for _, invalid := range []string{"", "../movie", "/movie", "${unknown}", "${showTitle}", "${title", "a\\b", "a//b"} {
+		if _, err := service.Update(t.Context(), Update{MovieRenamePattern: &invalid}); err == nil {
+			t.Fatalf("accepted %q", invalid)
+		}
+	}
+	view, _ = service.View(t.Context())
+	if view.MovieRenamePattern != movie {
+		t.Fatal("invalid update changed saved pattern")
+	}
+}

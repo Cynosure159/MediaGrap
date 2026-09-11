@@ -13,6 +13,7 @@ import SettingsNetworkForm from './SettingsNetworkForm.vue'
 import SettingsInterfaceForm from './SettingsInterfaceForm.vue'
 import SettingsIntegrations from './SettingsIntegrations.vue'
 import AutomationApprovals from './AutomationApprovals.vue'
+import SettingsRenameForm from './SettingsRenameForm.vue'
 import SettingsSystemInfo from './SettingsSystemInfo.vue'
 
 const props = defineProps<{
@@ -34,9 +35,10 @@ const validCategories: SettingsCategory[] = [
   'sources',
   'providers',
   'network',
-  'interface',
-  'integrations',
+  'renaming',
   'automation',
+  'integrations',
+  'interface',
   'system',
 ]
 
@@ -121,9 +123,10 @@ const categoryTitles: Record<SettingsCategory, { zh: string; en: string }> = {
   sources: { zh: '媒体源与挂载', en: 'Library Sources' },
   providers: { zh: '元数据刮削源', en: 'Metadata Providers' },
   network: { zh: '网络与代理', en: 'Network & Proxy' },
-  interface: { zh: '界面与偏好', en: 'Interface & Theme' },
-  integrations: { zh: '外部集成与 API', en: 'Integrations & API' },
+  renaming: { zh: '重命名规则', en: 'Rename Patterns' },
   automation: { zh: '自动化安全审批', en: 'File Approvals' },
+  integrations: { zh: '外部集成与 API', en: 'Integrations & API' },
+  interface: { zh: '界面与偏好', en: 'Interface & Theme' },
   system: { zh: '系统与运行环境', en: 'System & Docker' },
 }
 
@@ -199,6 +202,14 @@ onMounted(initialize)
               @scan="scan"
               @delete="deleteSource"
               @save-policy="saveSourcePolicy"
+            />
+
+            <SettingsRenameForm
+              v-else-if="activeCategory === 'renaming'"
+              :settings="settings"
+              :csrf-token="csrfToken"
+              :locale="locale"
+              @saved="settings = $event"
             />
 
             <!-- 2. Providers Form -->

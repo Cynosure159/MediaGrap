@@ -292,7 +292,7 @@ export const operationsStatus = () =>
 export const settings = () =>
   request<Settings>('/api/v1/settings')
 
-export const saveSettings = (csrf: string, update: SettingsUpdate) =>
+export const saveSettings = (csrf: string, update: Partial<SettingsUpdate>) =>
   request<Settings>('/api/v1/settings', {
     method: 'PUT',
     headers: {
