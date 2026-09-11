@@ -719,7 +719,15 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 			if path != root && entry.Type()&fs.ModeSymlink != 0 {
 				return filepath.SkipDir
 			}
-			if isSupplementalDirectory(root, path) {
+			supplemental := isSupplementalDirectory(root, path)
+			if !supplemental {
+				var err error
+				supplemental, err = s.indexedSupplementalDirectory(ctx, sourceID, root, path)
+				if err != nil {
+					return err
+				}
+			}
+			if supplemental {
 				relative, err := filepath.Rel(root, path)
 				if err != nil {
 					return err

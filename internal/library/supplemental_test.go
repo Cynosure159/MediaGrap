@@ -91,6 +91,21 @@ func TestRescanExcludesSupplementalVideosWithoutDeletingFiles(t *testing.T) {
 			if err != nil || page.Total != 3 {
 				t.Fatalf("wrong movie total %+v %v", page, err)
 			}
+			if err := os.Remove(filepath.Join(root, main)); err != nil {
+				t.Fatal(err)
+			}
+			if err := service.scan(t.Context(), 0, source.ID, mode, nil); err != nil {
+				t.Fatal(err)
+			}
+			page, err = service.ListMedia(t.Context(), "", 1, 50)
+			if err != nil || page.Total != 2 {
+				t.Fatalf("extras revived after main deletion: %+v %v", page, err)
+			}
+			for _, extra := range extras {
+				if b, err := os.ReadFile(filepath.Join(root, extra)); err != nil || string(b) != "unchanged" {
+					t.Fatal("extra file changed")
+				}
+			}
 		})
 	}
 }
