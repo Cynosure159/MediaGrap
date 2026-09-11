@@ -21,6 +21,12 @@ Browser mutations require an authenticated session cookie and `X-CSRF-Token`; fi
 
 The scanner accepts `mkv`, `mp4`, `m4v`, `avi`, `mov`, and `webm`, skips symbolic links, extracts basic title/year hints from filenames, and records matching NFO/image sidecars. For a one-video movie directory, every supported local image (`jpg`, `jpeg`, `png`, or `webp`) is indexed, not only poster/fanart names. For a movie with no existing SQLite metadata, it parses a local Kodi NFO and persists the parsed fields in SQLite; discovered image paths remain in the SQLite sidecar index and are served through an authenticated opaque-asset URL. This rebuilds list and detail data after a source is removed and added again, without changing media files.
 
+## Deleted-file reconciliation
+
+Both incremental and full source scans reconcile removed files after a successful complete directory walk. Each observed video receives the current scan timestamp; only after the walk succeeds are unobserved entries marked `missing`, in the same transaction as the source's completed-scan timestamp. Deleted movies disappear from list totals; deleted episodes are excluded from show counts/details, and shows with no remaining episodes disappear. Historical metadata remains stored. Read failures, an inaccessible root, or cancellation skip the missing-file reconciliation rather than first hiding the whole source. An accessible but genuinely empty source is treated as empty; an unmounted filesystem that leaves an accessible empty mountpoint cannot be distinguished from that state automatically.
+
+After a scan launched from the catalog completes, its existing list refresh also recreates the selected inspector so removed files/episodes cannot remain as stale detail content. External filesystem deletions are reflected after a successful source scan, not by continuous filesystem watching.
+
 ## Sample clips and supplemental folders
 
 Sample clips are not trailers by definition, and neither should inflate the main-movie catalog. Scans exclude case-insensitive final filename tokens `-sample`, `.sample`, `_sample`, and the standalone `sample` basename. Names such as `The Sample (2024)` are retained. An exact `Extra` or `Extras` directory is skipped only when its parent contains a regular non-sample video; a source or standalone show named `Extras` is not excluded merely for its name. Other similarly named directories are retained.

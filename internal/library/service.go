@@ -704,11 +704,9 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
-	if mode == "full" {
-		if _, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=?`, sourceID); err != nil {
-			return err
-		}
-	}
+	// Reconcile absence only after a successful complete walk. Marking the whole
+	// source missing first can erase the visible catalog on a failed/offline scan.
+	seenAt := time.Now().UTC().Format(time.RFC3339Nano)
 	count := 0
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -742,7 +740,7 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil
+			return err
 		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
@@ -754,7 +752,7 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 		}
 		title, year := parseHint(filepath.Base(path))
 		var itemID int64
-		err = s.db.QueryRowContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,year_hint,file_size,modified_at,missing,last_seen_at) VALUES(?,?,?,?,?,?,0,datetime('now')) ON CONFLICT(source_id,relative_path) DO UPDATE SET title_hint=excluded.title_hint,year_hint=excluded.year_hint,file_size=excluded.file_size,modified_at=excluded.modified_at,missing=0,last_seen_at=datetime('now') RETURNING id`, sourceID, relative, title, year, info.Size(), info.ModTime().UTC().Format(time.RFC3339)).Scan(&itemID)
+		err = s.db.QueryRowContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,year_hint,file_size,modified_at,missing,last_seen_at) VALUES(?,?,?,?,?,?,0,?) ON CONFLICT(source_id,relative_path) DO UPDATE SET title_hint=excluded.title_hint,year_hint=excluded.year_hint,file_size=excluded.file_size,modified_at=excluded.modified_at,missing=0,last_seen_at=excluded.last_seen_at RETURNING id`, sourceID, relative, title, year, info.Size(), info.ModTime().UTC().Format(time.RFC3339), seenAt).Scan(&itemID)
 		if err != nil {
 			return err
 		}
@@ -775,11 +773,30 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 		}
 		return nil
 	})
-	if err == nil {
-		_, _ = s.db.ExecContext(ctx, `UPDATE sources SET last_scan_at=datetime('now') WHERE id=?`, sourceID)
-		s.logger.Info("library scan indexed files", "job_id", jobID, "source_id", sourceID, "media_item_count", count)
+	if err != nil {
+		return err
 	}
-	return err
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=? AND missing=0 AND last_seen_at<>?`, sourceID, seenAt)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sources SET last_scan_at=datetime('now') WHERE id=?`, sourceID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	removed, _ := result.RowsAffected()
+	s.logger.Info("library scan indexed files", "job_id", jobID, "source_id", sourceID, "media_item_count", count, "missing_item_count", removed)
+	return nil
 }
 func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) error {
 	// Finish filesystem work before acquiring a connection/transaction.

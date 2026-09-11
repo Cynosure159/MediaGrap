@@ -69,14 +69,16 @@ describe("catalog scanning", () => {
         emits: ["scan"],
         template: "<button @click=\"$emit('scan')\">Scan</button>",
       };
+      const inspectorMounted = vi.fn();
+      const inspector = { props: ['labels'], setup() { inspectorMounted(); return {} }, template: '<div />' };
       const wrapper = mount(LibraryWorkspace, {
         props: { mediaKind, csrfToken: "csrf", username: "admin", labels: {} },
         global: {
           stubs: {
             MediaCatalog: catalog,
             TVShowCatalog: catalog,
-            MovieInspector: true,
-            TVShowInspector: true,
+            MovieInspector: inspector,
+            TVShowInspector: inspector,
           },
         },
       });
@@ -84,8 +86,10 @@ describe("catalog scanning", () => {
       await wrapper.get("button").trigger("click");
       await wrapper.get("button").trigger("click");
       expect(scan).toHaveBeenCalledTimes(1);
+      expect(inspectorMounted).toHaveBeenCalledTimes(1);
       finish();
       await flushPromises();
+      expect(inspectorMounted).toHaveBeenCalledTimes(3);
       expect(scan.mock.calls).toEqual([
         [1, ""],
         [2, ""],

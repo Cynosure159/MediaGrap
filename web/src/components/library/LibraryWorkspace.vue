@@ -28,6 +28,7 @@ const emit = defineEmits<{
 
 const query = shallowRef('')
 const scanning = shallowRef(false)
+const scanRevision = shallowRef(0)
 const selectedMovieId = computed(() => props.selectedMovieId ?? null)
 const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
 const activeTab = computed(() => props.activeTab ?? 'overview')
@@ -50,6 +51,7 @@ async function scanSources() {
     for (const source of sourceItems.value.filter(item => item.enabled)) {
       try {
         await queueScan(source.id, query.value)
+        scanRevision.value++
       } catch (caught) {
         error.value = caught instanceof Error ? caught.message : 'Unable to scan library'
       }
@@ -97,7 +99,7 @@ onMounted(async () => {
           @scan="scanSources"
         />
         <MovieInspector
-          :key="selectedMovieId ?? 'no-selection'"
+          :key="`${selectedMovieId ?? 'no-selection'}:${scanRevision}`"
           :item-id="selectedMovieId"
           :active-tab="activeTab"
           :csrf-token="csrfToken"
@@ -120,6 +122,7 @@ onMounted(async () => {
           @scan="scanSources"
         />
         <TVShowInspector
+          :key="`${selectedTvSelection?.showId ?? 'no-selection'}:${scanRevision}`"
           :selection="selectedTvSelection"
           @metadata-saved="refreshTVShows(query)"
           :active-tab="activeTab"
