@@ -13,7 +13,7 @@ status-cache.json
 coverage.*
 
 # Web
-web/node_modules/
+node_modules/
 web/dist/
 web/.vite/
 internal/httpapi/ui/dist/*
