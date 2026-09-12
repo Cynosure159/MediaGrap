@@ -14,6 +14,7 @@ import (
 type Repository interface {
 	GetRecord(ctx context.Context, itemID int64) (Record, error)
 	SaveRecord(ctx context.Context, record Record) error
+	HydrateRecord(ctx context.Context, record Record) (bool, error)
 	GetTVRecord(ctx context.Context, showID int64) (TVRecord, error)
 	SaveTVRecord(ctx context.Context, record TVRecord) error
 	GetWritePlan(ctx context.Context, id string) (WritePlan, error)
@@ -85,6 +86,17 @@ func (r *sqliteRepository) GetRecord(ctx context.Context, itemID int64) (Record,
 }
 
 func (r *sqliteRepository) SaveRecord(ctx context.Context, record Record) error {
+	_, err := r.saveRecord(ctx, record, false)
+	return err
+}
+
+// HydrateRecord atomically preserves any saved title, including a save that
+// raced with NFO preparation. Ordinary user saves remain unconditional.
+func (r *sqliteRepository) HydrateRecord(ctx context.Context, record Record) (bool, error) {
+	return r.saveRecord(ctx, record, true)
+}
+
+func (r *sqliteRepository) saveRecord(ctx context.Context, record Record, onlyEmpty bool) (bool, error) {
 	record = normalized(record)
 	genres, _ := json.Marshal(record.Genres)
 	directors, _ := json.Marshal(record.Directors)
@@ -92,8 +104,12 @@ func (r *sqliteRepository) SaveRecord(ctx context.Context, record Record) error 
 	studios, _ := json.Marshal(record.Studios)
 	cast, _ := json.Marshal(record.Cast)
 	locked, _ := json.Marshal(record.LockedFields)
-	_, err := r.db.ExecContext(ctx, `INSERT INTO media_metadata(media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(media_item_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,runtime_minutes=excluded.runtime_minutes,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,content_rating=excluded.content_rating,directors_json=excluded.directors_json,writers_json=excluded.writers_json,studios_json=excluded.studios_json,cast_json=excluded.cast_json,locked_fields_json=excluded.locked_fields_json,updated_at=datetime('now')`, record.MediaItemID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), record.RuntimeMinutes, string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.ContentRating), string(directors), string(writers), string(studios), string(cast), string(locked))
-	return err
+	result, err := r.db.ExecContext(ctx, `INSERT INTO media_metadata(media_item_id,provider,provider_id,title,original_title,year,overview,runtime_minutes,genres_json,poster_url,backdrop_url,rating,votes,content_rating,directors_json,writers_json,studios_json,cast_json,locked_fields_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(media_item_id) DO UPDATE SET provider=excluded.provider,provider_id=excluded.provider_id,title=excluded.title,original_title=excluded.original_title,year=excluded.year,overview=excluded.overview,runtime_minutes=excluded.runtime_minutes,genres_json=excluded.genres_json,poster_url=excluded.poster_url,backdrop_url=excluded.backdrop_url,rating=excluded.rating,votes=excluded.votes,content_rating=excluded.content_rating,directors_json=excluded.directors_json,writers_json=excluded.writers_json,studios_json=excluded.studios_json,cast_json=excluded.cast_json,locked_fields_json=excluded.locked_fields_json,updated_at=datetime('now') WHERE ?=0 OR media_metadata.title=''`, record.MediaItemID, record.Provider, record.ProviderID, strings.TrimSpace(record.Title), strings.TrimSpace(record.OriginalTitle), record.Year, strings.TrimSpace(record.Overview), record.RuntimeMinutes, string(genres), record.PosterURL, record.BackdropURL, record.Rating, record.Votes, strings.TrimSpace(record.ContentRating), string(directors), string(writers), string(studios), string(cast), string(locked), onlyEmpty)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	return changed > 0, err
 }
 
 func (r *sqliteRepository) GetTVRecord(ctx context.Context, showID int64) (TVRecord, error) {

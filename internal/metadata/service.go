@@ -664,9 +664,17 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (record Record
 	if info.Size() > 1<<20 {
 		return Record{}, false, errors.New("existing NFO exceeds the 1 MiB safety limit")
 	}
-	contents, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return Record{}, false, fmt.Errorf("open existing NFO: %w", err)
+	}
+	defer file.Close()
+	contents, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
 	if err != nil {
 		return Record{}, false, fmt.Errorf("read existing NFO: %w", err)
+	}
+	if len(contents) > 1<<20 {
+		return Record{}, false, errors.New("existing NFO exceeds the 1 MiB safety limit")
 	}
 	movie, err := nfo.ParseMovie(contents)
 	if err != nil {
@@ -682,19 +690,35 @@ func (s *Service) ReadExistingNFO(mediaPath string, itemID int64) (record Record
 // selected or manually saved SQLite metadata. Scans remain read-only for media
 // files; this only repopulates the application index after a source is readded.
 func (s *Service) HydrateExistingNFO(ctx context.Context, itemID int64, mediaPath string) error {
-	existing, err := s.Record(ctx, itemID)
-	if err != nil || existing.Title != "" {
-		return err
-	}
-	record, found, err := s.ReadExistingNFO(mediaPath, itemID)
+	record, found, err := s.PrepareExistingNFO(ctx, itemID, mediaPath)
 	if err != nil || !found {
 		return err
 	}
-	if _, err := s.Save(ctx, record); err != nil {
-		return err
+	return s.HydratePreparedNFO(ctx, record)
+}
+
+// PrepareExistingNFO performs read/parse work without a write transaction.
+func (s *Service) PrepareExistingNFO(ctx context.Context, itemID int64, mediaPath string) (Record, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Record{}, false, err
 	}
-	s.logger.Info("existing movie NFO hydrated", "media_item_id", itemID)
-	return nil
+	existing, err := s.Record(ctx, itemID)
+	if err != nil || existing.Title != "" {
+		return Record{}, false, err
+	}
+	return s.ReadExistingNFO(mediaPath, itemID)
+}
+
+// HydratePreparedNFO is called by the ordered scan writer, never its readers.
+func (s *Service) HydratePreparedNFO(ctx context.Context, record Record) error {
+	if record.MediaItemID <= 0 || strings.TrimSpace(record.Title) == "" {
+		return errors.New("invalid prepared NFO metadata")
+	}
+	changed, err := s.repo.HydrateRecord(ctx, record)
+	if err == nil && changed {
+		s.logger.Info("existing movie NFO hydrated", "media_item_id", record.MediaItemID)
+	}
+	return err
 }
 
 func normalized(record Record) Record {
@@ -801,8 +825,6 @@ func (s *Service) Apply(ctx context.Context, id string, allowed func(string) boo
 	_ = s.repo.InsertAuditEntry(ctx, "nfo.apply", plan.MediaItemID, plan.TargetPath, detail)
 	return s.Plan(ctx, id)
 }
-
-const maxArtworkBytes int64 = 25 << 20
 
 // PreviewArtwork persists a reviewable plan for the selected TMDb poster and
 // fanart. It deliberately does not contact the network or write any file.

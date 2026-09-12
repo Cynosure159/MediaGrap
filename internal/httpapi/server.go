@@ -154,6 +154,7 @@ func NewServer(
 
 	// Jobs
 	mux.HandleFunc("GET /api/v1/jobs", application.listJobs)
+	mux.HandleFunc("GET /api/v1/jobs/{id}", application.getJob)
 	mux.HandleFunc("GET /api/v1/jobs/events", application.streamJobEvents)
 	mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", application.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{id}/retry", application.retryJob)

@@ -669,7 +669,7 @@ func (s *Service) ApplyRenamePlan(ctx context.Context, planID string, progressFn
 			var mediaItemID int64
 			err := s.db.QueryRowContext(ctx, `SELECT id FROM media_items WHERE source_id=? AND relative_path=?`, sourceID, item.CurrentPath).Scan(&mediaItemID)
 			if err == nil {
-				_, _ = s.db.ExecContext(ctx, `UPDATE media_items SET relative_path=? WHERE id=?`, item.PlannedPath, mediaItemID)
+				_, _ = s.db.ExecContext(ctx, `UPDATE media_items SET relative_path=?,scan_fingerprint='' WHERE id=?`, item.PlannedPath, mediaItemID)
 				s.recordSidecars(ctx, mediaItemID, rootPath, item.PlannedPath)
 			}
 		}

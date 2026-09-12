@@ -83,7 +83,7 @@ func TestRescanExcludesSupplementalVideosWithoutDeletingFiles(t *testing.T) {
 			if !directoryHasOneVideo(filepath.Join(root, "Movie [x%_]")) {
 				t.Fatal("sample still counted as a main video")
 			}
-			sidecars := currentSidecarsForMedia(root, main)
+			sidecars := service.currentSidecarsForMedia(root, main)
 			if len(sidecars) != 1 || sidecars[0].Kind != "nfo" {
 				t.Fatalf("directory NFO not attached to main: %+v", sidecars)
 			}

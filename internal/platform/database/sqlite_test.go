@@ -89,3 +89,46 @@ func TestIntegrationUpgradePreservesExistingJobsWithoutBackfill(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScanFingerprintMigrationPreservesLegacyRows(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "scan-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() >= "0019" {
+			continue
+		}
+		body, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_migrations(version,applied_at) VALUES(?,datetime('now'))`, entry.Name()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO sources(id,name,root_path) VALUES(1,'legacy','/fixture'); INSERT INTO media_items(id,source_id,relative_path,title_hint,file_size,modified_at,last_seen_at) VALUES(1,1,'Movie.mkv','Legacy',7,'old','old'); INSERT INTO media_metadata(media_item_id,provider,title) VALUES(1,'nfo','Saved title')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	var title, fingerprint, nfoFingerprint, seen string
+	if err := db.QueryRow(`SELECT meta.title,m.scan_fingerprint,m.nfo_fingerprint,m.last_seen_at FROM media_items m JOIN media_metadata meta ON meta.media_item_id=m.id WHERE m.id=1`).Scan(&title, &fingerprint, &nfoFingerprint, &seen); err != nil || title != "Saved title" || fingerprint != "" || nfoFingerprint != "" || seen != "old" {
+		t.Fatalf("legacy row changed: %q %q %q %q %v", title, fingerprint, nfoFingerprint, seen, err)
+	}
+	if err := Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+}

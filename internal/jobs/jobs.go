@@ -129,7 +129,16 @@ func (s *Service) QueuePayload(ctx context.Context, kind string, sourceID *int64
 }
 
 func (s *Service) List(ctx context.Context) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, payload, retry_count, max_retries, created_at, COALESCE(started_at,''), COALESCE(completed_at,''), updated_at FROM jobs ORDER BY id DESC LIMIT 100`)
+	return s.list(ctx, "ORDER BY id DESC LIMIT 100")
+}
+
+// ActiveScans uses a fixed-size keyset page, independently of recent history.
+func (s *Service) ActiveScans(ctx context.Context, after int64) ([]Job, error) {
+	return s.list(ctx, "WHERE kind='scan' AND state IN ('queued','running') AND id>? ORDER BY id LIMIT 100", after)
+}
+
+func (s *Service) list(ctx context.Context, suffix string, args ...any) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, source_id, state, progress_current, progress_total, message, error_message, payload, retry_count, max_retries, created_at, COALESCE(started_at,''), COALESCE(completed_at,''), updated_at FROM jobs `+suffix, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}

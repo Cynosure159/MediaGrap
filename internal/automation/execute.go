@@ -399,7 +399,7 @@ func (s *Service) commitOperation(ctx context.Context, p storedPlan, index int, 
 		if _, err = tx.ExecContext(ctx, `UPDATE artwork_assets SET target_path=? WHERE media_item_id=? AND target_path=?`, filepath.Join(rootPath, op.Target), p.MediaID, filepath.Join(rootPath, op.Source)); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE media_items SET relative_path=? WHERE source_id=? AND relative_path=?`, op.Target, p.SourceID, op.Source); err != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE media_items SET relative_path=?,scan_fingerprint='' WHERE source_id=? AND relative_path=?`, op.Target, p.SourceID, op.Source); err != nil {
 			return err
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE sidecar_assets SET relative_path=? WHERE media_item_id=? AND relative_path=?`, op.Target, p.MediaID, op.Source); err != nil {

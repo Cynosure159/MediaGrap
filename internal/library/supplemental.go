@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,20 +47,8 @@ func (s *Service) indexedSupplementalDirectory(ctx context.Context, sourceID int
 	return false, rows.Err()
 }
 
-// An Extra(s) folder is supplemental only when its parent contains a regular
-// main video. A source/movie simply named Extras is not excluded by its name.
-func isSupplementalDirectory(root, path string) bool {
-	if path == root {
-		return false
-	}
-	name := strings.ToLower(filepath.Base(path))
-	if name != "extra" && name != "extras" {
-		return false
-	}
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil {
-		return false
-	}
+// Only a regular non-sample parent video makes an Extra(s) child supplemental.
+func entriesHaveMainVideo(entries []fs.DirEntry) bool {
 	for _, entry := range entries {
 		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] || isSampleVideo(entry.Name()) {
 			continue

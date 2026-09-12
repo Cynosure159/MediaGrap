@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mediagrap/mediagrap/internal/jobs"
+	"github.com/mediagrap/mediagrap/internal/metadata"
 	"golang.org/x/sys/unix"
 )
 
@@ -115,14 +116,17 @@ type Service struct {
 	logger           *slog.Logger
 	jobs             *jobs.Service
 	prober           mediaProber
+	readDirectory    func(string) ([]fs.DirEntry, error)
+	scanReaders      int
 	metadataHydrator interface {
-		HydrateExistingNFO(context.Context, int64, string) error
+		PrepareExistingNFO(context.Context, int64, string) (metadata.Record, bool, error)
+		HydratePreparedNFO(context.Context, metadata.Record) error
 	}
 }
 
 func NewService(db *sql.DB, roots []string) *Service {
 	logger := slog.Default()
-	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger), prober: ffprobeRunner{path: "ffprobe"}}
+	s := &Service{db: db, repo: NewRepository(db), roots: roots, logger: logger, jobs: jobs.NewService(db, logger), prober: ffprobeRunner{path: "ffprobe"}, readDirectory: os.ReadDir}
 	s.registerScanJobHandler()
 	s.registerRenameJobHandler()
 	return s
@@ -151,7 +155,8 @@ func (s *Service) registerScanJobHandler() {
 }
 
 func (s *Service) SetMetadataHydrator(hydrator interface {
-	HydrateExistingNFO(context.Context, int64, string) error
+	PrepareExistingNFO(context.Context, int64, string) (metadata.Record, bool, error)
+	HydratePreparedNFO(context.Context, metadata.Record) error
 }) {
 	s.metadataHydrator = hydrator
 }
@@ -283,6 +288,10 @@ func (s *Service) ListJobs(ctx context.Context) ([]Job, error) {
 	return s.jobs.List(ctx)
 }
 
+func (s *Service) ActiveScans(ctx context.Context, after int64) ([]Job, error) {
+	return s.jobs.ActiveScans(ctx, after)
+}
+
 func (s *Service) Job(ctx context.Context, id int64) (Job, error) {
 	return s.jobs.Get(ctx, id)
 }
@@ -356,7 +365,7 @@ func (s *Service) ListMedia(ctx context.Context, query string, page, pageSize in
 		return Page{}, err
 	}
 	for i := range items {
-		items[i].Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, items[i].SourceID), items[i].RelativePath)
+		items[i].Sidecars = s.currentSidecarsForMedia(s.sourceRoot(ctx, items[i].SourceID), items[i].RelativePath)
 	}
 	return Page{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
@@ -430,61 +439,21 @@ func (s *Service) TVShow(ctx context.Context, id int64) (TVShowDetail, error) {
 	root := s.sourceRoot(ctx, show.SourceID)
 	detail.Writable = isWritable(root)
 	for i := range detail.Episodes {
-		detail.Episodes[i].Sidecars = currentSidecarsForMedia(root, detail.Episodes[i].RelativePath)
+		detail.Episodes[i].Sidecars = s.currentSidecarsForMedia(root, detail.Episodes[i].RelativePath)
 	}
 	detail.Artwork = s.tvArtwork(ctx, detail)
 	return detail, nil
 }
 
-// currentSidecarsForMedia is the one discovery rule used both by scans and by
-// read APIs. Besides same-basename files, a directory with one video owns the
-// standard Kodi directory-level assets such as movie.nfo and poster.jpg.
-func currentSidecarsForMedia(root, relative string) []Sidecar {
+// currentSidecarsForMedia builds a fresh snapshot for live discovery. It shares
+// the service's enumeration dependency with scans so scan budgets also detect
+// accidental per-video live discovery. Attribution rules remain in the snapshot.
+func (s *Service) currentSidecarsForMedia(root, relative string) []Sidecar {
 	if root == "" {
 		return []Sidecar{}
 	}
-	directory := filepath.Dir(filepath.Join(root, relative))
-	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
-	// One directory read instead of Glob + video count + another ReadDir.
-	// Match literal basenames: release names can contain glob metacharacters.
-	entries, _ := os.ReadDir(directory)
-	videos := 0
-	for _, entry := range entries {
-		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 && videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] && !isSampleVideo(entry.Name()) {
-			videos++
-		}
-	}
-	matches := []string{}
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		if _, ok := sidecarExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; ok && (videos == 1 || strings.HasPrefix(entry.Name(), base+".")) {
-			matches = append(matches, filepath.Join(directory, entry.Name()))
-		}
-	}
-	assets := []Sidecar{}
-	seen := make(map[string]struct{})
-	for _, match := range matches {
-		if _, exists := seen[match]; exists {
-			continue
-		}
-		seen[match] = struct{}{}
-		extension := strings.ToLower(filepath.Ext(match))
-		kind, ok := sidecarExtensions[extension]
-		if !ok {
-			continue
-		}
-		info, err := os.Lstat(match)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			continue
-		}
-		path, err := filepath.Rel(root, match)
-		if err == nil {
-			assets = append(assets, Sidecar{RelativePath: path, Kind: kind})
-		}
-	}
-	return assets
+	entries, _ := s.readDirectory(filepath.Dir(filepath.Join(root, relative)))
+	return newDirectorySnapshot(entries).sidecars(root, relative)
 }
 
 func directoryHasOneVideo(directory string) bool {
@@ -557,7 +526,7 @@ func (s *Service) Media(ctx context.Context, id int64) (MediaItem, error) {
 	if err != nil {
 		return MediaItem{}, errors.New("media item not found")
 	}
-	item.Sidecars = currentSidecarsForMedia(s.sourceRoot(ctx, item.SourceID), item.RelativePath)
+	item.Sidecars = s.currentSidecarsForMedia(s.sourceRoot(ctx, item.SourceID), item.RelativePath)
 	return item, nil
 }
 func (s *Service) LocateMedia(ctx context.Context, id int64) (MediaLocation, error) {
@@ -708,80 +677,92 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 	// source missing first can erase the visible catalog on a failed/offline scan.
 	seenAt := time.Now().UTC().Format(time.RFC3339Nano)
 	count := 0
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	batch := make([]scanCandidate, 0, scanBatchSize)
+	var rootTVHint *scanTVEpisode
+	flush := func() error {
+		if err := (scanRepository{db: s.db}).applyBatch(ctx, sourceID, seenAt, mode, batch); err != nil {
+			return err
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if err := s.hydrateScanBatch(ctx, batch); err != nil {
+			return err
 		}
-		if entry.IsDir() {
-			if path != root && entry.Type()&fs.ModeSymlink != 0 {
-				return filepath.SkipDir
+		clear(batch)
+		batch = batch[:0]
+		return nil
+	}
+	err := walkScanDirectories(ctx, root, s.readDirectory, func(path string, parentHasMain bool) (bool, error) {
+		name := strings.ToLower(filepath.Base(path))
+		if path == root || (name != "extra" && name != "extras") {
+			return false, nil
+		}
+		supplemental := parentHasMain
+		if !supplemental {
+			var err error
+			supplemental, err = s.indexedSupplementalDirectory(ctx, sourceID, root, path)
+			if err != nil {
+				return false, err
 			}
-			supplemental := isSupplementalDirectory(root, path)
-			if !supplemental {
+		}
+		if supplemental {
+			// Retire historical extras only in successful final reconciliation.
+			s.logger.Debug("supplemental directory excluded from catalog", "source_id", sourceID, "job_id", jobID)
+		}
+		return supplemental, nil
+	}, func(directory string, snapshot directorySnapshot) error {
+		// Prepare only a bounded chunk from this snapshot. Do not retain
+		// snapshots from multiple directories while readers or the writer run.
+		entries := make([]fs.DirEntry, 0, scanBatchSize)
+		prepare := func() error {
+			candidates := make([]scanCandidate, len(entries))
+			if err := readScanBatch(ctx, len(entries), s.readerCount(), func(i int) error {
 				var err error
-				supplemental, err = s.indexedSupplementalDirectory(ctx, sourceID, root, path)
-				if err != nil {
-					return err
+				candidates[i], err = prepareScanCandidate(root, filepath.Join(directory, entries[i].Name()), entries[i], snapshot)
+				return err
+			}); err != nil {
+				return err
+			}
+			for _, candidate := range candidates {
+				if candidate.tv != nil && candidate.tv.showPath == "." {
+					rootTVHint = candidate.tv
+				}
+				batch = append(batch, candidate)
+				if len(batch) == scanBatchSize {
+					if err := flush(); err != nil {
+						return err
+					}
+				}
+				count++
+				if count%25 == 0 && progress != nil {
+					progress(count, "Indexed media files")
 				}
 			}
-			if supplemental {
-				relative, err := filepath.Rel(root, path)
-				if err != nil {
-					return err
-				}
-				prefix := relative + string(filepath.Separator)
-				// Retain historical metadata/audits; retire previously indexed extras
-				// during incremental scans too. No filesystem mutation occurs.
-				if _, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=? AND substr(relative_path,1,length(?))=?`, sourceID, prefix, prefix); err != nil {
-					return err
-				}
-				s.logger.Debug("supplemental directory excluded from catalog", "source_id", sourceID, "job_id", jobID)
-				return filepath.SkipDir
-			}
+			entries = entries[:0]
 			return nil
 		}
-		if entry.Type()&fs.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(path))] {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if isSampleVideo(entry.Name()) {
-			_, err := s.db.ExecContext(ctx, `UPDATE media_items SET missing=1 WHERE source_id=? AND relative_path=?`, sourceID, relative)
-			return err
-		}
-		title, year := parseHint(filepath.Base(path))
-		var itemID int64
-		err = s.db.QueryRowContext(ctx, `INSERT INTO media_items(source_id,relative_path,title_hint,year_hint,file_size,modified_at,missing,last_seen_at) VALUES(?,?,?,?,?,?,0,?) ON CONFLICT(source_id,relative_path) DO UPDATE SET title_hint=excluded.title_hint,year_hint=excluded.year_hint,file_size=excluded.file_size,modified_at=excluded.modified_at,missing=0,last_seen_at=excluded.last_seen_at RETURNING id`, sourceID, relative, title, year, info.Size(), info.ModTime().UTC().Format(time.RFC3339), seenAt).Scan(&itemID)
-		if err != nil {
-			return err
-		}
-		if err := s.recordSidecars(ctx, itemID, root, relative); err != nil {
-			return fmt.Errorf("index sidecars for media %d: %w", itemID, err)
-		}
-		s.recordTVEpisode(ctx, itemID, sourceID, relative)
-		if s.metadataHydrator != nil {
-			if _, _, _, isEpisode := parseEpisodeHint(filepath.Base(relative)); !isEpisode {
-				if hydrateErr := s.metadataHydrator.HydrateExistingNFO(ctx, itemID, path); hydrateErr != nil {
-					s.logger.Warn("existing movie NFO hydration failed", "media_item_id", itemID, "error", hydrateErr)
+		for _, entry := range snapshot.entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 || !videoExtensions[strings.ToLower(filepath.Ext(entry.Name()))] || isSampleVideo(entry.Name()) {
+				continue
+			}
+			entries = append(entries, entry)
+			if len(entries) == scanBatchSize-len(batch) {
+				if err := prepare(); err != nil {
+					return err
 				}
 			}
 		}
-		count++
-		if count%25 == 0 && progress != nil {
-			progress(count, "Indexed media files")
+		if err := prepare(); err != nil {
+			return err
 		}
 		return nil
 	})
+
 	if err != nil {
+		return err
+	}
+	if err := flush(); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
@@ -796,6 +777,11 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 	if err != nil {
 		return err
 	}
+	if rootTVHint != nil {
+		if _, err := ensureScanShow(ctx, tx, sourceID, rootTVHint, true); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE sources SET last_scan_at=datetime('now') WHERE id=?`, sourceID); err != nil {
 		return err
 	}
@@ -808,7 +794,10 @@ func (s *Service) scan(ctx context.Context, jobID, sourceID int64, mode string, 
 }
 func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relative string) error {
 	// Finish filesystem work before acquiring a connection/transaction.
-	assets := currentSidecarsForMedia(root, relative)
+	return s.recordSidecarAssets(ctx, itemID, s.currentSidecarsForMedia(root, relative))
+}
+
+func (s *Service) recordSidecarAssets(ctx context.Context, itemID int64, assets []Sidecar) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -823,30 +812,6 @@ func (s *Service) recordSidecars(ctx context.Context, itemID int64, root, relati
 		}
 	}
 	return tx.Commit()
-}
-
-func (s *Service) recordTVEpisode(ctx context.Context, itemID, sourceID int64, relative string) {
-	season, firstEpisode, lastEpisode, ok := parseEpisodeHint(filepath.Base(relative))
-	if !ok {
-		s.db.ExecContext(ctx, `DELETE FROM tv_episodes WHERE media_item_id=?`, itemID)
-		return
-	}
-	showPath, showTitle, showYear := tvShowHint(relative)
-	if showTitle == "" {
-		return
-	}
-	var showID int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO tv_shows(source_id,relative_path,title_hint,year_hint,updated_at) VALUES(?,?,?,?,datetime('now')) ON CONFLICT(source_id,relative_path) DO UPDATE SET title_hint=excluded.title_hint,year_hint=excluded.year_hint,updated_at=datetime('now') RETURNING id`, sourceID, showPath, showTitle, showYear).Scan(&showID)
-	if err != nil {
-		return
-	}
-	var seasonID int64
-	err = s.db.QueryRowContext(ctx, `INSERT INTO tv_seasons(show_id,season_number) VALUES(?,?) ON CONFLICT(show_id,season_number) DO UPDATE SET season_number=excluded.season_number RETURNING id`, showID, season).Scan(&seasonID)
-	if err != nil {
-		return
-	}
-	title := episodeTitleHint(filepath.Base(relative))
-	s.db.ExecContext(ctx, `INSERT INTO tv_episodes(media_item_id,show_id,season_id,season_number,episode_start,episode_end,title_hint) VALUES(?,?,?,?,?,?,?) ON CONFLICT(media_item_id) DO UPDATE SET show_id=excluded.show_id,season_id=excluded.season_id,season_number=excluded.season_number,episode_start=excluded.episode_start,episode_end=excluded.episode_end,title_hint=excluded.title_hint`, itemID, showID, seasonID, season, firstEpisode, lastEpisode, title)
 }
 
 func (s *Service) sourceWritable(ctx context.Context, sourceID int64) bool {

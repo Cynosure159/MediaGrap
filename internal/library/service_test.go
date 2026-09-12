@@ -109,7 +109,7 @@ func TestDirectoryLevelKodiSidecarsBelongToOnlyMovieInDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	assets := currentSidecarsForMedia(root, "Example Movie/Example.Movie.mkv")
+	assets := NewService(nil, nil).currentSidecarsForMedia(root, "Example Movie/Example.Movie.mkv")
 	if len(assets) != 5 {
 		t.Fatalf("expected directory-level Kodi assets, got %#v", assets)
 	}

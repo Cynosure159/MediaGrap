@@ -21,6 +21,7 @@ type LibraryService interface {
 	QueueScan(ctx context.Context, sourceID int64) (library.Job, error)
 	UpdateSourcePolicy(ctx context.Context, sourceID int64, policy library.SourcePolicy) (library.Source, error)
 	ListJobs(ctx context.Context) ([]library.Job, error)
+	ActiveScans(ctx context.Context, after int64) ([]library.Job, error)
 	Job(ctx context.Context, id int64) (library.Job, error)
 	PreviewRenamePlan(ctx context.Context, mediaID int64, pattern string) (library.RenamePlan, error)
 	PreviewTVRenamePlan(ctx context.Context, showID int64, seasonNumber *int, episodeID *int64, pattern string) (library.RenamePlan, error)
