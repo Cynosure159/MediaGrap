@@ -5,10 +5,14 @@ Phase 5A's first usable slice adds an authenticated operations center backed onl
 ## Durable jobs
 
 - `GET /api/v1/jobs` returns the latest 100 persisted jobs with queue, progress, retry, and lifecycle timestamps.
+- `GET /api/v1/jobs?activeScans=true&after=<id>` returns at most 100 queued/running scan jobs ordered by ascending ID, with `nextCursor` (zero when exhausted). Negative/invalid cursors return 400. This bounded discovery page does not alter the default recent-history response.
+- `GET /api/v1/jobs/{id}` retrieves an exact persisted job (400 for invalid IDs, 404 when unavailable), including terminal scans older than recent history. Both read endpoints require a session and never return private job payloads.
 - `POST /api/v1/jobs/{id}/cancel` accepts queued and running jobs. A queued job is cancelled before pickup; a running job also receives context cancellation so cooperative scan/download handlers stop.
 - `POST /api/v1/jobs/{id}/retry` requeues failed, cancelled, or interrupted work using its original persisted payload. Other states return a conflict.
 - `GET /api/v1/jobs/events` is an authenticated SSE stream. State and progress events are persisted in `job_events`, carry monotonic event IDs, and support browser `Last-Event-ID` reconnection. The frontend also refreshes the job snapshot periodically so an expired or interrupted stream cannot leave permanent stale state.
 - Worker startup still marks abandoned `running` jobs as `interrupted`; file mutation jobs are never silently resumed halfway through an operation.
+
+The library uses one serialized polling scheduler with active-page discovery and bounded exact lookups rather than per-scan 60-second loops. It survives navigation/reload, refreshes catalogs/inspectors on all terminal transitions, backs off request errors, and aborts polling on unmount. See [bounded readers and persisted scan tracking](scan-readers-and-tracking.md) for intervals, limits, measurements and browser evidence.
 
 Cancellation is cooperative. A filesystem or network primitive that is already completing may finish before its context check, but a cancelled database state is never subsequently overwritten with `succeeded`.
 

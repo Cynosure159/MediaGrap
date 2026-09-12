@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/api/library";
 import { useLibrary } from "./useLibrary";
 
@@ -7,6 +7,8 @@ vi.mock("@/api/library", () => ({
   media: vi.fn(),
   tvShows: vi.fn(),
   jobs: vi.fn(),
+  activeScans: vi.fn(),
+  job: vi.fn(),
   addSource: vi.fn(),
   deleteSource: vi.fn(),
   scanSource: vi.fn(),
@@ -24,6 +26,10 @@ const movie = (id: number) => ({
 });
 
 describe("useLibrary", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(api.activeScans).mockResolvedValue({ items: [], nextCursor: 0 });
+  });
   it("loads beyond 50 only on demand and stops at the true total", async () => {
     vi.mocked(api.media)
       .mockResolvedValueOnce({
@@ -86,6 +92,8 @@ describe("useLibrary", () => {
   });
   afterEach(() => {
     vi.clearAllMocks();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it("loads sources, media, tvShows, and jobs on refresh", async () => {

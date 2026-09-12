@@ -5,6 +5,7 @@ import * as api from '@/api/library'
 import ScraperSearchForm from './ScraperSearchForm.vue'
 
 const props = withDefaults(defineProps<{
+  disabled?: boolean
   itemId: number
   itemTitle: string
   itemYear?: number | null
@@ -27,7 +28,7 @@ const candidatesList = ref<Candidate[]>([])
 const searchError = ref<string | null>(null)
 
 async function performSearch() {
-  if (!props.itemId) return
+  if (!props.itemId || props.disabled) return
   isSearching.value = true
   searchError.value = null
   try {
@@ -46,7 +47,7 @@ async function performSearch() {
 }
 
 function handleChoose(candidate: Candidate) {
-  if (isApplying.value) return
+  if (isApplying.value || props.disabled) return
   selectedCandidateId.value = candidate.id
   isApplying.value = true
   emit('select', candidate)
@@ -174,7 +175,7 @@ onMounted(() => {
                 <button
                   type="button"
                   class="btn btn-select"
-                  :disabled="isApplying"
+                  :disabled="isApplying || disabled"
                   @click.stop="handleChoose(candidate)"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">

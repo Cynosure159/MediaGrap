@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
+import { RequestError } from '@/api/client'
 import InspectorToolbar, { type InspectorTab } from './inspector/InspectorToolbar.vue'
 import TVOverviewTab from './inspector/TVOverviewTab.vue'
 import TVArtworkTab from './inspector/TVArtworkTab.vue'
@@ -8,10 +9,12 @@ import TVFileAuditTab from './inspector/TVFileAuditTab.vue'
 import MovieCastTab, { type CastMember as DisplayCastMember } from './inspector/MovieCastTab.vue'
 import MovieNfoTab from './inspector/MovieNfoTab.vue'
 import ScraperModal from './ScraperModal.vue'
+import { useInspectorScanRefresh } from '@/composables/useInspectorScanRefresh'
 import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   selection: api.TVSelection | null
+  scanRevision?: number
   activeTab?: InspectorTab
   csrfToken: string
   labels: Record<string, string>
@@ -33,6 +36,12 @@ const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
+const availability = shallowRef<'ready' | 'checking' | 'missing' | 'uncertain'>('ready')
+const mutationsBlocked = computed(() => availability.value !== 'ready')
+let selectionGeneration = 0
+let mutationSequence = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; selectionGeneration++ })
 let detailRequestSequence = 0
 let nfoRequestSequence = 0
 
@@ -252,6 +261,9 @@ const draft = reactive({
   }[],
 })
 
+const cleanDraft = shallowRef(JSON.stringify(draft))
+const draftIsDirty = computed(() => JSON.stringify(draft) !== cleanDraft.value)
+
 const castList = computed<DisplayCastMember[]>(() =>
   draft.cast.map((person, index) => ({
     id: `cast-${index}-${person.name}`,
@@ -346,29 +358,86 @@ function applyMetadataToDraft(meta: Partial<api.TVMetadata>, fallbackTitle = '',
     runtimeMinutes: ep.runtimeMinutes,
     stillUrl: ep.stillUrl,
   }))
+  cleanDraft.value = JSON.stringify(draft)
 }
 
 async function loadDetail(id: number) {
+  const generation = selectionGeneration
   const requestSequence = ++detailRequestSequence
   isLoading.value = true
   error.value = null
   try {
     const result = await api.tvShowDetail(id)
-    if (requestSequence !== detailRequestSequence || props.selection?.showId !== id) return
+    if (disposed || generation !== selectionGeneration || requestSequence !== detailRequestSequence || props.selection?.showId !== id) return
     detail.value = result
     applyMetadataToDraft(result.metadata, result.show.titleHint, result.show.yearHint)
     if (result.episodes.length) {
       selectedEpisodeId.value = result.episodes[0].id
     }
   } catch (caught) {
-    if (requestSequence !== detailRequestSequence) return
+    if (disposed || generation !== selectionGeneration || requestSequence !== detailRequestSequence) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadShow
   } finally {
     if (requestSequence === detailRequestSequence) isLoading.value = false
   }
 }
 
+const { retry: retryScanRefresh } = useInspectorScanRefresh(
+  () => props.scanRevision,
+  // Artwork/file workshops own preview and mutation state: defer until leaving them.
+  () => isEditing.value || draftIsDirty.value || isSaving.value || isLoading.value ||
+    showScraperModal.value || activeTab.value === 'artwork' || activeTab.value === 'files',
+  async (canApply, signal, isCurrent) => {
+    const id = showId.value
+    const selection = props.selection
+    const generation = selectionGeneration
+    if (!id) return
+    const sequence = detailRequestSequence
+    availability.value = 'checking'
+    try {
+      const result = await api.tvShowDetail(id, signal)
+      if (!isCurrent() || signal.aborted || sequence !== detailRequestSequence || showId.value !== id) return
+      if (generation !== selectionGeneration) return
+      const missing = selection?.kind === 'episode'
+        ? !result.episodes.some(episode => episode.id === selection.episodeId)
+        : selection?.kind === 'season' && !result.episodes.some(episode => episode.seasonNumber === selection.seasonNumber)
+      availability.value = missing ? 'missing' : 'ready'
+      if (!canApply()) return
+      if (missing) {
+        detail.value = null
+        applyMetadataToDraft({})
+        return
+      }
+      detail.value = result
+      error.value = null
+      applyMetadataToDraft(result.metadata, result.show.titleHint, result.show.yearHint)
+      void loadNfoRaw()
+    } catch (caught) {
+      if (!isCurrent() || generation !== selectionGeneration || sequence !== detailRequestSequence || showId.value !== id) return
+      availability.value = caught instanceof RequestError && caught.status === 404 ? 'missing' : 'uncertain'
+      if (!canApply() || availability.value !== 'missing') return
+      detail.value = null
+      applyMetadataToDraft({})
+      error.value = caught instanceof Error ? caught.message : 'Unable to refresh details'
+    }
+  },
+)
+
+watch(() => props.selection, (selection, previous) => {
+  selectionGeneration++
+  if (selection?.kind === 'episode') selectedEpisodeId.value = selection.episodeId
+  void loadNfoRaw()
+  if (previous !== undefined) {
+    // The inspector stays mounted across same-show navigation. Invalidate both
+    // successful and failed old checks and queue one check for the new target.
+    availability.value = 'checking'
+    retryScanRefresh()
+  }
+}, { immediate: true, deep: true, flush: 'sync' })
+
 watch(showId, id => {
+  selectionGeneration++
+  availability.value = 'ready'
   isEditing.value = false
   if (id) {
     if (props.activeTab === undefined) localActiveTab.value = 'overview'
@@ -379,11 +448,6 @@ watch(showId, id => {
     detail.value = null
   }
 }, { immediate: true })
-
-watch(() => props.selection, selection => {
-  if (selection?.kind === 'episode') selectedEpisodeId.value = selection.episodeId
-  void loadNfoRaw()
-}, { immediate: true, deep: true })
 
 function selectTab(tab: InspectorTab) {
   localActiveTab.value = tab
@@ -398,58 +462,85 @@ function cancelEditing() {
 }
 
 async function handleCandidateSelect(candidate: api.Candidate) {
+  if (mutationsBlocked.value || isSaving.value) return
   if (!showId.value) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  const operation = ++mutationSequence
+  isSaving.value = true
   try {
     const newMeta = await api.selectTVShowCandidate(props.csrfToken, showId.value, candidate.id)
+    if (!current()) return
     applyMetadataToDraft(newMeta)
     await loadDetail(showId.value)
+    if (!current()) return
     await loadNfoRaw()
+    if (!current()) return
     isEditing.value = false
     showScraperModal.value = false
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
     showScraperModal.value = false
+  } finally {
+    if (!disposed && operation === mutationSequence) isSaving.value = false
   }
 }
 
 async function handleScrape() {
+  if (mutationsBlocked.value || isSaving.value) return
   if (!props.selection || !showId.value) return
   if (props.selection.kind === 'show') {
     showScraperModal.value = true
     return
   }
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  const operation = ++mutationSequence
   isSaving.value = true
   error.value = null
   try {
     if (props.selection.kind === 'season') {
       await api.scrapeTVSeason(props.csrfToken, showId.value, props.selection.seasonNumber)
+    if (!current()) return
     } else {
       await api.scrapeTVEpisode(props.csrfToken, showId.value, props.selection.seasonNumber, props.selection.episodeId)
+    if (!current()) return
     }
     await loadDetail(showId.value)
+    if (!current()) return
     await loadNfoRaw()
+    if (!current()) return
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
   } finally {
-    isSaving.value = false
+    if (!disposed && operation === mutationSequence) isSaving.value = false
   }
 }
 
 async function handleSaveAndWrite() {
+  if (mutationsBlocked.value || isSaving.value) return
   if (!showId.value || !detail.value) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  const operation = ++mutationSequence
   isSaving.value = true
   error.value = null
   try {
     await api.previewTVNfoPlans(props.csrfToken, showId.value)
+    if (!current()) return
     await loadDetail(showId.value)
+    if (!current()) return
     isEditing.value = false
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorSaveMetadata
   } finally {
-    isSaving.value = false
+    if (!disposed && operation === mutationSequence) isSaving.value = false
   }
 }
 </script>
@@ -459,7 +550,8 @@ async function handleSaveAndWrite() {
     <InspectorToolbar
       :active-tab="activeTab"
       :has-detail="detail !== null"
-      :is-writable="detail?.writable ?? false"
+      :is-writable="(detail?.writable ?? false) && !mutationsBlocked"
+      :mutations-blocked="mutationsBlocked"
       :is-editing="isEditing"
       :is-saving="isSaving"
       :is-scraping="false"
@@ -473,6 +565,11 @@ async function handleSaveAndWrite() {
       @toggle-lock="isLocked = !isLocked"
       @close="emit('close')"
     />
+
+    <div v-if="mutationsBlocked" class="read-only-banner" role="alert">
+      {{ availability === 'missing' ? (labels.scanTargetMissing || 'This selection is no longer in the library. Your unsaved input is retained; writes are disabled.') : (labels.scanTargetUncertain || 'Checking selection availability. Unsaved input is retained; writes are disabled until verified.') }}
+      <button v-if="availability !== 'checking'" class="btn btn-outline" type="button" @click="retryScanRefresh">{{ labels.retry || 'Retry' }}</button>
+    </div>
 
     <div v-if="error" class="inspector-error">
       {{ error }}
@@ -533,6 +630,7 @@ async function handleSaveAndWrite() {
       />
 
       <TVArtworkTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'artwork'"
         :show-id="detail.show.id"
         :selection="selection"
@@ -543,7 +641,7 @@ async function handleSaveAndWrite() {
         :season-poster-url="seasonPosterUrl"
         :scoped-artwork="scopedArtwork"
         :csrf-token="csrfToken"
-        :writable="detail.writable"
+        :writable="detail.writable && !mutationsBlocked"
         :labels="labels"
         :episode-title-text="selectedUnitEpisode ? `${formatEpisodeCode(selectedUnitEpisode)} - ${episodeTitle(selectedUnitEpisode)}` : ''"
         @applied="loadDetail(detail.show.id)"
@@ -556,6 +654,7 @@ async function handleSaveAndWrite() {
       />
 
       <MovieNfoTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'nfo'"
         :content="nfoRaw.content || nfoXmlContent"
         :labels="labels"
@@ -567,6 +666,7 @@ async function handleSaveAndWrite() {
       />
 
       <TVFileAuditTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'files'"
         :show-id="showId"
         :episodes="scopedEpisodes"
@@ -586,6 +686,7 @@ async function handleSaveAndWrite() {
       :item-year="draft.year ?? detail.show.yearHint"
       :labels="labels"
       media-type="tv"
+      :disabled="mutationsBlocked"
       @close="showScraperModal = false"
       @select="handleCandidateSelect"
     />

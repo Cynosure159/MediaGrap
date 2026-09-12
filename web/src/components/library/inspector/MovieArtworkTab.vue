@@ -65,16 +65,19 @@ onMounted(() => load())
 watch(() => props.itemId, () => load())
 
 async function openCandidateDialog() {
+  if (!props.writable) return
   isCandidateDialogOpen.value = true
   await scrape()
 }
 
 async function previewSelectedArtwork() {
+  if (!props.writable) return
   await preview()
   if (plan.value) isCandidateDialogOpen.value = false
 }
 
 async function handleApply() {
+  if (!props.writable) return
   await apply()
 	if (plan.value?.state === 'queued') {
     emit('applied')
@@ -272,7 +275,7 @@ const resolvedBannerUrl = computed(() => {
     <ArtworkPreview
       v-if="plan"
       :plan="plan"
-      :applying="isApplying"
+      :applying="isApplying || !writable"
       :error="error"
       :labels="labels"
       @apply="handleApply"

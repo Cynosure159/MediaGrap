@@ -42,17 +42,20 @@ watch([() => props.showId, context], () => {
 }, { immediate: true })
 
 async function openCandidateDialog() {
+  if (!props.writable) return
   if (!context.value) return
   isCandidateDialogOpen.value = true
   await artwork.scrape()
 }
 
 async function previewSelectedArtwork() {
+  if (!props.writable) return
   await artwork.preview()
   if (artwork.plan.value) isCandidateDialogOpen.value = false
 }
 
 async function apply() {
+  if (!props.writable) return
   await artwork.apply()
   if (artwork.plan.value?.state === 'queued') emit('applied')
 }
@@ -70,7 +73,7 @@ async function apply() {
         <ul class="plan-list"><li v-for="asset in artwork.plan.value.assets" :key="asset.kind">{{ asset.targetPath }}</li></ul>
         <div class="plan-actions">
           <button class="btn btn-ghost" type="button" @click="artwork.closePlan">{{ labels.cancel }}</button>
-          <button class="btn btn-primary" type="button" :disabled="artwork.isApplying.value" @click="apply">{{ labels.artworkApply || 'Queue download' }}</button>
+          <button class="btn btn-primary" type="button" :disabled="artwork.isApplying.value || !writable" @click="apply">{{ labels.artworkApply || 'Queue download' }}</button>
         </div>
       </section>
       <ArtworkSelectionDialog

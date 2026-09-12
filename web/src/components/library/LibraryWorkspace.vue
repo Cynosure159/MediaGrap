@@ -27,14 +27,13 @@ const emit = defineEmits<{
 }>()
 
 const query = shallowRef('')
-const scanning = shallowRef(false)
-const scanRevision = shallowRef(0)
+const submittingScans = shallowRef(false)
 const selectedMovieId = computed(() => props.selectedMovieId ?? null)
 const selectedTvSelection = computed(() => props.selectedTvSelection ?? null)
 const activeTab = computed(() => props.activeTab ?? 'overview')
 const hasSelection = computed(() => props.mediaKind === 'shows' ? selectedTvSelection.value !== null : selectedMovieId.value !== null)
 
-const { sourceItems, mediaItems, mediaTotal, mediaLoading, mediaError, mediaHasMore, loadMoreMedia, refreshMedia, refreshTVShows, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
+const { scanning, scanRevision, sourceItems, mediaItems, mediaTotal, mediaLoading, mediaError, mediaHasMore, loadMoreMedia, refreshMedia, refreshTVShows, tvShowItems, jobItems, error, hasSources, refresh, scan: queueScan } = useLibrary(() => props.csrfToken)
 const activeJobs = computed(() => jobItems.value.filter(job => job.state === 'queued' || job.state === 'running'))
 
 async function search(value = '', options?: CatalogOptions) {
@@ -44,20 +43,19 @@ async function search(value = '', options?: CatalogOptions) {
 }
 
 async function scanSources() {
-  if (scanning.value) return
-  scanning.value = true
+  if (scanning.value || submittingScans.value) return
+  submittingScans.value = true
   error.value = null
   try {
     for (const source of sourceItems.value.filter(item => item.enabled)) {
       try {
         await queueScan(source.id, query.value)
-        scanRevision.value++
       } catch (caught) {
         error.value = caught instanceof Error ? caught.message : 'Unable to scan library'
       }
     }
   } finally {
-    scanning.value = false
+    submittingScans.value = false
   }
 }
 
@@ -68,7 +66,7 @@ onMounted(async () => {
 
 <template>
   <div class="workspace-shell">
-    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="workspace-alert" role="alert">{{ error }}</p>
     <!-- If no sources exist -->
     <div v-if="!hasSources && !hasSelection" class="source-onboarding">
       <div class="onboarding-card">
@@ -99,7 +97,8 @@ onMounted(async () => {
           @scan="scanSources"
         />
         <MovieInspector
-          :key="`${selectedMovieId ?? 'no-selection'}:${scanRevision}`"
+          :key="selectedMovieId ?? 'no-selection'"
+          :scan-revision="scanRevision"
           :item-id="selectedMovieId"
           :active-tab="activeTab"
           :csrf-token="csrfToken"
@@ -122,7 +121,8 @@ onMounted(async () => {
           @scan="scanSources"
         />
         <TVShowInspector
-          :key="`${selectedTvSelection?.showId ?? 'no-selection'}:${scanRevision}`"
+          :key="selectedTvSelection?.showId ?? 'no-selection'"
+          :scan-revision="scanRevision"
           :selection="selectedTvSelection"
           @metadata-saved="refreshTVShows(query)"
           :active-tab="activeTab"
@@ -143,10 +143,26 @@ onMounted(async () => {
   overflow: hidden;
   background: var(--surface-base, #0c1324);
   display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workspace-alert {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  max-height: 6rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--error, #ffb4ab);
+  background: var(--surface-container, #191f31);
 }
 
 .split-pane-layout {
   display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;

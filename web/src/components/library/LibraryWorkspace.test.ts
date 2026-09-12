@@ -7,9 +7,38 @@ import LibraryWorkspace from "./LibraryWorkspace.vue";
 vi.mock("@/composables/useLibrary", () => ({ useLibrary: vi.fn() }));
 
 describe("catalog scanning", () => {
+  it("renders and clears terminal errors outside the split panes", async () => {
+    const error = shallowRef<string | null>("Scan failed");
+    vi.mocked(useLibrary).mockReturnValue({
+      scanning: shallowRef(false),
+      scanRevision: shallowRef(0),
+      sourceItems: shallowRef([]),
+      mediaItems: shallowRef([]),
+      tvShowItems: shallowRef([]),
+      jobItems: shallowRef([]),
+      error,
+      hasSources: shallowRef(true),
+      refresh: vi.fn(),
+    } as unknown as ReturnType<typeof useLibrary>);
+    const wrapper = mount(LibraryWorkspace, {
+      props: { csrfToken: "", username: "", labels: {} },
+      global: { stubs: { MediaCatalog: true, MovieInspector: true } },
+    });
+    expect(wrapper.get(".workspace-alert").text()).toBe("Scan failed");
+    expect(wrapper.find(".split-pane-layout [role=alert]").exists()).toBe(
+      false,
+    );
+    error.value = null;
+    await flushPromises();
+    expect(wrapper.find("[role=alert]").exists()).toBe(false);
+    expect(wrapper.find(".split-pane-layout").exists()).toBe(true);
+    wrapper.unmount();
+  });
   it("refreshes the TV list after inspector metadata writes", async () => {
     const refreshTVShows = vi.fn();
     vi.mocked(useLibrary).mockReturnValue({
+      scanning: shallowRef(false),
+      scanRevision: shallowRef(0),
       sourceItems: shallowRef([]),
       mediaItems: shallowRef([]),
       tvShowItems: shallowRef([]),
@@ -50,7 +79,10 @@ describe("catalog scanning", () => {
             }),
         )
         .mockResolvedValue(undefined);
+      const scanRevision = shallowRef(0);
       vi.mocked(useLibrary).mockReturnValue({
+        scanning: shallowRef(false),
+        scanRevision,
         sourceItems: shallowRef([
           { id: 1, enabled: true },
           { id: 2, enabled: true },
@@ -70,7 +102,14 @@ describe("catalog scanning", () => {
         template: "<button @click=\"$emit('scan')\">Scan</button>",
       };
       const inspectorMounted = vi.fn();
-      const inspector = { props: ['labels'], setup() { inspectorMounted(); return {} }, template: '<div />' };
+      const inspector = {
+        props: ["labels"],
+        setup() {
+          inspectorMounted();
+          return {};
+        },
+        template: "<div />",
+      };
       const wrapper = mount(LibraryWorkspace, {
         props: { mediaKind, csrfToken: "csrf", username: "admin", labels: {} },
         global: {
@@ -89,7 +128,10 @@ describe("catalog scanning", () => {
       expect(inspectorMounted).toHaveBeenCalledTimes(1);
       finish();
       await flushPromises();
-      expect(inspectorMounted).toHaveBeenCalledTimes(3);
+      expect(inspectorMounted).toHaveBeenCalledTimes(1);
+      scanRevision.value++;
+      await flushPromises();
+      expect(inspectorMounted).toHaveBeenCalledTimes(1);
       expect(scan.mock.calls).toEqual([
         [1, ""],
         [2, ""],

@@ -223,8 +223,8 @@ export const applyArtwork = (csrf: string, id: string) =>
 export const tvShows = (q = "") =>
   request<{ items: TVShow[] }>(`/api/v1/tv/shows?q=${encodeURIComponent(q)}`);
 
-export const tvShowDetail = (id: number) =>
-  request<TVShowDetail>(`/api/v1/tv/shows/${id}`);
+export const tvShowDetail = (id: number, signal?: AbortSignal) =>
+  request<TVShowDetail>(`/api/v1/tv/shows/${id}`, { signal });
 
 export const tvShowCandidates = (id: number, q = "") =>
   request<{ items: Candidate[] }>(
@@ -354,7 +354,15 @@ export const tvNfoRaw = (showId: number, selection: TVSelection) => {
 };
 
 // Jobs
-export const jobs = () => request<{ items: Job[] }>("/api/v1/jobs");
+export const jobs = (signal?: AbortSignal) =>
+  request<{ items: Job[] }>("/api/v1/jobs", { signal });
+export const activeScans = (after = 0, signal?: AbortSignal) =>
+  request<{ items: Job[]; nextCursor: number }>(
+    `/api/v1/jobs?activeScans=true&after=${after}`,
+    { signal },
+  );
+export const job = (id: number, signal?: AbortSignal) =>
+  request<Job>(`/api/v1/jobs/${id}`, { signal });
 
 export const cancelJob = (csrf: string, id: number) =>
   request<Job>(`/api/v1/jobs/${id}/cancel`, {

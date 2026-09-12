@@ -16,6 +16,12 @@ const messages = {
     signInIntro: "Sign in to review your library.",
     catalogLoaded: "Loaded",
     catalogRetry: "Retry loading",
+    metadataSavedNfoNotWritten:
+      "Metadata saved, but NFO was not written because the target is missing or could not be verified. Retry availability before writing NFO.",
+    scanTargetMissing:
+      "This selection is no longer in the library. Your unsaved input is retained; writes are disabled.",
+    scanTargetUncertain:
+      "Selection availability is not verified. Unsaved input is retained; writes are disabled. Retry when the connection is available.",
     invalidNfoFallback:
       "The local NFO could not be read safely. Showing indexed information for this movie; no files were changed.",
     movies: "Movies",
@@ -429,6 +435,12 @@ const messages = {
     signInIntro: "登录后查看和管理媒体库。",
     catalogLoaded: "已加载",
     catalogRetry: "重试加载",
+    metadataSavedNfoNotWritten:
+      "元数据已保存，但目标已缺失或无法确认可用，尚未写入 NFO。请重试确认可用性后再写入 NFO。",
+    scanTargetMissing:
+      "此选择已不在媒体库中。未保存的输入已保留，写入操作已禁用。",
+    scanTargetUncertain:
+      "尚未确认此选择是否可用。未保存的输入已保留，写入操作已禁用；连接恢复后请重试。",
     invalidNfoFallback:
       "本地 NFO 无法安全读取，已降级显示当前电影的索引信息；未修改任何文件。",
     movies: "电影",

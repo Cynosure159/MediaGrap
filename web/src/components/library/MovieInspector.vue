@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
+import { RequestError } from '@/api/client'
 import ScraperModal from './ScraperModal.vue'
 import NfoPreview from './NfoPreview.vue'
 import InspectorToolbar, { type InspectorTab } from './inspector/InspectorToolbar.vue'
@@ -9,10 +10,12 @@ import MovieArtworkTab from './inspector/MovieArtworkTab.vue'
 import MovieCastTab, { type CastMember } from './inspector/MovieCastTab.vue'
 import MovieNfoTab from './inspector/MovieNfoTab.vue'
 import MovieFileAuditTab from './inspector/MovieFileAuditTab.vue'
+import { useInspectorScanRefresh } from '@/composables/useInspectorScanRefresh'
 import { useMediaInspection } from '@/composables/useMediaInspection'
 
 const props = defineProps<{
   itemId: number | null
+  scanRevision?: number
   activeTab?: InspectorTab
   csrfToken: string
   labels: Record<string, string>
@@ -42,6 +45,11 @@ const isSaving = shallowRef(false)
 const isLoading = shallowRef(false)
 const error = shallowRef<string | null>(null)
 const isLocked = shallowRef(false)
+const availability = shallowRef<'ready' | 'checking' | 'missing' | 'uncertain'>('ready')
+const mutationsBlocked = computed(() => availability.value !== 'ready')
+let selectionGeneration = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; selectionGeneration++ })
 let detailRequestSequence = 0
 let detailController: AbortController | undefined
 onBeforeUnmount(() => { detailRequestSequence++; detailController?.abort() })
@@ -76,6 +84,9 @@ const draft = reactive<MovieDraft>({
   contentRating: '',
   cast: [],
 })
+
+const cleanDraft = shallowRef('')
+const draftIsDirty = computed(() => JSON.stringify(draft) !== cleanDraft.value)
 
 const castList = computed<CastMember[]>(() =>
   [
@@ -131,6 +142,7 @@ function applyMetadataToDraft(meta: Partial<api.Metadata>, fallbackTitle = '', f
   draft.writers = (meta.writers || []).join(', ')
   draft.studio = (meta.studios || []).join(', ')
   draft.cast = [...(meta.cast || [])]
+  cleanDraft.value = JSON.stringify(draft)
 }
 
 function splitValues(value: string): string[] {
@@ -174,6 +186,7 @@ async function loadDetail(id: number) {
     detail.value = result
     applyMetadataToDraft(result.metadata, result.item.titleHint, result.item.yearHint)
     if (result.item.posterUrl) draft.posterUrl = result.item.posterUrl
+    cleanDraft.value = JSON.stringify(draft)
   } catch (caught) {
     if (requestSequence !== detailRequestSequence || props.itemId !== id || controller.signal.aborted) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorLoadMedia
@@ -183,6 +196,8 @@ async function loadDetail(id: number) {
 }
 
 watch(() => props.itemId, id => {
+  selectionGeneration++
+  availability.value = 'ready'
   // Drop all selection-owned state before requesting another movie.
   detail.value = null
   applyMetadataToDraft({})
@@ -201,6 +216,44 @@ watch(() => props.itemId, id => {
     isLoading.value = false
   }
 }, { immediate: true })
+
+
+const { retry: retryScanRefresh, waitForCheck } = useInspectorScanRefresh(
+  () => props.scanRevision,
+  // Artwork/file workshops own preview and mutation state: defer until leaving them.
+  () => isEditing.value || draftIsDirty.value || isSaving.value || isLoading.value ||
+    showScraperModal.value || showNfoPreview.value || isApplying.value || isNamingPreviewLoading.value || activeTab.value === 'artwork' || activeTab.value === 'files',
+  async (canApply, signal, isCurrent) => {
+    const id = props.itemId
+    if (!id) return
+    const sequence = detailRequestSequence
+    availability.value = 'checking'
+    try {
+      const result = await api.mediaDetail(id, signal)
+      if (!isCurrent() || signal.aborted || sequence !== detailRequestSequence || props.itemId !== id) return
+      const missing = false
+      availability.value = missing ? 'missing' : 'ready'
+      if (!canApply()) return
+      if (missing) {
+        detail.value = null
+        applyMetadataToDraft({})
+        return
+      }
+      detail.value = result
+      error.value = null
+      applyMetadataToDraft(result.metadata, result.item.titleHint, result.item.yearHint)
+      if (result.item.posterUrl) draft.posterUrl = result.item.posterUrl
+      cleanDraft.value = JSON.stringify(draft)
+    } catch (caught) {
+      if (!isCurrent() || sequence !== detailRequestSequence || props.itemId !== id) return
+      availability.value = caught instanceof RequestError && caught.status === 404 ? 'missing' : 'uncertain'
+      if (!canApply() || availability.value !== 'missing') return
+      detail.value = null
+      applyMetadataToDraft({})
+      error.value = caught instanceof Error ? caught.message : 'Unable to refresh details'
+    }
+  },
+)
 
 function selectTab(tab: InspectorTab) {
   localActiveTab.value = tab
@@ -223,57 +276,94 @@ async function writeNfoToDisk(payload: api.Metadata) {
 }
 
 async function handleSaveAndWrite() {
+  if (mutationsBlocked.value) return
   if (!props.itemId || !detail.value) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
   isSaving.value = true
   error.value = null
   try {
     const payload = buildMetadataPayload()
     await api.saveMetadata(props.csrfToken, props.itemId, payload)
+    if (!current()) return
+    if (!await waitForCheck() || !current()) return
+    if (mutationsBlocked.value) {
+      error.value = props.labels.metadataSavedNfoNotWritten || 'Metadata saved, but NFO was not written because the target is missing or could not be verified. Retry availability before writing NFO.'
+      return
+    }
     await writeNfoToDisk(payload)
+    if (!current()) return
     await loadDetail(props.itemId)
+    if (!current()) return
     isEditing.value = false
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorSaveMetadata
   } finally {
-    isSaving.value = false
+    if (current()) isSaving.value = false
   }
 }
 
 async function handleCandidateSelect(candidate: api.Candidate) {
+  if (mutationsBlocked.value) return
   if (!props.itemId) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  isSaving.value = true
   try {
     const newMeta = await api.selectCandidate(props.csrfToken, props.itemId, candidate.id)
+    if (!current()) return
     applyMetadataToDraft(newMeta)
     await loadDetail(props.itemId)
+    if (!current()) return
     isEditing.value = false
     showScraperModal.value = false
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorApplyCandidate
     showScraperModal.value = false
+  } finally {
+    if (current()) isSaving.value = false
   }
 }
 
 async function triggerNfoPreview() {
+  if (mutationsBlocked.value) return
   if (!props.itemId || !detail.value) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  isSaving.value = true
   try {
     writePlan.value = await api.previewNfo(props.csrfToken, props.itemId, buildMetadataPayload())
+    if (!current()) return
     showNfoPreview.value = true
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorPreviewNfo
+  } finally {
+    if (current()) isSaving.value = false
   }
 }
 
 async function handleApplyNfo() {
+  if (mutationsBlocked.value) return
   if (!writePlan.value) return
+  const generation = selectionGeneration
+  const current = () => !disposed && generation === selectionGeneration
+  isSaving.value = true
   try {
     await api.applyNfo(props.csrfToken, writePlan.value.id)
+    if (!current()) return
     showNfoPreview.value = false
     if (props.itemId) await loadDetail(props.itemId)
     emit('metadataSaved')
   } catch (caught) {
+    if (!current()) return
     error.value = caught instanceof Error ? caught.message : props.labels.errorWriteNfo
+  } finally {
+    if (current()) isSaving.value = false
   }
 }
 </script>
@@ -284,7 +374,8 @@ async function handleApplyNfo() {
     <InspectorToolbar
       :active-tab="activeTab"
       :has-detail="detail !== null"
-      :is-writable="detail?.writable ?? false"
+      :is-writable="(detail?.writable ?? false) && !mutationsBlocked"
+      :mutations-blocked="mutationsBlocked"
       :is-editing="isEditing"
       :is-saving="isSaving"
       :is-scraping="false"
@@ -300,6 +391,11 @@ async function handleApplyNfo() {
     />
 
     <!-- Error Alert -->
+    <div v-if="mutationsBlocked" class="read-only-banner" role="alert">
+      {{ availability === 'missing' ? (labels.scanTargetMissing || 'This selection is no longer in the library. Your unsaved input is retained; writes are disabled.') : (labels.scanTargetUncertain || 'Checking selection availability. Unsaved input is retained; writes are disabled until verified.') }}
+      <button v-if="availability !== 'checking'" class="btn btn-outline" type="button" @click="retryScanRefresh">{{ labels.retry || 'Retry' }}</button>
+    </div>
+
     <div v-if="error" class="inspector-error">
       {{ error }}
     </div>
@@ -347,13 +443,14 @@ async function handleApplyNfo() {
       />
 
       <MovieArtworkTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'artwork'"
         :item-id="detail.item.id"
         :sidecars="detail.item.sidecars"
         :poster-url="draft.posterUrl"
         :backdrop-url="draft.backdropUrl"
         :csrf-token="props.csrfToken"
-        :writable="detail.writable"
+        :writable="detail.writable && !mutationsBlocked"
         :labels="labels"
         @applied="loadDetail(detail.item.id)"
       />
@@ -365,6 +462,7 @@ async function handleApplyNfo() {
       />
 
       <MovieNfoTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'nfo'"
         :content="nfoXmlContent"
         :labels="labels"
@@ -372,6 +470,7 @@ async function handleApplyNfo() {
       />
 
       <MovieFileAuditTab
+        :inert="mutationsBlocked"
         v-else-if="activeTab === 'files'"
         :item="detail.item"
         :labels="labels"
@@ -381,8 +480,8 @@ async function handleApplyNfo() {
         :rename-plan="renamePlan"
         :preview-loading="isNamingPreviewLoading"
         :is-applying="isApplying"
-        @preview-rename="previewRename"
-        @apply-rename="applyRename"
+        @preview-rename="!mutationsBlocked && previewRename($event)"
+        @apply-rename="!mutationsBlocked && applyRename()"
         @clear-rename="clearRenamePlan"
       />
     </div>
@@ -394,6 +493,7 @@ async function handleApplyNfo() {
       :item-title="draft.title || detail.item.titleHint"
       :item-year="draft.year || detail.item.yearHint"
       :labels="labels"
+      :disabled="mutationsBlocked"
       @select="handleCandidateSelect"
       @close="showScraperModal = false"
     />
@@ -402,7 +502,7 @@ async function handleApplyNfo() {
     <NfoPreview
       v-if="showNfoPreview && writePlan"
       :plan="writePlan"
-      :applying="isSaving"
+      :applying="isSaving || mutationsBlocked"
       :labels="labels"
       @apply="handleApplyNfo"
       @close="showNfoPreview = false"

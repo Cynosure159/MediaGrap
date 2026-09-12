@@ -8,6 +8,7 @@ defineProps<{
   hasDetail: boolean
   isWritable: boolean
   isEditing: boolean
+  mutationsBlocked?: boolean
   isSaving: boolean
   isScraping: boolean
   isLocked: boolean
@@ -89,7 +90,7 @@ const emit = defineEmits<{
         <!-- Scrape Button (Opens ScraperModal) -->
         <button
           class="btn btn-scrape"
-          :disabled="isScraping"
+          :disabled="isScraping || mutationsBlocked"
           type="button"
           @click="emit('scrape')"
         >
