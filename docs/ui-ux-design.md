@@ -39,6 +39,7 @@ MediaGrap is a web-first, self-hosted media metadata manager designed to deliver
 所有前端页面与组件必须严格遵循以下标准：
 
 ### 2.1 分栏与布局约束
+
 1. **左侧活动导航栏 (Nav Rail)**: 固定 `64px` 宽度，深色底层 `--surface-container-lowest` (`#070d1f`)，无文字版纯图形 Logo。
 2. **列表栏 (Catalog Panel)**: 固定 `320px` 宽度，包含即时搜索框、状态统计与过滤按钮、56px 高度卡片行。
 3. **右侧主工作台 (Inspector Workspace)**: 弹性自适应宽度，顶部必须包含 `40px` 高度的工坊 Tabs 栏（Overview, Artwork, Cast, NFO Raw, File Audit）与操作按钮。
@@ -47,6 +48,7 @@ MediaGrap is a web-first, self-hosted media metadata manager designed to deliver
    - 媒体列表与详情检查器在移动端自动切换为分步式钻取（点击项目进入全屏详情，左上角提供返回按钮）。
 
 ### 2.2 色阶分层 (Tonal Layering Elevation)
+
 - **`--surface-base` (`#0c1324`)**: L0 最深层底色（应用全局背景）。
 - **`--surface-container-lowest` (`#070d1f`)**: 最低容器层（左侧 Rail、代码编辑器背景）。
 - **`--surface-container-low` (`#151b2d`)**: 输入框、卡片内容块。
@@ -55,15 +57,19 @@ MediaGrap is a web-first, self-hosted media metadata manager designed to deliver
 - **`--surface-container-highest` (`#2e3447`)**: 选中行高亮背景。
 
 ### 2.3 色彩与状态语义
+
 - **`--primary` (`#c0c1ff`) / `--primary-container` (`#6366f1`)**: 核心交互色、激活边框（2px left border）、主按钮。
 - **`--secondary` (`#4edea3`) / `--secondary-container` (`#00a572`)**: 翡翠绿，用于校验通过、保存写入 NFO 按钮、健康状态点。
 - **`--tertiary` (`#ffb95f`)**: 琥珀黄，用于未刮削提醒、星级评分、进行中任务。
 - **`--error` (`#ffb4ab`) / `--error-bright` (`#f43f5e`)**: 缺失项告警、错误横幅。
 
 ### 2.4 字体规范
+
 - **界面文本**: `Inter`。
 - **技术规格 / 分辨率 / XML / 文件路径**: `JetBrains Mono`。
 
 ### Library layout and audit accessibility
 
 The library workspace owns the 760px mobile breakpoint, including full-width movie and TV catalogs and selection drill-down. Catalog components do not define independent mobile width breakpoints. Audit recovery details use native focusable buttons with `aria-expanded` and `aria-controls`; Enter or Space toggles details.
+
+The movie rename confirmation bar remains sticky within the inspector. At the bottom navigation's ≤768px breakpoint it reserves `60px + env(safe-area-inset-bottom)` below its actions, rather than covering the four navigation tabs or sitting behind them. At ≤700px the actions wrap, with a full-width execute button and a minimum 44px touch height. Desktop split panes and preview/conflict/confirmation semantics are unchanged.

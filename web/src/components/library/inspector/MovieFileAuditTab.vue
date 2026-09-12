@@ -6,13 +6,16 @@ import type { MediaInspection, MediaItem, RenamePlan } from '@/api/types'
 const props = withDefaults(defineProps<{
   item: MediaItem
   labels: Record<string, string>
-  inspection: MediaInspection | null
-  inspectionLoading: boolean
-  inspectionError: string | null
+  inspection?: MediaInspection | null
+  inspectionLoading?: boolean
+  inspectionError?: string | null
   renamePlan?: RenamePlan | null
   previewLoading?: boolean
   isApplying?: boolean
 }>(), {
+  inspection: null,
+  inspectionLoading: false,
+  inspectionError: null,
   renamePlan: null,
   previewLoading: false,
   isApplying: false,
@@ -318,7 +321,14 @@ function formatModifiedAt(value: string): string {
 }
 
 @media (max-width: 900px) { .stream-groups { grid-template-columns: 1fr; } }
+/* Match the bottom navigation breakpoint, including its device safe area. */
+@media (max-width: 768px) {
+  .sticky-action-bar { bottom: calc(60px + env(safe-area-inset-bottom)); }
+}
 @media (max-width: 700px) {
+  .action-bar-right { flex-wrap: wrap; }
+  .action-bar-right .btn { flex: 1; min-height: 44px; }
+  .action-bar-right .btn-success { flex-basis: 100%; }
   .workshop-header, .pattern-action-row, .sticky-action-bar, .card-header-bar { align-items: stretch; flex-direction: column; gap: 8px; }
   .rename-paths { grid-template-columns: 1fr; }
   .path-arrow { transform: rotate(90deg); margin: 0 auto; }
