@@ -73,6 +73,7 @@ onMounted(initialize)
 </script>
 
 <template>
+  <a class="source-download" href="/source" download>{{ locale === 'zh-CN' ? '源码 · AGPLv3' : 'Source · AGPLv3' }}</a>
   <!-- Loading Screen -->
   <div v-if="mode === 'loading'" class="loading-screen">
     <img src="/logo-icon.svg" alt="MediaGrap" class="loading-logo" />
@@ -121,6 +122,18 @@ onMounted(initialize)
 </template>
 
 <style scoped>
+.source-download {
+  position: fixed;
+  right: 8px;
+  bottom: 2px;
+  z-index: 100;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--on-surface-variant, #c7c4d7);
+  background: var(--surface-container-lowest, #070d1f);
+}
+
 .loading-screen {
   width: 100vw;
   height: 100vh;

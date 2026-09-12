@@ -30,7 +30,7 @@ type testContext struct {
 	session     *auth.Session
 }
 
-func setupTestContext(t *testing.T) *testContext {
+func setupTestContext(t *testing.T, runtime ...httpapi.RuntimePaths) *testContext {
 	t.Helper()
 	root := t.TempDir()
 	db, err := database.Open(filepath.Join(t.TempDir(), "api_test.db"))
@@ -55,6 +55,7 @@ func setupTestContext(t *testing.T) *testContext {
 		libSvc,
 		metaSvc,
 		setSvc,
+		runtime...,
 	)
 
 	return &testContext{

@@ -20,6 +20,7 @@ const (
 )
 
 type Config struct {
+	SecureSessionCookie     bool
 	IntegrationBacklogLimit int
 	ConfigDir               string
 	CacheDir                string
@@ -41,7 +42,12 @@ type Config struct {
 
 func LoadConfig(args []string) (Config, error) {
 	config := Config{}
+	secureCookie, err := strconv.ParseBool(envOrDefault("MEDIAGRAP_SECURE_SESSION_COOKIE", "false"))
+	if err != nil {
+		return Config{}, errors.New("invalid MEDIAGRAP_SECURE_SESSION_COOKIE: expected boolean")
+	}
 	flags := flag.NewFlagSet("mediagrap", flag.ContinueOnError)
+	flags.BoolVar(&config.SecureSessionCookie, "secure-session-cookie", secureCookie, "require HTTPS for session cookies behind a trusted TLS terminator")
 	flags.StringVar(&config.ConfigDir, "config-dir", envOrDefault("MEDIAGRAP_CONFIG_DIR", defaultConfigDir), "persistent configuration directory")
 	flags.StringVar(&config.CacheDir, "cache-dir", envOrDefault("MEDIAGRAP_CACHE_DIR", defaultCacheDir), "cache directory")
 	flags.StringVar(&config.Listen, "listen", envOrDefault("MEDIAGRAP_LISTEN", defaultListen), "HTTP listen address")

@@ -53,8 +53,8 @@ func (s *server) requireSession(w http.ResponseWriter, r *http.Request, csrf boo
 	return session, true
 }
 
-func setSession(w http.ResponseWriter, r *http.Request, session *auth.Session) {
-	secure := r.TLS != nil
+func (s *server) setSession(w http.ResponseWriter, r *http.Request, session *auth.Session) {
+	secure := s.runtime.SecureSessionCookie || r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.SessionCookieName,
 		Value:    session.Token,

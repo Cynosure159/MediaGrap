@@ -87,7 +87,7 @@ func New(config Config, logger *slog.Logger, build BuildInfo) (*Application, err
 	}
 	mcpHandler := mcp.New(tokenService, libraryService, config.MCPOrigins, logger)
 	mcpHandler.SetAutomation(automationService)
-	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService, settingsService, httpapi.RuntimePaths{ConfigDir: config.ConfigDir, CacheDir: config.CacheDir, Webhooks: webhookService, MCP: mcpHandler, Automation: automationService})
+	handler := httpapi.NewServer(logger, db, httpapi.BuildInfo(build), auth.NewService(db), libraryService, metadataService, settingsService, httpapi.RuntimePaths{SecureSessionCookie: config.SecureSessionCookie, ConfigDir: config.ConfigDir, CacheDir: config.CacheDir, Webhooks: webhookService, MCP: mcpHandler, Automation: automationService})
 	return &Application{
 		config:     config,
 		automation: automationService,

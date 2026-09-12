@@ -1,8 +1,10 @@
-# Webhook 与 MCP 集成使用说明
+# Webhooks and MCP / 集成使用说明
 
-本轮实现基于 [功能方案](webhooks-and-mcp.md)，复用单进程 Go 服务、SQLite 和现有管理员 Session。新建配置后运行数据库迁移 `0017_integrations.sql`、`0018_automation.sql`；历史任务不会补发事件。
+[Deployment](deployment.md) · [Usage](usage.md) · [Security](security.md)
 
-## 启用与配置
+本文描述当前源码中的集成契约，不保证旧版 0.0.6 包含所有功能。集成复用单进程 Go 服务、SQLite 和管理员 Session；迁移随应用启动执行，历史任务不会补发事件。Webhook 投递使用独立持久队列，不占用媒体作业执行槽。
+
+## Configuration
 
 MCP 随应用提供 `/mcp` 入口，无 Token 时拒绝访问。设置页的「外部集成」区可创建 Token，并显式选择来源、权限和过期时间。Token 明文只展示一次；丢失后创建替代 Token 并撤销旧 Token。
 
@@ -13,7 +15,7 @@ umask 077
 openssl rand -hex 32 > webhook.key
 ```
 
-将该文件只读挂载到容器，例如 `/config/webhook.key`，并设置 `MEDIAGRAP_WEBHOOK_KEY_FILE=/config/webhook.key`。备份必须同时保留数据库和此文件。丢失密钥或解密失败时不能继续发送已有 Webhook，不能通过生成新主密钥恢复旧签名 Secret。
+在 Linux 宿主机上，为默认容器用户执行 `sudo chown 65532:65532 webhook.key`，保持 `0600`（不要输出文件内容）。若使用其他运行 UID，使用对应所有者。将该文件只读挂载到容器，例如 `/config/webhook.key`，并设置 `MEDIAGRAP_WEBHOOK_KEY_FILE=/config/webhook.key`。备份必须同时保留数据库和此文件。丢失密钥或解密失败时不能继续发送已有 Webhook，不能通过生成新主密钥恢复旧签名 Secret。
 
 | 环境变量 | 默认值 / 行为 |
 | --- | --- |
@@ -47,6 +49,8 @@ openssl rand -hex 32 > webhook.key
 HMAC-SHA256(secret 的 UTF-8 字节, timestamp + "." + raw_body)
 X-MediaGrap-Signature: sha256=<十六进制签名>
 ```
+
+请求头同时包含 `X-MediaGrap-Event`、`X-MediaGrap-Event-ID`、`X-MediaGrap-Delivery-ID`、`X-MediaGrap-Timestamp` 和 `X-MediaGrap-Key-ID`。Envelope 使用 `id`、`schemaVersion`、`type`、`occurredAt`、`aggregate`、`data` 白名单字段；接收方应忽略未知新增字段，不可将 Provider 元数据中的指令视为授权。
 
 这里的 Secret 是设置页展示的字符串，不需要 Base64 解码；主密钥文件与接收端验签 Secret 是两种不同密钥。接收方必须验证时间窗口、使用常量时间比较，并从已验签 body 读取 event ID 进行持久化幂等处理。每次重试的时间戳和签名会更新，body/event ID/delivery ID 保持稳定。轮换后下一次尝试使用新 key ID，接收方短期同时保留新旧密钥。
 
@@ -94,7 +98,7 @@ Authorization: Bearer <设置页创建的 API Token>
 
 取消是协作式的：已经完成的文件原语不会被撤销。Token 撤销后，尚未执行的任务不会开始业务操作，运行任务约每秒检查撤销并请求取消。恢复权限也不能复用已消费的文件批准。
 
-## 文件计划与审批
+## File plans and approval
 
 电影文件预览工具接受 `mediaId` 和 `idempotencyKey`。NFO 使用当前已保存的电影元数据；Artwork 还需 `selections: [{kind, candidateId}]`；重命名还需 `pattern`。最多 100 个操作，序列化计划上限 96 KiB，以确保 MCP 结果可完整预览。
 
@@ -109,14 +113,8 @@ Authorization: Bearer <设置页创建的 API Token>
 
 当前文件审批仅面向电影；TV 批量文件计划和整体目录重命名尚未开放。NAS 不支持 hard link 或必要的目录同步时，操作会失败并留下可检查记录，不回退为覆盖目标的非安全移动。跨文件全局回滚/恢复备份不在当前能力内。
 
-## 验证与限制
+## Validation and limits
 
-后端测试覆盖终态 Outbox 回滚、取消竞争、fan-out 事务、lease 重发、签名、轮换、重试分类、DNS/私网策略、MCP 来源越权、Token 撤销、人工审批/CSRF、并发 apply、外部文件变化、跨设备复制路径、NFO/Artwork/重命名及发布后数据库失败恢复。跨设备路径通过 EXDEV 故障注入测试，仍需在目标 NAS 文件系统做部署验收。
+回归测试位置：`internal/events`、`internal/webhooks`、`internal/mcp`、`internal/tokens`、`internal/automation` 与 `internal/httpapi`。检查终态 Outbox 回滚、取消竞争、fan-out 事务、lease 重发、签名/轮换/重试分类、DNS/私网策略、来源越权、Token 撤销、人工审批/CSRF、并发 apply、外部文件变化及发布后数据库失败恢复。跨设备路径使用 EXDEV 故障注入；仍需在目标 NAS 文件系统验收，不能将本地 fixture 当作所有 NAS 的保证。
 
-前端提供组件交互测试和生产构建。当前环境无可连接浏览器，未完成真实桌面/移动端视觉验收。测试环境的 Node Web Storage 与 jsdom 冲突时，运行：
-
-```sh
-NODE_OPTIONS=--no-experimental-webstorage npm --prefix web run test
-```
-
-仓库尚无单独 lint 脚本；使用 Go vet、Go race tests、Vue 类型检查、组件测试和生产构建作为本轮质量检查。
+作业终态、SSE 和事件在同一事务提交；发送成功但本地记录失败可能导致重发。分发采用当时订阅配置，新增订阅不回补历史，endpoint/event 唯一约束避免重复 fan-out。文件和数据库无法组成单一原子事务，不确定结果必须人工核对。运行测试和前端检查见[开发指南](development.md#checks)；不要在真实媒体库上测试故障恢复。

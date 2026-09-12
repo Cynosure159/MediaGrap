@@ -28,3 +28,22 @@ func TestLoadConfigCanDisableFFprobe(t *testing.T) {
 		t.Fatalf("expected ffprobe to be disabled, got %q", config.FFprobePath)
 	}
 }
+
+func TestSecureSessionCookieConfiguration(t *testing.T) {
+	for _, value := range []string{"false", "true"} {
+		t.Setenv("MEDIAGRAP_SECURE_SESSION_COOKIE", value)
+		cfg, err := LoadConfig(nil)
+		if err != nil || cfg.SecureSessionCookie != (value == "true") {
+			t.Fatalf("cookie policy %s: %v", value, err)
+		}
+	}
+	t.Setenv("MEDIAGRAP_SECURE_SESSION_COOKIE", "invalid")
+	if _, err := LoadConfig(nil); err == nil {
+		t.Fatal("invalid bool accepted")
+	}
+	t.Setenv("MEDIAGRAP_SECURE_SESSION_COOKIE", "false")
+	cfg, err := LoadConfig([]string{"--secure-session-cookie=true"})
+	if err != nil || !cfg.SecureSessionCookie {
+		t.Fatal("flag must override environment")
+	}
+}

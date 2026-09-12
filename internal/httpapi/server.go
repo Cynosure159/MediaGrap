@@ -26,11 +26,12 @@ type BuildInfo struct {
 }
 
 type RuntimePaths struct {
-	Automation *automation.Service
-	ConfigDir  string
-	CacheDir   string
-	Webhooks   *webhooks.Service
-	MCP        http.Handler
+	SecureSessionCookie bool
+	Automation          *automation.Service
+	ConfigDir           string
+	CacheDir            string
+	Webhooks            *webhooks.Service
+	MCP                 http.Handler
 }
 
 type server struct {
@@ -163,7 +164,7 @@ func NewServer(
 	// Frontend SPA
 	mux.Handle("/", application.frontend())
 
-	return application.withRequestLogging(mux)
+	return application.withRequestLogging(withSourceDownload(mux, distribution, build))
 }
 
 func (s *server) health(writer http.ResponseWriter, request *http.Request) {

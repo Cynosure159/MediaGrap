@@ -17,3 +17,9 @@ coverage.*
 .pi
 compose*.yaml
 compose*.yml
+
+/data
+/config
+/cache
+/dist
+internal/httpapi/distribution

@@ -1,133 +1,42 @@
-# MediaGrap 项目路线图
+# Roadmap
 
-本文以当前代码、已导出的 UX 原型和文件安全原则为准。原型展示的是目标交互，不代表其中的所有按钮、统计数字或状态已经实现；逐项盘点见 [UX 原型功能盘点](ux-feature-backlog.md)。
+[Current usage](usage.md) · [Architecture](architecture.md) · [Release acceptance](distribution.md#release-acceptance)
 
-## 当前基线（2026-08-31）
+This roadmap separates current code from intended work, without phase numbers or prototype feature promises. Priorities: **data safety → bounded resource use → usable desktop/mobile workflows → extensibility/observability → breadth**. No dates or release versions are promised.
 
-| 范围 | 状态 | 已交付能力 |
-| --- | --- | --- |
-| Phase 0 | 已完成 | Go + Vue PWA 基础、SQLite、嵌入式前端、结构化日志、Docker 非 root 运行和健康检查。 |
-| Phase 1 | 已完成 | 媒体源、电影扫描、已有 NFO/同名 sidecar 发现、电影库浏览、中文/英文切换和基础设置。 |
-| Phase 2 | 已完成首个可用切片 | TMDb 电影搜索与元数据草稿编辑、Kodi 电影 NFO 读取/预览/安全覆盖、预览确认后的 TMDb 海报和背景图下载、HTTP/HTTPS 出站代理。 |
-| Phase 4A/4C（部分） | 已完成 | 电影 TMDb 详情扩展字段：评分、票数、分级、制作公司、导演、编剧和前 20 位演员；字段持久化、演职员页展示及 Kodi NFO 安全写入。 |
-| Phase 4D | 已完成首个只读切片 | 可选 ffprobe 探针与 SQLite 指纹缓存、真实文件/Sidecar 状态审计，以及不产生任何文件写入的电影命名规则 Dry-Run。技术摘要整合进 Overview，详细流与命名预览整合进 File Audit。 |
-| Phase 5A | 核心运维与设置已完成 | 持久化作业事件、运行中取消与重试、SSE、统一审计查询、真实系统状态、脱敏连接测试、全量/增量/定时扫描、HTTP/HTTPS/SOCKS5/NO_PROXY、回退语言和按用户界面偏好。备份恢复与父子批处理仍待后续切片。 |
-| Phase 5B | 首个可用切片已完成 | 电影文件与目录重命名引擎：命名模板（含目录分隔符、8 个占位符）、Dry-Run 预览与冲突检测、持久化重命名计划、可取消/重试的持久化重命名作业、逐项进度 SSE、审计记录、跨文件系统安全复制策略；桌面与移动端 File Audit 预设面板与粘性操作栏。电视剧批量重命名与条件模板片段仍待后续切片。 |
-| Phase 3 | 进行中（3A 与 3B 首个写入切片完成） | 电视剧集命名识别、剧/季/集派生模型与独立库视图；TMDb 电视剧候选选择后直接替换当前剧/季/集元数据，并立即原子写入所有 Kodi TV Show/Season/Episode NFO；无草稿时读取本地 NFO，并只读展示已发现的本地图片。尚未有 TV 图片下载、可恢复任务队列或缺集报告。 |
-| UX 重构 | 进行中 | 新的 MediaGrap Core 设计约束、品牌资产与 10 个原型已加入工作树；具体 UI 与行为仍需按下列阶段接入。 |
+## Current baseline
 
-## 实施顺序与依赖
+The current tree provides movie/TV discovery, bounded incremental/full scans, local NFO hydration with saved-metadata priority, TMDb matching, Fanart.tv artwork, Kodi NFO writes, ffprobe/file audit, browser movie/TV rename plans, persisted jobs/SSE/schedules, proxies, bilingual/theme preferences, Webhooks and scoped MCP automation with browser-approved movie file plans.
 
-    电视剧可用闭环
-      -> 电影工作台补全（字段、NFO、图片、人员、技术信息）
-      -> 任务、审计与批量操作
-      -> 安全整理文件
-      -> 自动化与外部集成
-      -> 扩展媒体类型与部署形态
+The open-source preparation adds current-project AGPL-3.0-only licensing, matching-build `/source` delivery and bundled dependency/legal/build materials, explicit secure-cookie configuration, and main/dev plus dual-architecture tag CI. These are **not claims about the already-published 0.0.6 image**. Actual publication, clean release tags, hosting/account configuration and independent acceptance remain separate owner actions.
 
-每个阶段都必须同时完成 API/数据迁移、桌面与移动端交互、中文/英文文案、必要节点日志、自动化测试和对应的 docs 文档。涉及文件写入、下载、重命名或删除时，必须重新校验并保留审计；NFO 自动写入仅限用户明确选中刮削候选的替换操作，其他覆盖操作仍保留预览确认。
+## Highest priority
 
-## Phase 3 — 电视剧可用闭环
+- **First-administrator takeover mitigation — explicitly deferred implementation.** Require one-time bootstrap proof or a deliberately trusted setup-network design before recommending unattended public first boot. Design credential provisioning/expiry, concurrent setup rejection, safe recovery and deployment migration; add rejection and recovery tests. The current first-visitor behavior/default binding remains unchanged. Isolated setup is required now; Secure cookies do not solve this risk.
+- Establish a verified private vulnerability-reporting channel and supported-release policy; configure repository protections/CI secrets only through authorized owner actions. Review distribution evidence and regenerate archives from the final reviewed tree before any release.
+- Backup/restore with explicit plan/apply, retention and recoverable scope; upgrade/downgrade guidance and pre-migration backup design. Today operators must stop and back up complete config/WAL/key state themselves.
+- Broaden filesystem recovery guarantees only after fault-injection and target NAS validation. Browser TV batches/directory renames do not inherit automation movie recovery. No global rollback claim; keep partial results visible.
 
-### 3A：TV 匹配与草稿
+## Next workflow improvements
 
-- 将现有 TMDb 客户端扩展为 TV 搜索、剧集详情、季与单集详情，遵循设置中的元数据语言与代理。
-- 为剧、季、集引入候选匹配、明确选择和手动查询；不自动以搜索结果覆盖本地数据。
-- 展示季手风琴、单集表格和右侧单集检查器；状态必须来自真实索引/NFO/草稿数据，不能使用原型中的静态百分比。
-- 支持多集文件、特殊集（Season 0）和常见命名异常；建立混合命名 fixture。
+- TV missing-episode reporting against explicitly matched provider inventories, distinguishing absent files, unmatched shows and specials; complete multi-episode NFO semantics.
+- Persisted parent/child TV scrape/write batches, scoped progress/cancellation and retry-only-failed children. Existing synchronous browser matching can write several NFOs and must remain clearly labeled until deliberately changed.
+- Field-by-field metadata comparison/merge/locks in the UI; controlled raw XML editing/formatting/validation and unknown-field compatibility policies. Do not market NFO preview as a completed editor.
+- Artwork uploads/local selection/crop only with format/size/path/replacement safety; richer cast editing/order and bounded portrait downloads.
+- Conditional naming templates and remaining batch ergonomics without weakening collision, preview or permission checks. Movie and TV rename execution already exists; do not list all renaming as unimplemented.
 
-验收：可从一个已扫描的剧集选择 TMDb 候选，查看剧/季/集的本地与远端数据草稿，但不产生文件改动。
+## Operations and integrations
 
-### 3B：TV 安全写入与批量范围
+- Measure large-library behavior on actual NAS/NFS/SMB, including cancellation latency, lock waits, disk saturation and peak memory; local synthetic benchmark speedups are not production guarantees. Preserve two-reader/200-candidate bounds and SQLite durability unless a separately reviewed change is justified.
+- Extend completion observability beyond the bounded recent-history window only with a concrete design. Preserve drafts, missing-target gating and selection-generation safety as catalogs evolve.
+- Duplicate reports, additional metadata/artwork/ID filters, CSV export and explicit-scope Kodi JSON-RPC synchronization.
+- MCP OAuth interoperability, additional queries/resources, subscriptions or stdio only for validated client needs. No automatic file self-approval; any unattended write policy needs separate authorization design.
+- Review supply-chain pinning, dependency/image scanning and signing as release operations. Existing CI is not a claim of signatures, fully offline rebuilds or legal certification.
 
-- Kodi tvshow.nfo、season.nfo、episodedetails 的读写、预览和兼容性测试。
-- 剧集海报、背景、季海报和单集截图的候选与安全下载。
-- 单集、单季、整剧三个明确批量范围；持久化父子任务、进度、取消、失败后仅重试失败项。
-- 缺集报告：基于已匹配的官方季/集清单，清楚区分“文件未发现”“尚未匹配”“特殊集”。
+## Later, demand-driven
 
-验收：对一部电视剧执行可审查的批量计划；中断后可恢复任务状态，且失败项可单独重试。
+Concert/music sidecar metadata (not ID3 rewriting), more official providers, HTML export, multi-user roles, a PostgreSQL adapter and external workers. These are not current supported media types/deployment options. Playback, transcoding, media acquisition and arbitrary in-process plugins remain outside the product's focus.
 
-## Phase 4 — 电影工作台与元数据工坊
+## Acceptance for every change
 
-本阶段将现有电影垂直切片补齐为 UX 原型中的多工坊工作台。它不改变“先预览、后写入”的安全模型。
-
-### 4A：匹配、概览与字段级合并
-
-- 搜索结果候选卡片、手动查询、匹配置信息和无结果/网络失败的可见诊断。
-- 本地/远端字段 Diff，逐字段勾选合并、字段锁定和冲突提示。
-- 概览卡片的真实标题、原名、评分、发行信息、类型、剧情和 NFO/图片完整度；库内筛选“未刮削、缺 NFO、缺海报、缺背景图”等状态。
-- 电影候选选择是明确的替换操作：直接替换元数据并立即写入 NFO；手动编辑与图片下载各自保留独立操作边界。
-
-### 4B：NFO Raw 与校验
-
-- 原始 Kodi XML 的受控编辑器：格式化、撤销至已读取版本、复制、显式保存预览。
-- XML 语法、UTF-8、必填 ID、艺术图映射和演员字段的实时校验；错误定位到行/字段。
-- Kodi 格式先行。Plex/Jellyfin 选项仅在具备独立兼容实现与测试后开放，不能作为占位选择器。
-
-### 4C：艺术图与演职员
-
-- 艺术图工坊：Poster、Fanart、Logo、Clearart、Disc、Banner、Thumb 的本地状态、Fanart.tv 候选画廊、尺寸/来源、下载替换预览已接入首版；上传/裁切和更完整的本地资产状态仍待补齐。
-- 上传、本地选择、裁切/变换仅在实现安全的格式、尺寸、目标路径与回滚策略后加入。
-- 已交付导演、编剧、演员、角色/职务和头像 URL 的 TMDb 映射与 Kodi NFO 写入；后续补 TMDb ID、人工增删改排序，以及头像候选/下载。
-- Fanart.tv 图片下载进入持久化任务队列，遵守代理、重试、MIME/魔数校验和 SSRF 主机白名单；统一限速、取消、缓存和人像队列仍待后续补齐。
-
-### 4D：媒体信息与文件审计
-
-- 可选 ffprobe 集成，提取并展示真实的视频、音频、HDR、字幕、分辨率和文件大小信息。
-- ffprobe 成功结果以媒体文件大小和修改时间为指纹缓存进 SQLite；文件变化后自动重新探测，未安装或禁用 ffprobe 时明确显示不可用。
-- 使用 `os.Lstat` 展示媒体文件和关联 Sidecar 的真实大小、修改时间、权限、MIME、XML 有效性、只读与软链接告警；探测前校验解析后的父目录仍位于媒体源根目录内。
-- 在 File Audit 中提供只读文件名模板 Dry-Run，预览媒体主文件及同名字幕/Sidecar 的旧路径、新路径与冲突；本阶段没有执行端点。
-- 不提供浏览器直接执行宿主机命令；“打开目录”仅可在未来具备受控服务器集成时实现。
-
-验收：电影工作台保持 Overview、Artwork、Cast、NFO Raw、File Audit 五个标准页签；Overview 展示真实技术摘要，File Audit 展示详细媒体流、文件审计和只读命名预览，并保持移动端钻取布局。
-
-## Phase 5 — 作业、审计与安全整理
-
-### 5A：作业与运维可见性
-
-- 作业中心：扫描、搜索、下载、写入、批处理的队列、进度、取消、重试、历史和 SSE 断线重连。
-- 审计/备份中心：每次写入的计划、结果、备份位置与可恢复范围；不承诺无法在 NAS 故障下保证的全局回滚。
-- 系统状态：版本、数据库迁移、挂载可写性、缓存使用、Provider 健康和安全脱敏后的连接测试结果。
-- 设置补全：来源策略（全量/增量/定时）、TMDb/Fanart.tv 凭证、元数据语言与回退语言、HTTP/HTTPS/SOCKS5/NO_PROXY、代理测速、主题和界面语言。
-
-当前已完成作业取消/重试、持久化事件与 SSE 重连、审计查询、真实 SQLite/挂载/缓存状态、脱敏 Provider/代理连接测试、全量/增量/定时来源策略、HTTP/HTTPS/SOCKS5/NO_PROXY、元数据回退语言，以及按用户持久化的主题和界面语言；详细边界见 [Phase 5A 作业与运维可见性](phase-5a-operations.md)。备份恢复与父子批处理继续保留在本阶段后续切片。
-
-### 5B：文件重命名与移动
-
-- 命名模板（例如 title/year/season/episode），占位符校验、条件片段、字符清理和跨平台大小写冲突检测。
-- 伴随文件树与分组操作；先生成 Dry Run，显示旧路径、新路径、冲突和可恢复性。
-- 执行时逐项重新验证来源边界、可写性与冲突；跨文件系统采用复制、验证、再删除源文件。
-- 支持停止、部分失败报告和重新扫描，不支持隐式覆盖或未经确认的删除。
-
-验收：对包含 NFO、图片和字幕的电影/电视剧执行重命名 Dry Run；无冲突才允许一次确认执行，并完整记录审计。
-
-## Phase 6 — 自动化与库集成
-
-- 缺失元数据/艺术图/ID 筛选、重复项识别和 CSV 导出。
-- 按来源配置计划扫描；完成、失败与需要人工决策的 Webhook 通知。
-- Kodi JSON-RPC 同步，先提供连接测试与显式同步范围，再支持自动触发。
-- 备份/恢复、升级迁移、性能指标与可观测性文档。
-
-## Phase 7 — 扩展与生态
-
-按真实需求和可用的官方 API 排序：
-
-- 演唱会 NFO 与刮削。
-- 音乐艺人/专辑 sidecar（不修改 ID3）。
-- 其他元数据/艺术图 Provider。
-- 多用户/角色、API Token、PostgreSQL 与外部 Worker。
-- HTML 导出主题。
-
-## UX 实施准则
-
-- 桌面端始终采用 64px 导航栏、320px 媒体目录栏和弹性检查器；移动端在 700px 及以下改为底部四键导航和详情钻取。
-- 原型中的图片、数字、连接状态、评分、百分比和“健康”标识必须由实际 API 数据驱动。
-- 不可用的未来能力不显示为可点击动作；可保留为带说明的禁用项，但不得伪装成成功状态。
-- 主题、语言、无障碍键盘操作、触控目标、加载/空/错误状态和 PWA 更新流程属于每个阶段的交付范围。
-
-## 验证策略
-
-- 单元与 fixture：命名解析、NFO、字段合并、模板、路径校验、Provider 映射。
-- 集成：SQLite 迁移、任务恢复、代理路由、Provider mock、文件写入和下载。
-- 端到端：桌面与 360px 移动视口中的扫描、匹配、预览、确认和失败提示。
-- 故障注入：权限变化、断网、超时、限流、磁盘不足、重启、命名冲突与部分文件操作。
+Include backend/API/migration tests, desktop/mobile behavior, English/Chinese messages, safe diagnostic logs and the corresponding maintained guide. Filesystem features require preview/revalidation/conflict/partial-failure tests using owned fixtures; integrations require redaction and policy tests. Report unverified filesystem/client/release boundaries honestly. Preserve runtime branding, theme tokens, reusable components and mandatory upstream notices; exported prototypes are not an implementation dependency.

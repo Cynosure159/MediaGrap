@@ -30,7 +30,7 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "setup_unavailable", err.Error())
 		return
 	}
-	setSession(w, r, session)
+	s.setSession(w, r, session)
 	writeJSON(w, http.StatusCreated, map[string]any{"user": session.User, "csrfToken": session.CSRFToken})
 }
 
@@ -44,7 +44,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid username or password")
 		return
 	}
-	setSession(w, r, session)
+	s.setSession(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{"user": session.User, "csrfToken": session.CSRFToken})
 }
 
@@ -59,6 +59,7 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
+		Secure:   s.runtime.SecureSessionCookie || r.TLS != nil,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})

@@ -32,3 +32,11 @@ internal/httpapi/ui/dist/*
 
 # Native development state
 /.local/
+
+# Generated test and distribution output
+.vitest/
+/internal/httpapi/distribution/*
+!/internal/httpapi/distribution/.keep
+
+# Python release-script caches
+__pycache__/

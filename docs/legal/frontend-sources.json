@@ -1,0 +1,42 @@
+{
+  "sources": [
+    {
+      "archive": "vue-3.5.42.tar.gz",
+      "url": "https://codeload.github.com/vuejs/core/tar.gz/refs/tags/v3.5.42",
+      "sha256": "88c4dbb31890fe252a8694887ea91fbf7b84f5c524b10e6f01ce4dbf6b19a7e6",
+      "root": "core-3.5.42",
+      "version": "3.5.42",
+      "packages": {
+        "vue": "packages/vue",
+        "@vue/shared": "packages/shared",
+        "@vue/reactivity": "packages/reactivity",
+        "@vue/runtime-core": "packages/runtime-core",
+        "@vue/runtime-dom": "packages/runtime-dom"
+      },
+      "requiredFiles": ["LICENSE", "pnpm-lock.yaml", "pnpm-workspace.yaml", "rollup.config.js", "scripts/build.js", "packages/runtime-core/src/index.ts"]
+    },
+    {
+      "archive": "vue-router-4.6.4.tar.gz",
+      "url": "https://codeload.github.com/vuejs/router/tar.gz/refs/tags/v4.6.4",
+      "sha256": "99024e4f23a85e9bb4af68fbebbd8f857c88156a6073cafd71d75211ef5eabfd",
+      "root": "router-4.6.4",
+      "version": "4.6.4",
+      "packages": {"vue-router": "packages/router"},
+      "requiredFiles": ["LICENSE", "pnpm-lock.yaml", "pnpm-workspace.yaml", "packages/router/tsdown.config.ts", "packages/router/src/index.ts"]
+    }
+  ],
+  "bundledNotices": [
+    {
+      "package": "@vue/devtools-api",
+      "version": "6.6.4",
+      "bundledIn": "vue-router",
+      "bundledInVersion": "4.6.4",
+      "bundle": "dist/vue-router.global.js",
+      "sourceMarker": "@vue+devtools-api@6.6.4/node_modules/@vue/devtools-api/lib/cjs/",
+      "notice": "vue-devtools-api-6.6.4-LICENSE",
+      "url": "https://raw.githubusercontent.com/vuejs/devtools-v6/v6.6.4/LICENSE",
+      "packageURL": "https://raw.githubusercontent.com/vuejs/devtools-v6/v6.6.4/packages/api/package.json",
+      "sha256": "050bbca6960784db52ff387271bf2ecc5cbed7cf8581b415d528a6ecb6585015"
+    }
+  ]
+}

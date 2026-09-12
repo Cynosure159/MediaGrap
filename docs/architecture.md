@@ -1,215 +1,101 @@
-# Architecture
+# Architecture and UI conventions
 
-## Context
+[Usage contract](usage.md) · [Development](development.md) · [Security](security.md) · [Future work](roadmap.md)
 
-MediaGrap runs close to the user's media files, usually as a Docker container on a NAS or home server. Browsers communicate with the application over HTTP(S), while the application accesses metadata providers through an optional proxy and reads/writes only configured media sources.
-
-```text
-Desktop / mobile PWA
-        |
-   HTTP JSON + SSE
-        |
-┌─────────────────────────────────────────────────────────┐
-│ MediaGrap process                                      │
-│                                                       │
-│ Web/API  Auth  Library  Metadata  Files  Jobs  Admin   │
-│    |      |      |         |        |      |      |    │
-│    └──────── application services / domain ─────────┘   │
-│                 |                 |                     │
-│          SQLite repositories   adapter interfaces      │
-│                                   |          |          │
-│                              filesystem   providers     │
-└─────────────────────────────────────────────────────────┘
-          |                         |
- config/data volume          mounted media roots
-                                    |
-                          TMDb / Fanart.tv / future APIs
-```
-
-## Implemented repository layout
+MediaGrap is a modular monolith, not a streaming server. Go serves an embedded Vue PWA, HTTP JSON APIs, SSE and persisted workers in one non-root container; optional ffprobe is invoked as a bounded local subprocess. SQLite WAL holds application state, mounted sources hold media, and provider adapters perform outbound requests. No external worker, broker, Node runtime or PostgreSQL adapter is required/provided in production.
 
 ```text
-cmd/mediagrap/             application entry point
-internal/
-  app/                     composition, lifecycle, configuration
-  auth/                    users, sessions, password policy, CSRF
-  library/                 sources, scan/index, media identity, repository
-  metadata/                canonical models, merge/edit policy, repository
-  nfo/                     Kodi XML read/write and safe file writing
-  artwork/                 selection, safe download, SSRF check, cache
-  files/                   two-stage safe write engine (Plan/Apply)
-  jobs/                    durable queue, runner, workers, progress
-  providers/
-    tmdb/                  TMDb provider adapter
-  platform/
-    database/              SQLite persistence, WAL, embedded migrations
-  settings/                application key-value settings
-  httpapi/                 routes, handlers, middleware (auth/logging), embedded UI
-web/                       Vue 3 / TypeScript PWA source
-docs/                      all human-facing documentation
+Browser/PWA ── HTTP JSON + SSE ── HTTP handlers ── application services
+MCP client ── scoped Bearer API ── MCP adapter ── automation/jobs
+                                                       │
+                                     SQLite repositories + adapters
+                                                       │
+                               mounted filesystem / TMDb / Fanart.tv
+                                                       │
+                           transactional outbox ── Webhook deliveries
 ```
 
-Packages under `internal/` expose behavior-oriented interfaces at the point of use. Provider-specific DTOs remain inside their adapter.
+## Source map and boundaries
 
-## Component responsibilities
+| Source | Responsibility |
+| --- | --- |
+| [cmd/mediagrap](../cmd/mediagrap/) and [internal/app](../internal/app/) | Entrypoint, environment/flags, composition, lifecycle, healthcheck, logs |
+| [internal/httpapi](../internal/httpapi/) and [internal/auth](../internal/auth/) | Standard `net/http` routes, session/CSRF, response DTOs, embedded UI/source download |
+| [internal/library](../internal/library/) | Sources, scanner, sidecar attribution, catalog/TV identity, inspection and browser rename plans |
+| [internal/metadata](../internal/metadata/) | Canonical records, saved-metadata priority, provider selection, NFO/artwork orchestration |
+| [internal/nfo](../internal/nfo/), [internal/files](../internal/files/), [internal/artwork](../internal/artwork/) | Kodi XML, plan/apply validation, staged publication, safe downloads |
+| [internal/providers](../internal/providers/) | TMDb/Fanart.tv adapters; normalized capabilities, not leaked upstream payloads |
+| [internal/jobs](../internal/jobs/) | Durable queue, registered handlers, progress, cancellation/retry, SSE state |
+| [internal/platform/database](../internal/platform/database/) and [internal/settings](../internal/settings/) | Pure-Go SQLite (`modernc.org/sqlite`), embedded ordered migrations, settings |
+| [internal/events](../internal/events/), [internal/webhooks](../internal/webhooks/) | Transactional terminal events, fan-out and separate leased delivery workers |
+| [internal/tokens](../internal/tokens/), [internal/mcp](../internal/mcp/), [internal/automation](../internal/automation/) | Hashed source-scoped credentials, SDK adapter, idempotent tasks and browser-approved movie plans |
+| [web/src](../web/src/) | Vue 3 Composition API, TypeScript, vue-router, domain API clients/composables and reusable components |
 
-### HTTP and authentication
+Use behavior-oriented interfaces at the consumer boundary; keep SQL-specific operations visible rather than inventing a universal repository framework. Provider DTOs stay inside adapters. Future database portability is a boundary constraint, not a second implemented database. Current frontend uses composables; Pinia/query-library adoption is not a requirement.
 
-- Serve embedded frontend assets and `/api/v1` endpoints.
-- Use secure, HTTP-only, SameSite cookies for browser sessions and CSRF protection for mutations.
-- Bootstrap the first administrator only when no user exists.
-- Apply request size limits, timeouts, rate limiting on authentication, and structured request IDs.
-- Expose `/healthz` for process health and `/readyz` for database/migration readiness.
+`server.go` is the route registry; source-named handlers and API clients define the current HTTP contract, not an aspirational `/change-sets` or `/metrics` endpoint list. Browser mutations require Session + CSRF except explicit setup/login. MCP tokens do not authorize browser management. Health/source endpoints have deliberate public behavior described in [deployment](deployment.md).
 
-### Library scanner
+## SQLite and scanning
 
-- Walk configured sources with bounded concurrency and cancellable contexts.
-- Match allowed media extensions and ignore patterns; detect DVD/Blu-ray structures without treating internal directories as separate titles.
-- Define a symlink policy per source. The safe default is not to follow directory symlinks.
-- Capture cheap stat fingerprints first; compute content hashes only when identity is ambiguous.
-- Parse filenames into hints but never rename during scanning.
-- Reconcile discovered assets transactionally and mark missing items instead of immediately deleting records.
+SQLite uses WAL, foreign keys, a 5-second busy timeout and a **four-connection** bounded pool. Do not weaken durability pragmas to improve benchmark numbers. Embedded SQL migrations are ordered and transactional; automatic backup/restore and disk preflight are not implemented. Consume/close result sets before nested queries or filesystem discovery: an independent SQLite connection succeeding cannot disprove shared-pool starvation.
 
-### Metadata domain
+The scanner has one serialized writer with **two ordered preparation readers**, **200-candidate SQL batches** and directory-scoped snapshots:
 
-- Keep a provider-neutral canonical representation of titles, dates, ratings, IDs, people, studios, genres, certification, plot, artwork, and media details.
-- Track field provenance and user overrides. A rescrape must not silently overwrite locked/manual fields.
-- Treat search candidates separately from committed metadata.
-- Validate types and limits before persistence and NFO generation.
+1. Enumerate a directory once; snapshot supported sidecar names, process direct files first, then release the listing before descending. Only pending child paths remain on the traversal stack.
+2. Readers Lstat media/sidecars and parse filename hints into fixed ordered slots filling the remaining batch space. No goroutine per file or library-wide identity cache.
+3. Commit changed media/sidecar/TV rows plus unchanged seen tracking in a SQL-only batch. Filesystem reads and XML parsing do not run inside its write transaction.
+4. With IDs known, prepare eligible movie NFO imports in one-record-per-reader windows; input is capped at **1 MiB plus one overflow byte**. Apply in order with an upsert atomically conditional on empty saved title. Racing user/provider saves win, preserving provider/locks. Invalid NFO falls back without rewriting it.
+5. Reconcile missing records and completed-scan time only after successful traversal/final hydration/context checks in a final transaction. Failed/cancelled batches roll back locally; earlier commits remain visible without missing reconciliation. Retry starts a fresh traversal/seen epoch.
 
-### Provider adapters
+Fingerprints hash video and attributed sidecar **stat data**, including basename NFO and `movie.nfo` fallback candidate states, not contents. Full scans bypass fingerprints but preserve saved metadata. Successful managed video renames invalidate fingerprints in the path-update transaction so classification changes on the next scan; failed updates do not. Root-layout TV hints and sample/Extras exclusions remain deterministic across batches. [Usage](usage.md#sources-and-scanning) records classification and empty-mount hazards.
 
-Each provider implements only the capabilities it supports, such as search, details, images, episodes, or people. Requests flow through a shared network client that provides:
+Memory depends on the widest directory, pending paths, up to 200 candidates/sidecars and two parsed NFOs, not a strict byte ceiling. Readers join on cancellation/error; an already-running NAS syscall may delay return. Same-size/same-mtime replacements, non-atomic traversal and unmeasured NAS latency remain limits. Local synthetic benchmarks in the source are not production memory/throughput promises.
 
-- global/per-provider proxy selection and no-proxy rules;
-- connect/request timeouts and cancellation;
-- provider-specific concurrency and token-bucket rate limits;
-- bounded retry with jitter for retryable failures and `Retry-After` support;
-- response-size limits, caching, secret redaction, and metrics;
-- SSRF protection for user-influenced URLs.
+## Mutations, jobs and integration consistency
 
-Provider terms, attribution, API key requirements, and cache rules must be documented before enabling an adapter.
+Separate discovery, provider search, explicit candidate replacement, manual save and artwork/rename apply. **Browser candidate selection intentionally writes NFO immediately** after validation; do not document it as preview-only. Manual plans retain explicit review, and metadata save can succeed before NFO fails. NFO serialization is deterministic Kodi XML, not preservation of every unknown extension.
 
-### NFO subsystem
+File writes validate source boundaries, leaf types, permissions and conflicts before same-directory temporary write/sync/atomic publication where supported, with audit. Cross-device browser rename uses staged copy/size verification; automation per-file rename additionally uses content hashes and recovery records. Filesystem changes and SQLite cannot form a single atomic transaction. Never promise backups, global rollback or identical recovery across browser TV batches/directory moves and automation movie plans.
 
-- Parse existing Kodi-style XML while preserving unsupported fields when feasible.
-- Generate deterministic UTF-8 XML with tests against fixtures.
-- Version compatibility behavior rather than scattering Kodi-version checks.
-- Write a temporary file in the target directory, flush/close it, optionally back up the previous sidecar, then atomically rename where the filesystem supports it.
-- Never use XML external entities or unrestricted entity expansion.
+Jobs persist before execution. One media runner dispatches registered kinds; cancelled state cannot later become succeeded. Startup marks abandoned running jobs interrupted. SSE history persists event IDs and clients reconcile snapshots. Long work must retain bounded progress/cancel/retry semantics; do not silently add workers or leases based on old design diagrams.
 
-### File change engine
+Job terminal state, SSE event and external outbox event commit together. Webhook fan-out creates a distinct leased delivery queue; two delivery workers do not occupy media-runner slots. Frozen bodies and duplicate-safe fan-out permit retries, not exactly-once delivery. Outbox backpressure limits record count, not disk bytes.
 
-Filesystem mutation is a two-stage protocol:
+MCP uses the official SDK and source-scoped services, not HTTP callbacks into REST. Token source grants are normalized and revoked on source deletion even if a numeric ID is reused. Automation movie plans freeze operations, relative paths, metadata/file fingerprints and digest. Browser approval binds token, administrator and digest; consumption and job enqueue are atomic. Shared mutation execution and rooted handles confine writes. Per-operation intent/staged/publishing/done records support startup verification of published results; ambiguous state becomes `needs_review`, never blind replay. [Integration contracts](integrations.md) contain exact scopes/limits.
 
-1. **Plan**: normalize and validate paths, resolve source boundaries, calculate destination names, check permissions/collisions/case-folding, and persist an immutable change set.
-2. **Apply**: acquire item/source locks, revalidate preconditions, execute ordered operations, record results, and invalidate the library index.
+## Frontend state and routing
 
-Rules:
+The URL is authoritative for primary page, selection and workshop. Browser history/bookmarks/refresh restore location, not unsaved drafts:
 
-- A configured source root is a capability boundary; resolved paths must remain within it.
-- Never accept an arbitrary host path from an API mutation.
-- Avoid overwrite by default. Cross-filesystem moves require copy, verification, and only then source removal.
-- Rename plans include media and selected sidecars as one group.
-- The audit event records actor, intent, paths, checksums where useful, and outcome without secrets.
-- Full rollback cannot be guaranteed for arbitrary NAS failures, so the UI must state exactly what is recoverable.
+| URL example | Selection |
+| --- | --- |
+| `/movies` | Movie catalog |
+| `/movies?movie=123&tab=artwork` | Movie Artwork |
+| `/shows?show=20` | Show |
+| `/shows?show=20&season=2` | Season |
+| `/shows?show=20&season=2&episode=456&tab=nfo` | Episode NFO |
+| `/jobs` | Jobs, audit and system status |
+| `/settings` | Sources, providers, interface and integrations |
+| `/settings?section=renaming` | Rename defaults |
 
-### Job system
+Tabs are `overview`, `artwork`, `cast`, `nfo`, `files`; default overview is omitted. Invalid/incomplete queries are canonicalized; TV specificity is episode → season → show. `/sources` redirects to `/settings` for old bookmarks. Page/selection/workshop changes create history entries; filters/search are not a promised URL contract.
 
-Jobs are stored in SQLite before execution. The first implementation uses in-process workers with bounded queues.
+`useLibrary` owns serialized scan tracking: one active page, one recent page and up to eight sequential exact lookups per cycle, with backoff and disposal. Only a 100-row recent ID/state/retry snapshot is retained; no bootstrap replay or max-ID watermark. Catalog and inspector refreshes coalesce on observed terminal transitions, including same-state retries. Explicit active discovery handles old long-running jobs outside recent history.
 
-States: `queued`, `running`, `succeeded`, `failed`, `cancelled`, and `interrupted`. Workers lease jobs and update heartbeats. On startup, expired `running` leases become `interrupted`; idempotent jobs may be retried automatically while file mutations require precondition revalidation.
+Inspectors own drafts, availability checks and operation tokens. Scan notifications do not remount them; dirty state, pending saves/dialogs or file/artwork workshops defer replacement. Read-only availability can disable actions without destroying edits. Typed 404/absent episode differs from network/5xx uncertainty. Selection generations reject stale results; settling an obsolete mutation must still release its own busy state. Metadata-saved/NFO-not-written is a real partial result, not generic success. Preserve these constraints when refactoring.
 
-Parent/child jobs represent batches. Progress counts units and bytes where known rather than estimating time. SSE publishes durable job snapshots plus transient progress events; clients reconnect with an event cursor and refresh state if history has expired.
+Movie catalog requests are bounded at 50 rows and reject stale generations; DOM rendering uses 56px rows, 4px spacing and five overscan rows either side, lazy/async images and stable ID selection. Previously loaded lightweight records remain in memory. TV keeps its distinct tree model. `JobCenter`, `AuditCenter` and their row/card children own focused presentation state; `useDismissiblePopover` owns shared listener cleanup.
 
-## Key workflows
+## UI and design tokens
 
-### Scan
+The maintained specification is **the runtime CSS/components plus this section**, not external prototype exports. Preserve [runtime branding](../web/public/assets/), required upstream notices and [main.css](../web/src/assets/main.css). No exported HTML, Google design ID or downloaded mockup is a development dependency.
 
-```text
-User -> create scan job -> walker -> classify assets -> reconcile database
-     <- job/SSE progress <- workers <- batched filesystem results
-```
+- Desktop: 64px icon-only navigation rail, 320px media catalog and flexible inspector. Toolbar height 40px with Overview, Artwork, Cast, NFO Raw, File Audit and Save & Write NFO / Scrape actions.
+- Mobile: bottom four-tab navigation, catalog→inspector drill-down, sticky workshop tabs/actions. `LibraryWorkspace` owns the **760px** catalog breakpoint; `AppSidebar` bottom navigation uses **768px**. Do not add competing catalog breakpoints. Rename actions reserve `60px + env(safe-area-inset-bottom)` at ≤768px and wrap with 44px touch targets at ≤700px.
+- In-app icon: `web/public/assets/logo-icon.png`. Dark slate base `#0c1324`, cards `#191f31`, elevated `#23293c`, tonal layering; keep dark/light/system theme tokens rather than hardcoded new palettes.
+- Fonts: Inter for UI; JetBrains Mono for paths/XML/specifications. Current CSS imports Google Fonts remotely with system fallbacks; do not claim bundled/offline fonts.
+- Reuse `.btn-*`, `.spec-pill`, `.spec-badge`, `.dot-*`, `.card`, `.tab-*` utilities. Keep focus, loading/empty/error/conflict and localized states visible.
+- Audit disclosure uses native buttons with `aria-expanded`/`aria-controls` and Enter/Space behavior. Verify keyboard access, mobile safe areas and no horizontal page overflow, not screenshots alone.
+- English/Chinese locale keys belong in shared locale logic. UI locale is separate from provider metadata language. Render metadata as untrusted text, not executable markup.
 
-Scanning does not call external providers by default. Discovery and scraping remain separate operations so a rescan is predictable and cheap.
-
-### Scrape and save
-
-```text
-search provider -> choose candidate -> fetch normalized draft
-       -> review/merge fields and artwork -> create change set
-       -> preview -> apply safe writes -> update index and audit
-```
-
-### Rename
-
-```text
-select items -> render naming template -> sanitize -> detect conflicts
-       -> show old/new plan -> confirm -> revalidate -> apply -> rescan paths
-```
-
-## Concurrency and consistency
-
-- Use bounded worker pools per workload: scan/stat, provider HTTP, image downloads, and mutations.
-- Enforce one active mutation per source and an item-level lock to avoid concurrent save/rename races.
-- Use optimistic version fields for metadata edits; return a conflict instead of last-write-wins.
-- Keep database transactions short and never hold one open during provider requests or large file copies.
-- Make job handlers idempotent where possible and use stable operation keys for retries.
-
-## Data model outline
-
-- `users`, `sessions`
-- `sources`, `source_scan_cursors`
-- `media_items`, `media_files`, `sidecar_assets`
-- `external_ids`, `metadata_values`, `people`, `credits`, `ratings`
-- `artwork_candidates`, `artwork_assets`
-- `jobs`, `job_events`, `job_dependencies`
-- `change_sets`, `file_operations`, `audit_events`
-- `provider_configs`, `provider_cache`
-- `settings`, `schema_migrations`
-
-The detailed schema should follow use cases and migrations rather than being finalized up front.
-
-## API outline
-
-- `/api/v1/session`, `/api/v1/setup`
-- `/api/v1/sources`, `/api/v1/sources/{id}/scans`
-- `/api/v1/media`, `/api/v1/media/{id}`
-- `/api/v1/media/{id}/searches`, `/api/v1/media/{id}/drafts`
-- `/api/v1/change-sets`, `/api/v1/change-sets/{id}/apply`
-- `/api/v1/jobs`, `/api/v1/events`
-- `/api/v1/providers`, `/api/v1/settings/network/test`
-- `/api/v1/system/info`, `/healthz`, `/readyz`, `/metrics`
-
-Mutating endpoints use idempotency keys where duplicate submission would be harmful. Errors use a stable machine code, localized-safe message, request ID, and optional field details.
-
-## Threat model highlights
-
-- Path traversal and symlink escape into host mounts.
-- SSRF through artwork/provider URLs and malicious redirects.
-- XML attacks through crafted NFO files.
-- Stored XSS from external metadata rendered in the UI.
-- Secret disclosure through settings endpoints, logs, exports, or proxy URLs.
-- Cross-site request forgery and weak first-run exposure.
-- Resource exhaustion from huge libraries, archive-like images, provider payloads, or unbounded jobs.
-
-Security tests and limits are part of each feature, not a final hardening phase.
-
-
-## External integrations
-
-`internal/events` records job terminal events in the same transaction as job state and SSE history. `internal/webhooks` fans out the outbox into a separate leased delivery queue with encrypted signing keys and deployment-owned network policy. Its workers share the application process but do not occupy the media job runner.
-
-`internal/mcp` uses the official Go SDK with the pinned `2025-11-25` protocol and calls source-scoped application queries plus `internal/automation`. `internal/tokens` owns hashed Bearer credentials and normalized source grants; deleting a source revokes its grants even if SQLite later reuses its numeric ID. Browser administration and plan approval continue to require Session and CSRF credentials.
-
-Automation tasks persist their actor and idempotency identity. Movie file plans freeze relative operations, metadata/file fingerprints and a digest. A Web administrator approves that digest before apply can atomically consume approval and enqueue work. Browser writers and automation writers share a bounded mutation lane. Rooted filesystem handles confine automated writes; operation records allow startup reconciliation of already-published results without blindly replaying mutations.
-
-The automation movie plan engine currently supplements the older Web write-plan paths. It does not imply that legacy TV batches, whole-directory renames or arbitrary NAS failures support the same recovery guarantees. See [integration operations and limits](integrations.md).
-
-### Operations and catalog component boundaries
-
-`JobCenter` owns job filtering and forwards cancellation/retry events. `JobFilterBar` receives counts and a selected-filter model; `ActiveJobCard` owns progress rendering and cancellation controls; `JobHistoryRow` owns terminal-state presentation and retry controls. Each child owns its scoped styles, including history-row mobile layout.
-
-`AuditCenter` owns search, category filtering and the single expanded-entry ID. `AuditEntryRow` receives an entry and expanded state and emits a toggle event, keeping the accessible disclosure button and recovery details together.
-
-Movie and TV catalogs keep their distinct filtering and tree logic. `useDismissiblePopover` shares popover state, outside-click handling and listener cleanup. The workspace remains the sole owner of the catalogs' mobile width breakpoint.
+The service worker caches the shell/static assets, not safe offline editing or the large `/source` archive. Build provenance, dependency source/notices and source-download behavior are defined by [distribution](distribution.md), not runtime scrape caches.

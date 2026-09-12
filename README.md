@@ -2,156 +2,81 @@
 
 **English** | [简体中文](README-zh.md)
 
-MediaGrap is a lightweight, self-hosted media metadata scraper and library manager for NAS devices, home servers, and other Docker environments. It provides a responsive Web UI for managing metadata, NFO files, and artwork for movies, TV shows, and other media.
+A lightweight, self-hosted **movie and TV metadata manager** for NAS devices and home servers. Scan mounted libraries, match metadata, inspect files, and manage Kodi NFO and artwork from a desktop browser or mobile PWA. It is not a player, downloader, or transcoder.
 
-The project aims to retain the essential workflows found in tools such as tinyMediaManager and MediaElch while reducing server-side resource usage and providing a better browser, mobile, and container experience.
+## What works today
 
-> Current status: Phase 2 movie scraping and safe writes, Phase 3 TV metadata/NFO plus show-and-season Fanart.tv artwork, and the first Phase 4 movie-workshop slices are implemented. Phase 4D provides cached ffprobe data, real file/Sidecar audit, and preview-only naming Dry-Runs. Phase 5A now includes durable jobs, SSE updates, audit/system visibility, scheduled source policies, complete proxy routing, live redacted connection tests, and per-user interface preferences.
+- Movie and show → season → episode catalogs; existing NFO and local artwork discovery.
+- TMDb matching, metadata editing, optional Fanart.tv artwork, and cached ffprobe inspection.
+- NFO/artwork write plans, movie/TV rename previews and background execution, jobs and audit history.
+- Scheduled scans, provider proxies, Webhooks and source-scoped MCP automation with browser approval for movie file writes.
+- English/Chinese UI, light/dark/system themes, responsive PWA; one non-root container, embedded Vue UI, Go server and SQLite WAL.
 
-## Goals
+These describe the **current source tree**, not a promise that every feature is in an older image. Early development continues; there is no automatic backup/restore or global file-operation rollback. See [usage and limitations](docs/usage.md) and the [roadmap](docs/roadmap.md).
 
-- Use Go for a resource-efficient backend with strong filesystem and concurrency performance.
-- Provide a clean, responsive Vue 3 Web UI.
-- Support mobile browsers and PWA installation.
-- Provide a Simplified Chinese / English interface switch with persisted language preference.
-- Use a single Docker container as the standard deployment model.
-- Support linux/amd64 and linux/arm64.
-- Support HTTP, HTTPS, and SOCKS5 proxies with `NO_PROXY` rules.
-- Run scans, scraping, artwork downloads, and file changes as observable background jobs.
-- Read and write Kodi-compatible NFO and artwork safely.
-- Preview and validate every rename, move, and overwrite operation before execution.
+## Try Docker
 
-## Technology
+The published image is `cynosure159/mediagrap:0.0.6`. **It predates the current AGPL licensing, `/source` download and secure-cookie changes.** Those changes are not claimed to be shipped in 0.0.6. To test the current tree instead, follow [source builds](docs/distribution.md).
 
-| Area | Choice |
-| --- | --- |
-| Backend | Go modular monolith |
-| Frontend | Vue 3, TypeScript, Vite |
-| Web application | Responsive UI, PWA, light and dark themes |
-| Database | SQLite WAL, with boundaries for a future PostgreSQL adapter |
-| API | Versioned JSON REST API and SSE job events |
-| Metadata | Extensible provider adapters, beginning with TMDb |
-| Artwork | TMDb first, with optional Fanart.tv support |
-| Media inspection | Optional `ffprobe` integration |
-| Deployment | Multi-stage build, non-root container, frontend embedded in the Go binary |
+**First-run warning:** whoever reaches a fresh instance first can create its administrator. Complete setup on a trusted, isolated host/container network before allowing other users or a public proxy to connect. A loopback port mapping reduces host exposure but does not block direct container-network access; the application has no bootstrap token yet.
 
-Go is preferred over a Java server runtime to keep idle memory use low and deployment simple. The expected workload is dominated by directory traversal, network requests, XML/JSON processing, image downloads, and filesystem writes, where Go offers a good balance of performance and implementation complexity.
+On a Linux Docker host, prepare only dedicated application state directories:
 
-## Planned features
-
-### MVP: movies
-
-- First-run administrator setup, authentication, and secure sessions.
-- Management of media directories mounted into the container.
-- Full and incremental scans, filename parsing, and existing NFO/artwork discovery.
-- TMDb search, details, and image scraping.
-- Candidate selection, metadata editing, and protection of manual fields.
-- Kodi movie NFO reading and writing.
-- Poster, fanart, logo, and other artwork selection and download.
-- Persistent jobs with progress, cancellation, retry, and restart recovery.
-- File change previews, safe writes, backup policy, and audit history.
-- Docker Compose deployment, health checks, and proxy configuration.
-
-### Later releases
-
-- TV show, season, and episode management with missing-episode detection.
-- Template-based renaming, conditional expressions, collision checks, and dry runs.
-- Duplicate and missing-metadata filters.
-- CSV export, scheduled scans, webhooks, and Kodi JSON-RPC synchronization.
-- Concert and music sidecar metadata.
-- Additional providers, multiple users, API tokens, PostgreSQL, and external workers.
-
-## Architecture
-
-```text
-Desktop browser / mobile PWA
-             |
-        HTTP JSON + SSE
-             |
-┌──────────────────────────────────────────┐
-│                MediaGrap                 │
-│                                          │
-│ Web/API  Auth  Library  Metadata  Jobs   │
-│                   |                      │
-│       Application services / domain      │
-│              |            |              │
-│           SQLite      adapter APIs       │
-│                         |      |          │
-│                    filesystem providers  │
-└──────────────────────────────────────────┘
-              |               |
-       config/data volume  mounted media
-                              |
-                    TMDb / Fanart.tv / ...
+```sh
+sudo install -d -m 0750 -o 65532 -g 65532 runtime/config runtime/cache
 ```
 
-The production build embeds the Vue frontend in the Go binary, allowing the Web UI, API, and background workers to run as one process. The initial modular-monolith design avoids the operational and resource cost of microservices while retaining boundaries that allow workers to be separated later if needed.
+Replace `/srv/media` with your existing library directory. Start read-only while evaluating:
 
-## Filesystem safety
+```sh
+docker run -d --name mediagrap --restart unless-stopped \
+  --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8080:8080 \
+  -e MEDIAGRAP_CONFIG_DIR=/config \
+  -e MEDIAGRAP_CACHE_DIR=/cache \
+  -e MEDIAGRAP_MEDIA_ROOTS=/media \
+  --mount type=bind,src="$(pwd)/runtime/config",dst=/config \
+  --mount type=bind,src="$(pwd)/runtime/cache",dst=/cache \
+  --mount type=bind,src=/srv/media,dst=/media,readonly \
+  cynosure159/mediagrap:0.0.6
+```
 
-Media libraries contain valuable user data, so safety takes priority over feature breadth:
+Open <http://127.0.0.1:8080> on the Docker host and create your administrator. For a remote NAS, use a trusted SSH tunnel or another isolated access path. Do not run the app as root or recursively change media ownership. NAS ACLs/SELinux may need host-specific configuration; UID/GID **65532** needs state write access and media read/traverse access.
 
-1. Scanning only updates the index; it does not automatically scrape or modify files.
-2. Writes and renames first produce an immutable change plan.
-3. Paths, permissions, source boundaries, and conflicts are revalidated before execution.
-4. NFO data is written to a temporary file in the target directory before atomic replacement.
-5. Existing NFO and artwork files can only be replaced after their individual write preview is explicitly confirmed; symlinks and non-regular targets are blocked.
-6. Cross-filesystem moves use copy, verification, and only then source removal.
-7. Every mutation produces an audit event without exposing secrets.
+| Container path | Purpose |
+| --- | --- |
+| `/config` | Persistent database, settings, sessions, jobs and audit state; sensitive |
+| `/cache` | Disposable cache/temporary data |
+| `/media` | Explicitly mounted media; Settings source paths must be inside the startup allowlist |
 
-## Docker deployment model
+For current-source HTTPS termination, set `MEDIAGRAP_SECURE_SESSION_COOKIE=true` and restrict the backend to your trusted proxy. **Do not assume 0.0.6 supports this variable**, and do not enable it with browser-side plain HTTP. See [deployment, TLS, permissions and troubleshooting](docs/deployment.md).
 
-Planned container paths:
+## First library workflow
 
-| Container path | Purpose | Access |
-| --- | --- | --- |
-| `/config` | SQLite database, configuration, keys, jobs, and audit state | Read/write |
-| `/cache` | Provider cache, thumbnails, and temporary downloads | Read/write; disposable |
-| `/media/...` | Explicitly mounted media libraries | Read-only or read/write |
+1. In **Settings → Media sources**, add the container path `/media` (not `/srv/media`). Mounting/allowlisting alone does not create a source.
+2. Scan it. Scans update the database index, not media/NFO files, and do not automatically scrape.
+3. Open **Movies** or **TV shows**, select an item, and inspect Overview, Artwork, Cast, NFO Raw and File Audit. Saved metadata takes priority over external NFO edits.
+4. Configure your provider key in Settings when ready to match. **Selecting a TMDb candidate replaces metadata and immediately writes NFO; it is not a read-only preview.** TV matching can write multiple NFOs. Read-only evaluation must stop before this action.
+5. To write, back up sidecars, recreate the container with the media mount writable, and grant only necessary filesystem permissions. Review manual NFO/artwork and rename plans before confirming; check Jobs/Audit afterward. No operation guarantees global rollback.
 
-Release images will run as a non-root user and target amd64 and arm64. Administrators explicitly mount host media paths into the container; the Web UI will not provide unrestricted host filesystem browsing.
+Automatic scan refreshes preserve in-progress edits; missing or uncertain targets disable new writes. Navigation/reload is not persistent draft storage. Details, rename tokens and integration setup: [usage](docs/usage.md), [Webhooks and MCP](docs/integrations.md).
 
-## Roadmap
+## Upgrade and back up
 
-1. Scaffold Go, Vue PWA, SQLite migrations, test infrastructure, and container builds.
-2. Implement authentication, source management, durable jobs, and read-only movie scanning.
-3. Integrate TMDb, metadata editing, Kodi NFO, and safe writes to deliver the MVP.
-4. Add TV shows, seasons, and episodes.
-5. Add renaming, exports, scheduled jobs, and Kodi synchronization.
-6. Expand to music, concerts, more providers, and multi-user operation as demand requires.
+Stop the container, back up the **entire config directory** plus any separately mounted Webhook key, and back up media-side NFO/artwork separately. Never copy only a live `mediagrap.db`: SQLite WAL may contain committed data. Retain the previous image digest and matching backup; database downgrades are not promised. Recreate using a reviewed pinned image/digest, verify readiness and sources, then scan. [Backup and upgrade procedure](docs/deployment.md#backup-and-upgrade).
 
-See the detailed [delivery roadmap](docs/roadmap.md).
+## Develop and contribute
 
-## Documentation
+From a local checkout, with Go 1.26+, Node 24.15+, npm 11+ and Make:
 
-- [Product scope and acceptance criteria](docs/product-scope.md)
-- [System architecture](docs/architecture.md)
-- [Technology decisions](docs/technology-decisions.md)
-- [Docker and deployment design](docs/deployment-design.md)
-- [Delivery roadmap](docs/roadmap.md)
-- [UX prototype feature inventory](docs/ux-feature-backlog.md)
-- [UI/UX design constraints and prototype index](docs/ui-ux-design.md)
-- [Frontend URL routing](docs/frontend-routing.md)
-- [MediaElch reference review](docs/mediaelch-reference.md)
-- [Phase 0 foundation](docs/phase-0-foundation.md)
-- [Phase 1 read-only discovery](docs/phase-1-discovery.md)
-- [Phase 2 scrape and safe write](docs/phase-2-scrape-and-safe-write.md)
-- [Phase 3 TV discovery](docs/phase-3-tv-discovery.md)
-- [Phase 5A jobs and operations visibility](docs/phase-5a-operations.md)
-- [Settings](docs/settings.md)
-- [Webhook and MCP integrations](docs/integrations.md)
-- [ADR 0001: Foundation stack](docs/adr/0001-foundation-stack.md)
+```sh
+npm --prefix web ci
+go mod download
+MEDIAGRAP_LISTEN=127.0.0.1:8080 npm run dev
+```
 
-## MediaElch reference boundary
+Vite prints the browser URL and proxies to the Go API; state lives in ignored `.local/`. Use synthetic media for tests. Native development builds are not complete release distributions. [Development and contributing](docs/development.md) · [Architecture and UI conventions](docs/architecture.md) · [Security and reporting](docs/security.md).
 
-MediaGrap may learn from MediaElch's public features, workflows, Kodi NFO compatibility, and architectural boundaries. It will not directly copy LGPL-3.0 source code, tests, icons, translations, or other protected assets.
+## License and source
 
-Provider integrations will prefer official APIs and independently review API key, rate-limit, caching, attribution, and branding requirements. Kodi NFO support will be implemented from public format documentation and independently authored fixtures.
-
-## Documentation convention
-
-Detailed project documentation belongs under `docs/`. The repository entry points `README.md`, `README-zh.md`, and the collaboration instructions `AGENTS.md` are the only root-level exceptions. Changes to public behavior, configuration, deployment, or architecture must update the relevant documentation.
-
-## License
-
-The public project license has not yet been selected. License selection and dependency compliance review are required before publishing or incorporating third-party code.
+The current project uses [AGPL-3.0-only](LICENSE). Third-party works and provider content retain their own terms; this does not relicense all historic commits or the published 0.0.6 image. Current distribution builds expose their matching source through **Download source / 下载源码** in the UI and unauthenticated `/source`; a native development build without that archive returns 503. See [source/build/release instructions](docs/distribution.md) and [upstream legal materials](docs/legal/README.md). No future public repository URL is assumed.

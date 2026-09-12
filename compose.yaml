@@ -1,10 +1,8 @@
 services:
   mediagrap:
     build:
-      context: .
+      context: ${MEDIAGRAP_BUILD_CONTEXT:?Export a source context first}
       target: ffprobe
-      args:
-        VERSION: dev
     image: cynosure159/mediagrap:latest
     container_name: mediagrap
     restart: unless-stopped
@@ -17,8 +15,7 @@ services:
     volumes:
       - ./runtime/config:/config
       - ./runtime/cache:/cache
-      # Add explicit media mounts before Phase 1 source management is enabled.
+      # Add only explicit media mounts and keep first setup isolated.
       # - /srv/media/movies:/media/movies:ro
     security_opt:
       - no-new-privileges:true
-

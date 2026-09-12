@@ -19,6 +19,7 @@ prepare-ui:
 	cp -R web/dist/. internal/httpapi/ui/dist/
 
 build: prepare-ui
+	@echo "Development binary: /source returns 503 without matching baked distribution materials. Do not redistribute as a release."
 	go build -trimpath -ldflags "-s -w" -o bin/mediagrap ./cmd/mediagrap
 
 test: test-go test-web
@@ -36,4 +37,4 @@ format:
 	gofmt -w cmd internal
 
 docker-build:
-	docker build -t mediagrap:dev .
+	sh scripts/build-test-image.sh

@@ -4,5 +4,6 @@
   "scripts": {
     "dev": "make dev",
     "start": "make"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }
