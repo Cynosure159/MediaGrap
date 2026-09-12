@@ -23,14 +23,17 @@ export interface MovieDraft {
   cast: CastMember[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   draft: MovieDraft
   item: MediaItem
   isEditing: boolean
   labels: Record<string, string>
-  inspection: MediaInspection | null
-  inspectionLoading: boolean
-}>()
+  inspection?: MediaInspection | null
+  inspectionLoading?: boolean
+}>(), {
+  inspection: null,
+  inspectionLoading: false,
+})
 
 const resolvedPoster = computed(() => {
   if (props.draft.posterUrl) return props.draft.posterUrl

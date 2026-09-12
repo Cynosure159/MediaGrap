@@ -27,7 +27,7 @@ export interface TVDraft {
   }[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   selection: TVSelection | null
   detail: TVShowDetail
   draft: TVDraft
@@ -41,11 +41,15 @@ const props = defineProps<{
   selectedUnitSize: number
   seasonsMap: Map<number, TVEpisode[]>
   selectedEpisodeId: number | null
-  inspection: MediaInspection | null
-  inspectionLoading: boolean
-  inspectionError: string | null
+  inspection?: MediaInspection | null
+  inspectionLoading?: boolean
+  inspectionError?: string | null
   labels: Record<string, string>
-}>()
+}>(), {
+  inspection: null,
+  inspectionLoading: false,
+  inspectionError: null,
+})
 
 const emit = defineEmits<{
   (e: 'update:selectedEpisodeId', id: number): void
