@@ -12,11 +12,11 @@
 - 定时扫描、Provider 代理、Webhook 和按来源授权的 MCP 自动化；自动化电影文件写入需网页审批。
 - 中英文界面、明暗/跟随系统主题、响应式 PWA；非 root 单容器，Go 服务内嵌 Vue，使用 SQLite WAL。
 
-以上描述的是**当前源码树**，不表示旧镜像包含所有功能。项目仍在早期开发中；目前没有自动备份恢复或跨文件全局回滚。详见[使用与限制](docs/usage.md)和[路线图](docs/roadmap.md)。
+项目仍在早期开发中；目前没有自动备份恢复或跨文件全局回滚。详见[使用与限制](docs/usage.md)和[路线图](docs/roadmap.md)。
 
 ## Docker 快速体验
 
-已发布镜像为 `cynosure159/mediagrap:0.0.6`。**它早于本次 AGPL 许可、`/source` 源码下载及 Secure Cookie 改动**，不能将这些改动当作 0.0.6 已发布能力。测试当前代码请使用[源码构建流程](docs/distribution.md)。
+使用 `cynosure159/mediagrap:latest` 快速启动，或参考[源码构建流程](docs/distribution.md)。生产部署建议固定已审查的版本或镜像摘要。
 
 **首次启动风险：**任何最先访问未初始化实例的人都能创建管理员。请先在可信、隔离的宿主机与容器网络完成初始化，再开放给其他用户或公网代理。回环端口映射只能缩小宿主机暴露面，不能阻止直接从容器网络访问；应用尚无初始化令牌。
 
@@ -38,7 +38,7 @@ docker run -d --name mediagrap --restart unless-stopped \
   --mount type=bind,src="$(pwd)/runtime/config",dst=/config \
   --mount type=bind,src="$(pwd)/runtime/cache",dst=/cache \
   --mount type=bind,src=/srv/media,dst=/media,readonly \
-  cynosure159/mediagrap:0.0.6
+  cynosure159/mediagrap:latest
 ```
 
 在 Docker 宿主机打开 <http://127.0.0.1:8080> 并创建管理员。远程 NAS 请使用可信 SSH 隧道或其他隔离访问方式。不要以 root 运行应用，也不要递归修改媒体所有权。NAS ACL/SELinux 可能需要额外设置；UID/GID **65532** 需要状态目录读写权限和媒体目录读取/遍历权限。
@@ -49,7 +49,7 @@ docker run -d --name mediagrap --restart unless-stopped \
 | `/cache` | 可丢弃的缓存与临时数据 |
 | `/media` | 显式挂载的媒体；设置中的来源路径必须位于启动时的允许列表内 |
 
-当前源码部署到可信 HTTPS 终止代理后方时，设置 `MEDIAGRAP_SECURE_SESSION_COOKIE=true`，并限制只有该代理能访问后端。**不要假设 0.0.6 支持此变量**；浏览器使用普通 HTTP 时不要开启。详见[部署、TLS、权限与排错](docs/deployment.md)。
+部署到可信 HTTPS 终止代理后方时，设置 `MEDIAGRAP_SECURE_SESSION_COOKIE=true`，并限制只有该代理能访问后端。浏览器使用普通 HTTP 时不要开启。详见[部署、TLS、权限与排错](docs/deployment.md)。
 
 ## 第一个媒体库
 
@@ -79,4 +79,4 @@ Vite 会打印浏览器地址并代理到 Go API，状态保存在已忽略的 `
 
 ## 许可证与对应源码
 
-当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交或已发布的 0.0.6 镜像已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 提供对应源码；缺少匹配归档的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。文档不假定未来公开仓库的地址。
+当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 提供对应源码；缺少匹配归档的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。文档不假定未来公开仓库的地址。

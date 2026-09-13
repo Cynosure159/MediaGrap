@@ -12,11 +12,11 @@ A lightweight, self-hosted **movie and TV metadata manager** for NAS devices and
 - Scheduled scans, provider proxies, Webhooks and source-scoped MCP automation with browser approval for movie file writes.
 - English/Chinese UI, light/dark/system themes, responsive PWA; one non-root container, embedded Vue UI, Go server and SQLite WAL.
 
-These describe the **current source tree**, not a promise that every feature is in an older image. Early development continues; there is no automatic backup/restore or global file-operation rollback. See [usage and limitations](docs/usage.md) and the [roadmap](docs/roadmap.md).
+Early development continues; there is no automatic backup/restore or global file-operation rollback. See [usage and limitations](docs/usage.md) and the [roadmap](docs/roadmap.md).
 
 ## Try Docker
 
-The published image is `cynosure159/mediagrap:0.0.6`. **It predates the current AGPL licensing, `/source` download and secure-cookie changes.** Those changes are not claimed to be shipped in 0.0.6. To test the current tree instead, follow [source builds](docs/distribution.md).
+Use `cynosure159/mediagrap:latest` for a quick start, or follow [source builds](docs/distribution.md). Pin a reviewed version or image digest for production.
 
 **First-run warning:** whoever reaches a fresh instance first can create its administrator. Complete setup on a trusted, isolated host/container network before allowing other users or a public proxy to connect. A loopback port mapping reduces host exposure but does not block direct container-network access; the application has no bootstrap token yet.
 
@@ -38,7 +38,7 @@ docker run -d --name mediagrap --restart unless-stopped \
   --mount type=bind,src="$(pwd)/runtime/config",dst=/config \
   --mount type=bind,src="$(pwd)/runtime/cache",dst=/cache \
   --mount type=bind,src=/srv/media,dst=/media,readonly \
-  cynosure159/mediagrap:0.0.6
+  cynosure159/mediagrap:latest
 ```
 
 Open <http://127.0.0.1:8080> on the Docker host and create your administrator. For a remote NAS, use a trusted SSH tunnel or another isolated access path. Do not run the app as root or recursively change media ownership. NAS ACLs/SELinux may need host-specific configuration; UID/GID **65532** needs state write access and media read/traverse access.
@@ -49,7 +49,7 @@ Open <http://127.0.0.1:8080> on the Docker host and create your administrator. F
 | `/cache` | Disposable cache/temporary data |
 | `/media` | Explicitly mounted media; Settings source paths must be inside the startup allowlist |
 
-For current-source HTTPS termination, set `MEDIAGRAP_SECURE_SESSION_COOKIE=true` and restrict the backend to your trusted proxy. **Do not assume 0.0.6 supports this variable**, and do not enable it with browser-side plain HTTP. See [deployment, TLS, permissions and troubleshooting](docs/deployment.md).
+For HTTPS termination, set `MEDIAGRAP_SECURE_SESSION_COOKIE=true` and restrict the backend to your trusted proxy. Do not enable it with browser-side plain HTTP. See [deployment, TLS, permissions and troubleshooting](docs/deployment.md).
 
 ## First library workflow
 
@@ -79,4 +79,4 @@ Vite prints the browser URL and proxies to the Go API; state lives in ignored `.
 
 ## License and source
 
-The current project uses [AGPL-3.0-only](LICENSE). Third-party works and provider content retain their own terms; this does not relicense all historic commits or the published 0.0.6 image. Current distribution builds expose their matching source through **Download source / 下载源码** in the UI and unauthenticated `/source`; a native development build without that archive returns 503. See [source/build/release instructions](docs/distribution.md) and [upstream legal materials](docs/legal/README.md). No future public repository URL is assumed.
+The current project uses [AGPL-3.0-only](LICENSE). Third-party works and provider content retain their own terms; this does not relicense all historic commits. Current distribution builds expose their matching source through **Download source / 下载源码** in the UI and unauthenticated `/source`; a native development build without that archive returns 503. See [source/build/release instructions](docs/distribution.md) and [upstream legal materials](docs/legal/README.md). No future public repository URL is assumed.
