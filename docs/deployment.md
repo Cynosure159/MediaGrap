@@ -2,7 +2,7 @@
 
 [English quickstart](../README.md#try-docker) · [中文快速部署](../README-zh.md#docker-快速体验) · [Usage/configuration](usage.md) · [Distribution builds](distribution.md)
 
-This guide describes the current checkout. The published `cynosure159/mediagrap:0.0.6` predates the AGPL/source-download/secure-cookie changes; do not infer that new settings work there. Pin a reviewed version or digest, not `latest`. No public GitHub source destination is assumed.
+This guide describes the current checkout. The published `cynosure159/mediagrap:0.0.6` predates the AGPL/source-download/secure-cookie changes; do not infer that new settings work there. Pin a reviewed version or digest, not `latest`. Current builds pin matching source assets to `Cynosure159/MediaGrap` GitHub Releases.
 
 ## Container and permissions
 
@@ -32,7 +32,7 @@ For current-source builds, [export a reviewed context](distribution.md#build-con
 
 After setup, use HTTPS through a trusted reverse proxy for non-local access. Keep the backend accessible only to that proxy. For **current-source builds**, set `MEDIAGRAP_SECURE_SESSION_COOKIE=true` or `--secure-session-cookie=true`: setup, login and logout cookies become Secure even when the proxy-to-app hop is HTTP. Default false preserves local HTTP; requests presented to the handler as direct TLS always set Secure. The shipped listener itself serves HTTP; this is not a built-in TLS certificate configuration. `Forwarded` and `X-Forwarded-Proto` never enable Secure automatically. Do not enable Secure for a browser on plain HTTP or login will not persist. 0.0.6 must not be assumed to implement this setting.
 
-Proxy the application at the origin root, including `/api`, job SSE, `/mcp` if used, and `/source`. Disable SSE buffering and allow long-lived connections. Preserve MCP Authorization, Origin and protocol headers. Do not hide the matching `/source` archive from remote users of a distributed/modified deployment. Browser PWA installation generally requires HTTPS or localhost; offline shell caching does not make metadata mutations offline-safe.
+Proxy the application at the origin root, including `/api`, job SSE, `/mcp` if used, and `/source`. Disable SSE buffering and allow long-lived connections. Preserve MCP Authorization, Origin and protocol headers. Do not hide `/source` from remote users of a distributed/modified deployment. Preserve its 307 redirect to the pinned public GitHub Release asset; clients need access to GitHub and its asset delivery hosts. Browser PWA installation generally requires HTTPS or localhost; offline shell caching does not make metadata mutations offline-safe.
 
 ## Startup configuration
 
@@ -88,7 +88,8 @@ The image healthcheck runs `/mediagrap healthcheck`: a three-second HTTP readine
 | Source rejected/empty | Existing host mount, container path, startup allowlist and read/traverse permissions. Do not scan a disconnected mount. |
 | Login does not persist | Browser HTTPS versus explicit Secure-cookie setting; origin/cookie policy. Do not blindly trust forwarded headers. |
 | Provider configured but fails | Authenticated fixed-target connection test, provider key, language, proxy/NO_PROXY and safe HTTP status. |
-| `/source` returns 503 | Native/mismatched development archive; use a matching distribution build, not a live checkout fallback. |
+| `/source` returns 503 | Missing/invalid baked source locator; use a verified distribution build, not a live checkout fallback. |
+| `/source` redirects but download fails | Check public GitHub Release asset availability and client access; never delete matching source while distributing the image. Local test snapshots intentionally use unpublished fixture locators. |
 | Liveness succeeds, readiness fails | Shared-pool/storage issue; collect repeated counters and safe timestamps before restart. |
 
 `inUse=4`, `idle=0`, `saturated=true` means all four pool connections are held at that instant, not proof of deadlock. Increasing `waitCount` records acquisition waits; `waitDurationMs` counts completed waits, not the current age of blocked calls. A separate SQLite client succeeding cannot exclude main-pool starvation. Catalog code must consume/close rows before nested queries or filesystem work. Increasing workers/pool size is not a fix for nested connection acquisition.

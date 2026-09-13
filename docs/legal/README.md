@@ -2,7 +2,7 @@
 
 The owner selected **AGPL-3.0-only** for the current MediaGrap project. See the complete [project license](../../LICENSE). This does not relicense third-party works, provider content, or every historic commit/image. Preserve upstream copyright and license notices. The already-published `cynosure159/mediagrap:0.0.6` predates this change; neither this license selection nor the new source mechanism is a claim about that image.
 
-A distribution build embeds a same-build source archive, publicly downloadable at `/source` without authentication. Missing/mismatched development archives return HTTP 503, not a guessed repository URL. The archive contains the reviewed tracked project tree, dependency materials, manifests, checksums and build recipe. This is not a blanket legal certification.
+A distribution build keeps its same-build source archive in a pinned public GitHub Release asset at `Cynosure159/MediaGrap`; `/source` redirects there without authentication. The binary carries only the exact version/commit/architecture locator and archive SHA256. Missing/invalid development locators return HTTP 503, not a guessed repository URL. Source archives are exported separately from the small runtime image, which retains the project license, runtime notices and ffprobe diagnostics. Publication must verify anonymous access to both architecture assets before distributing images, and those assets must remain available for corresponding binaries. The archive contains the reviewed tracked project tree, dependency materials, manifests, checksums and build recipe. This is not a blanket legal certification.
 
 ## Actual build inventory
 

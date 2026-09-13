@@ -31,7 +31,7 @@ MEDIAGRAP_CONFIG_DIR=./.local/config MEDIAGRAP_CACHE_DIR=./.local/cache \
   MEDIAGRAP_LISTEN=127.0.0.1:8080 ./bin/mediagrap
 ```
 
-A fresh Go-only source build has a fallback page until the UI is built/copied. `make build` is a **development binary**, not a complete distribution: `/source` returns 503 without matching baked source material. Use the [exported-context Docker/artifacts path](distribution.md#native-builds-and-rebuild-limits) for distribution. `make docker-build` exports tracked files as a test-only snapshot; new untracked implementation files need individual reviewed `--test-extra` entries. It never implicitly includes local state.
+A fresh Go-only source build has a fallback page until the UI is built/copied. `make build` is a **development binary**, not a complete distribution: `/source` returns 503 without a valid baked source locator. Use the [exported-context Docker/artifacts path](distribution.md#native-builds-and-rebuild-limits) for distribution. `make docker-build` exports tracked files as a test-only snapshot; new untracked implementation files need individual reviewed `--test-extra` entries. It never implicitly includes local state.
 
 ## Checks
 
@@ -78,4 +78,4 @@ Submit only material you have rights to contribute under the project's applicabl
 
 ## Release boundary
 
-Public source hosting, building a local image and distributing an image are distinct actions. Clean release contexts require an existing owner-approved tag at HEAD and canonical tracked bytes; dirty snapshots are explicitly test-only. Do not create tags, publish registries or change repository account settings as part of an ordinary patch without authorization. Regenerate source archives from the final reviewed tree, keep matching source available to remote users, and independently inspect dual-architecture build/source evidence before release. No offline whole-image reproducibility or legal certification is implied by passing CI.
+Public source hosting, building a local image and distributing an image are distinct actions. Clean stable release contexts require an existing owner-approved tag at HEAD and canonical tracked bytes; clean dev previews use `--preview`; dirty snapshots are explicitly test-only. Do not create tags, publish registries or change repository account settings as part of an ordinary patch without authorization. Regenerate source archives from the final reviewed tree, keep matching source available to remote users, and independently inspect dual-architecture build/source evidence before release. No offline whole-image reproducibility or legal certification is implied by passing CI.

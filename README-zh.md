@@ -81,4 +81,4 @@ Vite 会打印浏览器地址并代理到 Go API，状态保存在已忽略的 `
 
 ## 许可证与对应源码
 
-当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 提供对应源码；缺少匹配归档的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。文档不假定未来公开仓库的地址。
+当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 跳转到 [GitHub Releases](https://github.com/Cynosure159/MediaGrap/releases) 上固定版本、完整提交和架构的对应源码资产，不再将大型源码归档嵌入运行镜像。缺少有效内置链接的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。CI 的 dev 渠道为 `preview` / `preview-<完整提交>`；只有位于 main 最新提交的正式版本标签可发布版本镜像和 `latest`。具体发布门禁见上述说明。

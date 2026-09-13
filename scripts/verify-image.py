@@ -2,26 +2,82 @@
 """Exercise only a locally owned image/container and loopback synthetic state."""
 
 import argparse
+import functools
 import hashlib
 import http.client
+import http.server
 import io
 import json
 import subprocess
 import tarfile
+import threading
 import time
 from pathlib import Path
 
-from frontend_materials import verify_source  # pyright: ignore[reportMissingImports]
+from source_contract import download_public, source_identity, verify_archive
 
 
 def docker(*args):
     return subprocess.check_output(["docker", *args]).decode().strip()
 
 
+def file_digest(filesystem, name):
+    stream = filesystem.extractfile(name)
+    if stream is None:
+        raise ValueError("missing image component: " + name)
+    return hashlib.sha256(stream.read()).hexdigest()
+
+
+def verify_image_filesystem(exported, data, manifest):
+    with tarfile.open(fileobj=io.BytesIO(exported)) as filesystem:
+        names = filesystem.getnames()
+        assert not any(
+            name.endswith((".tar.gz", ".tar.xz", ".tar.bz2", ".zip")) for name in names
+        ), "source archive retained in runtime"
+        binary = filesystem.getmember("mediagrap")
+        assert binary.size < len(data), "source-sized application binary"
+        for name, entry in manifest["files"].items():
+            if name.startswith(
+                ("third-party/runtime/notices/", "third-party/runtime/ffmpeg/")
+            ):
+                runtime_name = name.replace(
+                    "third-party/runtime/", "usr/share/mediagrap/", 1
+                )
+            elif name == "mediagrap/LICENSE":
+                runtime_name = "usr/share/mediagrap/LICENSE"
+            else:
+                continue
+            stream = filesystem.extractfile(runtime_name)
+            assert (
+                stream is not None
+                and hashlib.sha256(stream.read()).hexdigest() == entry["sha256"]
+            ), runtime_name
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as source:
+            stream = source.extractfile("third-party/runtime/runtime-sha256.txt")
+            assert stream is not None
+            for line in stream.read().decode().splitlines():
+                expected, path = line.split()
+                stream = filesystem.extractfile(path.removeprefix("/out").lstrip("/"))
+                assert (
+                    stream is not None
+                    and hashlib.sha256(stream.read()).hexdigest() == expected
+                ), path
+        return {
+            "binaryBytes": binary.size,
+            "imageCASHA256": file_digest(
+                filesystem, "etc/ssl/certs/ca-certificates.crt"
+            ),
+        }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("image")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--source-directory",
+        help="Owned build artifacts: serve via loopback fixture instead of public GitHub",
+    )
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -35,7 +91,7 @@ def main():
             "none",
             "--entrypoint",
             "/usr/bin/ffprobe",
-            args.image,
+            info["Id"],
             option,
         )
         (output / ("ffprobe" + option + ".txt")).write_text(result + "\n")
@@ -52,16 +108,16 @@ def main():
         "/cache:uid=65532,gid=65532,mode=750",
         "-p",
         "127.0.0.1::8080",
-        args.image,
+        info["Id"],
     )
     try:
         port = docker("port", container, "8080/tcp").split(":")[-1]
         connection = http.client.HTTPConnection("127.0.0.1", int(port), timeout=60)
 
-        def request(path, method="GET"):
+        def request(path, method="GET", status=200):
             connection.request(method, path)
             response = connection.getresponse()
-            if response.status != 200:
+            if response.status != status:
                 response.read()
                 raise OSError("owned fixture HTTP status " + str(response.status))
             return response
@@ -78,78 +134,71 @@ def main():
             raise RuntimeError("owned container did not become ready")
         with request("/api/v1/system/info") as response:
             build = json.load(response)
-        with request("/source") as response:
-            assert response.headers["Content-Type"] == "application/gzip"
-            assert "attachment;" in response.headers["Content-Disposition"]
-            data = response.read()
-            sha = hashlib.sha256(data).hexdigest()
-            assert response.headers["ETag"] == '"' + sha + '"'
+        arch = info["Architecture"]
+        _, asset, url = source_identity(build["version"], build["commit"], arch)
+        assert build["sourceURL"] == url and build["sourceArchitecture"] == arch
+        sha = build["sourceSHA256"]
+        for method in ("GET", "HEAD"):
+            with request("/source", method=method, status=307) as response:
+                assert response.headers["Location"] == url
+                assert response.headers["X-Source-SHA256"] == sha
+                body = response.read()
+                if method == "HEAD":
+                    assert body == b""
+        if args.source_directory:
+            directory = Path(args.source_directory).resolve()
+            metadata = json.loads((directory / "manifest.json").read_text())
+            assert (
+                metadata["url"] == url
+                and metadata["sha256"] == sha
+                and metadata["asset"] == asset
+            )
+            # This mapping is verifier-only: the binary still advertises the pinned HTTPS URL.
+            handler = functools.partial(
+                http.server.SimpleHTTPRequestHandler, directory=str(directory)
+            )
+            fixture = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=fixture.serve_forever, daemon=True)
+            thread.start()
+            try:
+                fixture_connection = http.client.HTTPConnection(
+                    "127.0.0.1", fixture.server_port, timeout=120
+                )
+                fixture_connection.request("GET", "/source.tar.gz")
+                response = fixture_connection.getresponse()
+                assert response.status == 200
+                data = response.read()
+                fixture_connection.close()
+            finally:
+                fixture.shutdown()
+                fixture.server_close()
+                thread.join()
+        else:
+            data = download_public(url)
+        manifest, inventory = verify_archive(data, {**build, "architecture": arch}, sha)
+        exported = subprocess.check_output(["docker", "export", container])
+        # Verify distributed bytes before starting: hosts can alter trust stores at startup.
+        image_container = docker("create", info["Id"])
+        try:
+            details = json.loads(docker("inspect", image_container))[0]
+            assert details["Image"] == info["Id"] and not details["State"]["Running"]
+            assert all(
+                mount["Destination"] in ("/config", "/cache")
+                for mount in details["Mounts"]
+            )
+            image_export = subprocess.check_output(
+                ["docker", "export", image_container]
+            )
+        finally:
+            docker("rm", "-v", image_container)
+        filesystem_proof = verify_image_filesystem(image_export, data, manifest)
+        with tarfile.open(fileobj=io.BytesIO(exported)) as started:
+            started_ca = file_digest(started, "etc/ssl/certs/ca-certificates.crt")
         (output / "source.tar.gz").write_bytes(data)
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
-
-            def read(name):
-                file = archive.extractfile(name)
-                assert file is not None
-                return file.read()
-
-            manifest = json.loads(read("MANIFEST.json"))
-            assert (
-                manifest["version"] == build["version"]
-                and manifest["commit"] == build["commit"]
-            )
-            for name, entry in manifest["files"].items():
-                content = read(name)
-                assert (
-                    len(content) == entry["bytes"]
-                    and hashlib.sha256(content).hexdigest() == entry["sha256"]
-                ), name
-            names = archive.getnames()
-            for name in names:
-                assert not Path(name).is_absolute() and ".." not in Path(name).parts
-                if name.startswith("mediagrap/"):
-                    assert not any(
-                        part
-                        in {
-                            ".git",
-                            ".env",
-                            ".env.local",
-                            ".local",
-                            ".vitest",
-                            "runtime",
-                            "__pycache__",
-                        }
-                        for part in Path(name).parts
-                    ), name
-            assert "mediagrap/LICENSE" in names
-            assert "third-party/runtime/ffmpeg-7.1.1.tar.xz" in names
-            assert "third-party/runtime/ffmpeg/link.map" in names
-            assert "third-party/go/Go-LICENSE" in names
-            assert "third-party/npm/packages.json" in names
-            upstream = "third-party/frontend-upstream/"
-            inventory = json.loads(read(upstream + "inventory.json"))
-            assert inventory == json.loads(
-                read("mediagrap/docs/legal/frontend-sources.json")
-            )
-            for source in inventory["sources"]:
-                verify_source(read(upstream + source["archive"]), source)
-            for notice in inventory["bundledNotices"]:
-                assert (
-                    hashlib.sha256(read(upstream + notice["notice"])).hexdigest()
-                    == notice["sha256"]
-                )
-                bundle = read(
-                    "third-party/npm/" + notice["bundledIn"] + "/" + notice["bundle"]
-                )
-                assert notice["sourceMarker"].encode() in bundle
-            (output / "frontend-inventory.json").write_text(
-                json.dumps(inventory, indent=2) + "\n"
-            )
-            (output / "MANIFEST.json").write_bytes(read("MANIFEST.json"))
-        with request("/source", method="HEAD") as response:
-            assert (
-                int(response.headers["Content-Length"]) == len(data)
-                and response.read() == b""
-            )
+        (output / "MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        (output / "frontend-inventory.json").write_text(
+            json.dumps(inventory, indent=2) + "\n"
+        )
         for path in ["/sources", "/sources?from=bookmark"]:
             with request(path) as response:
                 assert response.headers["Content-Type"].startswith("text/html")
@@ -167,9 +216,23 @@ def main():
                 response.read()
         report = {
             "build": build,
+            "sourceVerification": "local-fixture"
+            if args.source_directory
+            else "public-unauthenticated",
             "archiveSHA256": sha,
             "archiveBytes": len(data),
             "imageBytes": info["Size"],
+            **filesystem_proof,
+            "startedContainerID": container,
+            "imageFilesystemContainerID": image_container,
+            "dockerServer": json.loads(
+                docker("version", "--format", "{{json .Server}}")
+            ),
+            "startedCASHA256": started_ca,
+            "startedCADiffersFromImage": started_ca
+            != filesystem_proof["imageCASHA256"],
+            "runtimeSourceArchivesAbsent": True,
+            "runtimeNoticesAndComponentsMatchSource": True,
             "imageID": info["Id"],
             "architecture": info["Architecture"],
             "user": info["Config"]["User"],
