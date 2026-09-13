@@ -271,6 +271,95 @@ class PublicationPolicyTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 publication.validate_candidates(root, "1.2.3", "a" * 40)
 
+    def test_release_visibility_uses_exact_tag_and_bounded_missing_retry(self):
+        tag = "preview-" + "a" * 40
+        existing = {"draft": False, "prerelease": True, "assets": []}
+        missing = subprocess.CalledProcessError(
+            1,
+            ["gh"],
+            stderr=b"gh: Not Found (HTTP 404)\n",
+        )
+        with (
+            mock.patch.object(
+                publisher, "gh", side_effect=[missing, json.dumps(existing)]
+            ) as gh,
+            mock.patch.object(publisher.time, "sleep") as sleep,
+        ):
+            self.assertEqual(publisher.release_after_create(tag), existing)
+        self.assertEqual(
+            [call.args for call in gh.call_args_list],
+            [
+                ("api", f"repos/Cynosure159/MediaGrap/releases/tags/{tag}"),
+                ("api", f"repos/Cynosure159/MediaGrap/releases/tags/{tag}"),
+            ],
+        )
+        sleep.assert_called_once_with(5)
+
+    def test_release_visibility_exhaustion_and_channel_errors_fail_closed(self):
+        tag = "preview-" + "a" * 40
+        missing = subprocess.CalledProcessError(
+            1,
+            ["gh"],
+            stderr=b"gh: Not Found (HTTP 404)\n",
+        )
+        with (
+            mock.patch.object(publisher, "gh", side_effect=[missing] * 6),
+            mock.patch.object(publisher.time, "sleep") as sleep,
+        ):
+            self.assertIsNone(publisher.release_after_create(tag))
+        self.assertEqual(
+            sleep.call_args_list,
+            [mock.call(5 * attempt) for attempt in range(1, 6)],
+        )
+
+        wrong_channel = {"draft": False, "prerelease": False, "assets": []}
+        with (
+            mock.patch.object(publisher, "release_for", return_value=wrong_channel),
+            mock.patch.object(publisher.time, "sleep") as sleep,
+        ):
+            self.assertIs(publisher.release_after_create(tag), wrong_channel)
+        sleep.assert_not_called()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            commit = "a" * 40
+            version = "preview-" + commit
+            candidates(root, version, commit)
+            with (
+                mock.patch.object(
+                    publisher.publication,
+                    "current_identity",
+                    return_value=(version, "dev"),
+                ),
+                mock.patch.object(
+                    publisher, "release_for", side_effect=[None, wrong_channel]
+                ),
+                mock.patch.object(publisher, "gh") as gh,
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "GITHUB_REPOSITORY": "Cynosure159/MediaGrap",
+                        "EXPECTED_COMMIT": commit,
+                    },
+                ),
+                mock.patch("sys.argv", ["publish-source.py", temporary]),
+                self.assertRaisesRegex(ValueError, "release channel/draft mismatch"),
+            ):
+                publisher.main()
+            gh.assert_called_once()
+
+    def test_release_api_errors_are_not_treated_as_missing(self):
+        error = subprocess.CalledProcessError(
+            1,
+            ["gh"],
+            stderr=b"gh: Forbidden (HTTP 403)\n",
+        )
+        with (
+            mock.patch.object(publisher, "gh", side_effect=error),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            publisher.release_for("preview-" + "a" * 40)
+
     def test_upload_never_overwrites_and_checks_existing_public_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -8,6 +8,7 @@ GitHub API writes; download_public deliberately does not use that credential.
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,14 +30,39 @@ def gh(*args):
     return subprocess.check_output(["gh", *args], stderr=subprocess.PIPE).decode()
 
 
+RELEASE_VISIBILITY_ATTEMPTS = 6
+RELEASE_TAG = re.compile(
+    r"(?:v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)|preview-[0-9a-f]{40})"
+)
+
+
 def release_for(tag):
-    # A failed API call must not be treated as a missing release (e.g. bad token).
-    releases = json.loads(
-        gh("api", "--paginate", "--slurp", f"repos/{REPOSITORY}/releases?per_page=100")
-    )
-    return next(
-        (item for page in releases for item in page if item["tag_name"] == tag), None
-    )
+    # source_identity produces a path-safe tag; keep this boundary explicit before
+    # placing it in the exact-tag API path. Only an actual HTTP 404 means missing.
+    if not RELEASE_TAG.fullmatch(tag):
+        raise ValueError("invalid release tag")
+    try:
+        return json.loads(gh("api", f"repos/{REPOSITORY}/releases/tags/{tag}"))
+    except subprocess.CalledProcessError as error:
+        raw_detail = error.stderr or ""
+        detail = (
+            raw_detail.decode(errors="replace")
+            if isinstance(raw_detail, bytes)
+            else str(raw_detail)
+        )
+        if "HTTP 404" in detail:
+            return None
+        raise
+
+
+def release_after_create(tag):
+    for attempt in range(RELEASE_VISIBILITY_ATTEMPTS):
+        existing = release_for(tag)
+        if existing is not None:
+            return existing
+        if attempt + 1 < RELEASE_VISIBILITY_ATTEMPTS:
+            time.sleep(5 * (attempt + 1))
+    return None
 
 
 def ensure_asset(tag, name, path, existing, expected_sha, build):
@@ -98,12 +124,10 @@ def main():
         else:
             args.append("--verify-tag")
         gh(*args)
-        existing = release_for(tag)
-    if (
-        existing is None
-        or existing["draft"]
-        or existing["prerelease"] != (branch == "dev")
-    ):
+        existing = release_after_create(tag)
+        if existing is None:
+            raise ValueError("created release not visible after bounded retries")
+    if existing["draft"] or existing["prerelease"] != (branch == "dev"):
         raise ValueError("release channel/draft mismatch")
     # Resolve annotated or lightweight tags through the GitHub commit API.
     tagged = json.loads(gh("api", f"repos/{REPOSITORY}/commits/{tag}"))["sha"]
