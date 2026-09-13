@@ -3,17 +3,23 @@ name: CI
 on:
   push:
     branches: [main, dev]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
     branches: [main, dev]
 
 permissions:
   contents: read
 
+# Stop superseded dev candidates; serialize stable publication candidates.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/dev' }}
+
 jobs:
   verify:
     name: Go and web checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -23,7 +29,7 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-node@v5
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Go format check
@@ -47,44 +53,56 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     needs: verify
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Export clean source context
         env:
-          REF_TYPE: ${{ github.ref_type }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$REF_TYPE" = tag ]; then
+          if [ "$EVENT_NAME" = push ] && [ "$REF" = refs/heads/dev ]; then
+            python3 scripts/release-context.py --preview \
+              --output "$RUNNER_TEMP/context"
+          elif [ "$EVENT_NAME" = push ] && [[ "$REF" == refs/tags/* ]]; then
             python3 scripts/release-context.py --tag "$REF_NAME" \
               --output "$RUNNER_TEMP/context"
           else
             python3 scripts/release-context.py --test-snapshot \
               --output "$RUNNER_TEMP/context"
           fi
-      - name: Build candidate image
+      - name: Build candidate and external source assets
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           docker buildx build --platform "linux/$ARCH" --load \
             --tag "mediagrap:ci-$ARCH" "$RUNNER_TEMP/context"
-      - name: Verify source and non-root runtime
+          docker buildx build --platform "linux/$ARCH" --target artifacts \
+            --output "type=local,dest=$RUNNER_TEMP/artifacts" \
+            "$RUNNER_TEMP/context"
+      - name: Verify pinned redirect and source using owned HTTP fixture
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           python3 scripts/verify-image.py "mediagrap:ci-$ARCH" \
+            --source-directory "$RUNNER_TEMP/artifacts/distribution" \
             --output "$RUNNER_TEMP/evidence"
-      - name: Rebuild from downloaded source
+      - name: Rebuild from fixture-downloaded source
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -93,10 +111,18 @@ jobs:
             --output "$RUNNER_TEMP/rebuild"
           docker buildx build --platform "linux/$ARCH" --load \
             --tag "mediagrap:rebuild-$ARCH" "$RUNNER_TEMP/rebuild"
+          docker buildx build --platform "linux/$ARCH" --target artifacts \
+            --output "type=local,dest=$RUNNER_TEMP/rebuild-artifacts" \
+            "$RUNNER_TEMP/rebuild"
           python3 scripts/verify-image.py "mediagrap:rebuild-$ARCH" \
-            --output "$RUNNER_TEMP/rebuild-evidence"
-      - name: Save tested release image
-        if: github.ref_type == 'tag'
+            --source-directory "$RUNNER_TEMP/rebuild-artifacts/distribution" \
+            --output "$RUNNER_TEMP/evidence/rebuild"
+          cmp "$RUNNER_TEMP/evidence/source.tar.gz" \
+            "$RUNNER_TEMP/evidence/rebuild/source.tar.gz"
+      - name: Save tested publication candidate
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/dev' || github.ref_type == 'tag')
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -110,16 +136,23 @@ jobs:
           retention-days: 30
 
   publish:
-    name: Publish verified DockerHub images
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    name: Publish matching source then verified DockerHub images
+    if: >-
+      github.repository == 'Cynosure159/MediaGrap' &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/v'))
     needs: [verify, docker]
-    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     concurrency:
-      group: mediagrap-dockerhub-publication
+      group: >-
+        mediagrap-publication-${{ github.ref == 'refs/heads/dev' &&
+        'preview' || 'stable' }}
       cancel-in-progress: false
     env:
       IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'cynosure159/mediagrap' }}
-      REF_NAME: ${{ github.ref_name }}
       EXPECTED_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v5
@@ -130,32 +163,24 @@ jobs:
         with:
           pattern: distribution-*
           path: candidates
-      - name: Validate publication inputs
+      - name: Validate channel, remote branch tip and matching candidates
         run: python3 scripts/validate-publication.py candidates
+      - name: Retain matching source and verify anonymous downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish-source.py candidates
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-source-verification
+          path: candidates/public-source-verification.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Recheck branch eligibility before registry login
+        run: python3 scripts/validate-publication.py --guard-only
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Publish only the tested images
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=${REF_NAME#v}
-          for arch in amd64 arm64; do
-            docker load -i "candidates/distribution-$arch/image.tar.gz"
-            expected=$(python3 -c \
-              'import json,sys;print(json.load(open(sys.argv[1]))["imageID"])' \
-              "candidates/distribution-$arch/verification.json")
-            actual=$(docker image inspect "mediagrap:ci-$arch" \
-              --format '{{.Id}}')
-            test "$actual" = "$expected"
-            docker tag "mediagrap:ci-$arch" "$IMAGE:$version-$arch"
-            docker push "$IMAGE:$version-$arch"
-          done
-          docker buildx imagetools create --tag "$IMAGE:$version" \
-            "$IMAGE:$version-amd64" "$IMAGE:$version-arm64"
-          if [[ "$version" != *-* ]]; then
-            docker buildx imagetools create --tag "$IMAGE:latest" \
-              "$IMAGE:$version-amd64" "$IMAGE:$version-arm64"
-          fi
+      - name: Publish tested images with immutable tag and stale-ref guards
+        run: python3 scripts/publish-images.py candidates

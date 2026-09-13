@@ -1,21 +1,36 @@
 package httpapi
 
 import (
-	"embed"
-	"encoding/json"
-	"io"
-	"io/fs"
 	"net/http"
+	"regexp"
+	"runtime"
 	"strings"
-	"time"
 )
 
-//go:embed all:distribution
-var distribution embed.FS
+// Only the release builder sets these; there is no runtime URL override or proxy.
+var sourceURL, sourceSHA256, sourceArchitecture string
 
-// The archive is build input, never a runtime path or a proxy destination.
+var sourceCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var sourceHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var sourceVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+func validSourceLocator(build BuildInfo) bool {
+	if !sourceCommitPattern.MatchString(build.Commit) || !sourceHashPattern.MatchString(build.SourceSHA256) || build.SourceArchitecture != runtime.GOARCH || (build.SourceArchitecture != "amd64" && build.SourceArchitecture != "arm64") {
+		return false
+	}
+	tag := "v" + build.Version
+	if !sourceVersionPattern.MatchString(build.Version) {
+		if build.Version != "preview-"+build.Commit && build.Version != "test-"+build.Commit[:12] {
+			return false
+		}
+		tag = "preview-" + build.Commit
+	}
+	asset := "mediagrap-source-" + build.Version + "-" + build.Commit + "-linux-" + build.SourceArchitecture + ".tar.gz"
+	return build.SourceURL == "https://github.com/Cynosure159/MediaGrap/releases/download/"+tag+"/"+asset
+}
+
 // Intercept before ServeMux canonicalization so traversal cannot reach a SPA fallback.
-func withSourceDownload(next http.Handler, files fs.FS, build BuildInfo) http.Handler {
+func withSourceDownload(next http.Handler, build BuildInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// /sources is an existing SPA bookmark, not a source-download suffix.
 		if !strings.HasPrefix(r.URL.Path, "/source") || (r.URL.Path == "/sources" && r.URL.EscapedPath() == "/sources") {
@@ -33,31 +48,11 @@ func withSourceDownload(next http.Handler, files fs.FS, build BuildInfo) http.Ha
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		var manifest struct {
-			Version string
-			Commit  string
-			SHA256  string
-		}
-		data, err := fs.ReadFile(files, "distribution/manifest.json")
-		if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.Version != build.Version || manifest.Commit != build.Commit || len(manifest.SHA256) != 64 {
-			http.Error(w, "Same-build source archive unavailable in this build", http.StatusServiceUnavailable)
+		if !validSourceLocator(build) {
+			http.Error(w, "Same-build public source locator unavailable in this build", http.StatusServiceUnavailable)
 			return
 		}
-		archive, err := files.Open("distribution/source.tar.gz")
-		if err != nil {
-			http.Error(w, "Same-build source archive unavailable in this build", http.StatusServiceUnavailable)
-			return
-		}
-		defer archive.Close()
-		seeker, ok := archive.(io.ReadSeeker)
-		if !ok {
-			http.Error(w, "Source archive unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "application/gzip")
-		w.Header().Set("Content-Disposition", `attachment; filename="mediagrap-source.tar.gz"`)
-		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
-		w.Header().Set("ETag", `"`+manifest.SHA256+`"`)
-		http.ServeContent(w, r, "mediagrap-source.tar.gz", time.Time{}, seeker)
+		w.Header().Set("X-Source-SHA256", build.SourceSHA256)
+		http.Redirect(w, r, build.SourceURL, http.StatusTemporaryRedirect)
 	})
 }

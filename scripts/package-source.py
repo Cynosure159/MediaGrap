@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake the verified build context plus exact dependency/build materials into /source."""
+"""Package matching project and dependency materials outside the runtime image."""
 
 import gzip
 import hashlib
@@ -16,6 +16,7 @@ from pathlib import Path
 from frontend_materials import (
     package_frontend_materials,  # pyright: ignore[reportMissingImports]
 )
+from source_contract import source_identity
 
 
 def digest(path):
@@ -46,6 +47,8 @@ def main():
     for key, env in [("version", "VERSION"), ("commit", "COMMIT")]:
         if manifest[key] != os.environ[env]:
             raise ValueError("build/source " + key + " mismatch")
+    arch = os.environ["TARGETARCH"]
+    _, asset, url = source_identity(manifest["version"], manifest["commit"], arch)
     materials = Path("/materials")
     notice_hashes = {
         "GCC-COPYING.RUNTIME": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
@@ -184,6 +187,7 @@ def main():
                 {
                     "version": manifest["version"],
                     "commit": manifest["commit"],
+                    "architecture": arch,
                     "testOnly": manifest["testOnly"],
                     "files": checksums,
                 },
@@ -191,7 +195,7 @@ def main():
             )
             + "\n"
         )
-        target = root / "internal/httpapi/distribution"
+        target = Path("/out/source")
         target.mkdir(parents=True, exist_ok=True)
         with (
             (target / "source.tar.gz").open("wb") as raw,
@@ -211,9 +215,12 @@ def main():
                 {
                     "version": manifest["version"],
                     "commit": manifest["commit"],
+                    "architecture": arch,
                     "testOnly": manifest["testOnly"],
                     "sha256": digest(archive),
                     "bytes": archive.stat().st_size,
+                    "asset": asset,
+                    "url": url,
                 },
                 indent=2,
             )

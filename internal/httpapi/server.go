@@ -20,9 +20,12 @@ import (
 var ui embed.FS
 
 type BuildInfo struct {
-	Version string
-	Commit  string
-	BuiltAt string
+	Version            string
+	Commit             string
+	BuiltAt            string
+	SourceURL          string
+	SourceSHA256       string
+	SourceArchitecture string
 }
 
 type RuntimePaths struct {
@@ -57,6 +60,7 @@ func NewServer(
 	settingsService SettingsService,
 	runtime ...RuntimePaths,
 ) http.Handler {
+	build.SourceURL, build.SourceSHA256, build.SourceArchitecture = sourceURL, sourceSHA256, sourceArchitecture
 	application := &server{
 		logger:          logger,
 		db:              db,
@@ -164,7 +168,7 @@ func NewServer(
 	// Frontend SPA
 	mux.Handle("/", application.frontend())
 
-	return application.withRequestLogging(withSourceDownload(mux, distribution, build))
+	return application.withRequestLogging(withSourceDownload(mux, build))
 }
 
 func (s *server) health(writer http.ResponseWriter, request *http.Request) {
@@ -186,10 +190,13 @@ func (s *server) ready(writer http.ResponseWriter, request *http.Request) {
 
 func (s *server) systemInfo(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]string{
-		"name":    "MediaGrap",
-		"version": s.build.Version,
-		"commit":  s.build.Commit,
-		"builtAt": s.build.BuiltAt,
+		"name":               "MediaGrap",
+		"version":            s.build.Version,
+		"commit":             s.build.Commit,
+		"builtAt":            s.build.BuiltAt,
+		"sourceURL":          s.build.SourceURL,
+		"sourceSHA256":       s.build.SourceSHA256,
+		"sourceArchitecture": s.build.SourceArchitecture,
 	})
 }
 

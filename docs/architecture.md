@@ -20,7 +20,7 @@ MCP client ── scoped Bearer API ── MCP adapter ── automation/jobs
 | Source | Responsibility |
 | --- | --- |
 | [cmd/mediagrap](../cmd/mediagrap/) and [internal/app](../internal/app/) | Entrypoint, environment/flags, composition, lifecycle, healthcheck, logs |
-| [internal/httpapi](../internal/httpapi/) and [internal/auth](../internal/auth/) | Standard `net/http` routes, session/CSRF, response DTOs, embedded UI/source download |
+| [internal/httpapi](../internal/httpapi/) and [internal/auth](../internal/auth/) | Standard `net/http` routes, session/CSRF, response DTOs, embedded UI/pinned external source redirect |
 | [internal/library](../internal/library/) | Sources, scanner, sidecar attribution, catalog/TV identity, inspection and browser rename plans |
 | [internal/metadata](../internal/metadata/) | Canonical records, saved-metadata priority, provider selection, NFO/artwork orchestration |
 | [internal/nfo](../internal/nfo/), [internal/files](../internal/files/), [internal/artwork](../internal/artwork/) | Kodi XML, plan/apply validation, staged publication, safe downloads |

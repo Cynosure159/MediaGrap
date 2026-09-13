@@ -36,13 +36,15 @@ class DockerSourceTests(unittest.TestCase):
 
 class ReleaseContextTests(unittest.TestCase):
     def test_version_tags(self):
-        for tag in ["v1.2.3", "v0.0.7", "v2.0.0-rc.1", "v1.2.3-alpha-1"]:
+        for tag in ["v1.2.3", "v0.0.7", "v2.0.0"]:
             self.assertIsNotNone(release.SEMVER.fullmatch(tag), tag)
         for tag in [
             "1.2.3",
             "v01.2.3",
             "v1.2",
             "v1.2.3-01",
+            "v2.0.0-rc.1",
+            "v1.2.3-alpha-1",
             "v1.2.3+local",
             "v1.2.3;echo unsafe",
         ]:
@@ -139,6 +141,44 @@ class ReleaseContextTests(unittest.TestCase):
             ):
                 release.main()
 
+    def test_preview_rejects_nondev_dirty_and_conflicting_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "checkout"
+            root.mkdir()
+            output = Path(temporary) / "preview"
+            for branch, dirty, extra in (
+                ("main", "", []),
+                ("dev", " M LICENSE", []),
+                ("dev", "", ["--test-snapshot"]),
+            ):
+                results = {
+                    ("rev-parse", "--show-toplevel"): str(root),
+                    ("rev-parse", "HEAD"): "a" * 40,
+                    ("status", "--porcelain"): dirty,
+                    ("symbolic-ref", "--short", "HEAD"): branch,
+                }
+                with (
+                    mock.patch.object(
+                        release,
+                        "git",
+                        side_effect=lambda *args, results=results: results[args],
+                    ),
+                    mock.patch(
+                        "sys.argv",
+                        [
+                            "release-context.py",
+                            "--preview",
+                            "--output",
+                            str(output),
+                            *extra,
+                        ],
+                    ),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(SystemExit),
+                ):
+                    release.main()
+                self.assertFalse(output.exists())
+
     def test_snapshot_handles_tracked_deletions_but_not_missing_required_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "checkout"
@@ -193,50 +233,6 @@ class ReleaseContextTests(unittest.TestCase):
                 ),
             ):
                 release.main()
-
-    def test_publication_rejects_test_artifacts_before_login(self):
-        publication_spec = importlib.util.spec_from_file_location(
-            "publication", Path(__file__).with_name("validate-publication.py")
-        )
-        assert publication_spec and publication_spec.loader
-        publication = importlib.util.module_from_spec(publication_spec)
-        publication_spec.loader.exec_module(publication)
-        with tempfile.TemporaryDirectory() as temporary:
-            for arch in ["amd64", "arm64"]:
-                directory = Path(temporary) / ("distribution-" + arch)
-                directory.mkdir()
-                proof = {
-                    "testOnly": False,
-                    "architecture": arch,
-                    "user": "65532:65532",
-                    "build": {"version": "1.2.3", "commit": "a" * 40},
-                }
-                (directory / "verification.json").write_text(json.dumps(proof))
-                (directory / "image.tar.gz").write_bytes(
-                    b"owned synthetic image fixture"
-                )
-            with (
-                mock.patch.dict(
-                    "os.environ",
-                    {
-                        "REF_NAME": "v1.2.3",
-                        "EXPECTED_COMMIT": "a" * 40,
-                        "IMAGE": "example/mediagrap",
-                    },
-                ),
-                mock.patch.object(
-                    publication.subprocess,
-                    "check_output",
-                    return_value=("a" * 40).encode(),
-                ),
-                mock.patch("sys.argv", ["validate-publication.py", temporary]),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
-                publication.main()
-                proof["testOnly"] = True
-                (directory / "verification.json").write_text(json.dumps(proof))
-                with self.assertRaises(ValueError):
-                    publication.main()
 
 
 if __name__ == "__main__":

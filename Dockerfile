@@ -26,6 +26,7 @@ COPY docs/legal/ /materials/notices/
 RUN tar -xOf /materials/musl-1.2.5.tar.gz musl-1.2.5/COPYRIGHT > /materials/notices/musl-COPYRIGHT
 
 FROM golang:1.26-alpine AS go-builder
+ARG TARGETARCH
 RUN apk add --no-cache python3
 WORKDIR /workspace
 COPY go.mod go.sum ./
@@ -39,18 +40,22 @@ RUN export VERSION="$(python3 -c 'import json; print(json.load(open("release-inp
  && export COMMIT="$(python3 -c 'import json; print(json.load(open("release-input.json"))["commit"])')" \
  && export BUILT_AT="$(python3 -c 'import json; print(json.load(open("release-input.json"))["builtAt"])')" \
  && python3 scripts/package-source.py \
- && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT}" -o /out/mediagrap ./cmd/mediagrap
+ && export SOURCE_URL="$(python3 -c 'import json; print(json.load(open("/out/source/manifest.json"))["url"])')" \
+ && export SOURCE_SHA="$(python3 -c 'import json; print(json.load(open("/out/source/manifest.json"))["sha256"])')" \
+ && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT} -X github.com/mediagrap/mediagrap/internal/httpapi.sourceURL=${SOURCE_URL} -X github.com/mediagrap/mediagrap/internal/httpapi.sourceSHA256=${SOURCE_SHA} -X github.com/mediagrap/mediagrap/internal/httpapi.sourceArchitecture=${TARGETARCH}" -o /out/mediagrap ./cmd/mediagrap
 
 FROM scratch AS artifacts
 COPY --from=go-builder /out/mediagrap /mediagrap
-COPY --from=go-builder /workspace/internal/httpapi/distribution/ /distribution/
+COPY --from=go-builder /out/source/ /distribution/
 COPY --from=ffprobe-builder /materials/ /materials/
 COPY --from=ffprobe-builder /out/usr/bin/ffprobe /ffprobe
 
 FROM scratch AS ffprobe
 COPY --from=ffprobe-builder /out/usr/bin/ffprobe /usr/bin/ffprobe
 COPY --from=ffprobe-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=ffprobe-builder /materials/ /usr/share/mediagrap/runtime-source/
+COPY --from=ffprobe-builder /materials/notices/ /usr/share/mediagrap/notices/
+COPY --from=ffprobe-builder /materials/ffmpeg/ /usr/share/mediagrap/ffmpeg/
+COPY --from=ffprobe-builder /materials/runtime-sha256.txt /usr/share/mediagrap/runtime-sha256.txt
 COPY LICENSE /usr/share/mediagrap/LICENSE
 COPY --chown=65532:65532 --from=go-builder /out/mediagrap /mediagrap
 ENV MEDIAGRAP_FFPROBE_PATH=/usr/bin/ffprobe
