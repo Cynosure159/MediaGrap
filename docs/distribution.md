@@ -20,6 +20,8 @@ Use `--test-snapshot` instead of `--tag` for explicitly non-release tracked work
 
 The Docker build refuses missing input manifests, mismatched source hashes/version/commit, missing runtime source/notices or changed pinned dependencies. It embeds the archive into the Go binary before linking. `/source` serves only this immutable same-build download, without authentication, and rejects queries, encoded paths and suffixes. There is no runtime filesystem/proxy/source-tree fallback. The PWA does not precache the archive or intercept `/source` navigation. This endpoint must remain reachable by remote users of distributed/modified deployments.
 
+The pinned Alpine CA source is downloaded from the official `distfiles.alpinelinux.org/distfiles/v3.22/` mirror rather than the GitLab archive endpoint, which can reject unattended builds with HTTP 418. The archive bytes, SHA256 check and installed package pins are unchanged; the complete source and notices remain bundled. Network access to this mirror is required even when rebuilding from downloaded project source.
+
 `MANIFEST.json` records source file hashes/sizes; the embedded download manifest records archive SHA256 and bytes. Image verification measures image size and checks archive identity against `/api/v1/system/info`, archive hashes, legal materials, HEAD delivery and non-root startup using isolated synthetic state. `/usr/share/mediagrap` also contains the project license and ffprobe/runtime source material. [Legal inventory and exact hashes](legal/README.md) explain component licenses without replacing upstream notices.
 
 ## Native builds and rebuild limits

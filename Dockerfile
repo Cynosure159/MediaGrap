@@ -13,7 +13,7 @@ RUN curl -fsSLo ffmpeg-7.1.1.tar.xz https://ffmpeg.org/releases/ffmpeg-7.1.1.tar
  && echo '733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1  ffmpeg-7.1.1.tar.xz' | sha256sum -c - \
  && curl -fsSLo musl-1.2.5.tar.gz https://musl.libc.org/releases/musl-1.2.5.tar.gz \
  && echo 'a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4  musl-1.2.5.tar.gz' | sha256sum -c - \
- && curl -fsSLo ca-certificates-20260611.tar.bz2 https://gitlab.alpinelinux.org/alpine/ca-certificates/-/archive/20260611/ca-certificates-20260611.tar.bz2 \
+ && curl -fsSLo ca-certificates-20260611.tar.bz2 https://distfiles.alpinelinux.org/distfiles/v3.22/ca-certificates-20260611.tar.bz2 \
  && echo '32ca73f2e81e2b88dc614f12e1ee04a82b1ec5a8e29d9f359ddf8905a0afcbb0  ca-certificates-20260611.tar.bz2' | sha256sum -c -
 # Refuse silent upgrades whose source/notice inventory has not been reviewed.
 RUN apk list --installed musl | grep -q '^musl-1.2.5-r12 ' \

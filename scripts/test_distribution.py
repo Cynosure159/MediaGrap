@@ -15,6 +15,25 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 
+class DockerSourceTests(unittest.TestCase):
+    def test_ca_source_uses_official_distfiles_and_unchanged_checksum(self):
+        dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+        archive = "ca-certificates-20260611.tar.bz2"
+        self.assertIn(
+            f"curl -fsSLo {archive} "
+            f"https://distfiles.alpinelinux.org/distfiles/v3.22/{archive}",
+            dockerfile,
+        )
+        self.assertIn(
+            "echo '32ca73f2e81e2b88dc614f12e1ee04a82b1ec5a8e29d9f359ddf8905a0afcbb0"
+            f"  {archive}' | sha256sum -c -",
+            dockerfile,
+        )
+        self.assertIn("ca-certificates=20260611-r0", dockerfile)
+        self.assertIn("ca-certificates-bundle=20260611-r0", dockerfile)
+        self.assertNotIn("https://gitlab.alpinelinux.org/", dockerfile)
+
+
 class ReleaseContextTests(unittest.TestCase):
     def test_version_tags(self):
         for tag in ["v1.2.3", "v0.0.7", "v2.0.0-rc.1", "v1.2.3-alpha-1"]:
