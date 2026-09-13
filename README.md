@@ -4,6 +4,8 @@
 
 A lightweight, self-hosted **movie and TV metadata manager** for NAS devices and home servers. Scan mounted libraries, match metadata, inspect files, and manage Kodi NFO and artwork from a desktop browser or mobile PWA. It is not a player, downloader, or transcoder.
 
+![MediaGrap English interface overview](docs/images/overview-en.png)
+
 ## What works today
 
 - Movie and show → season → episode catalogs; existing NFO and local artwork discovery.
