@@ -866,7 +866,10 @@ func parseEpisodeHint(filename string) (season, firstEpisode, lastEpisode int, o
 func tvShowHint(relative string) (string, string, *int) {
 	directory := filepath.Dir(relative)
 	showDirectory := directory
-	if seasonDirectoryPattern.MatchString(filepath.Base(directory)) {
+	// Only nested Specials is a season container; a top-level show may itself
+	// be named Specials. The directory supplies identity, not season numbers.
+	isSpecials := strings.EqualFold(filepath.Base(directory), "Specials") && filepath.Dir(directory) != "."
+	if seasonDirectoryPattern.MatchString(filepath.Base(directory)) || isSpecials {
 		showDirectory = filepath.Dir(directory)
 	}
 	if showDirectory != "." {
