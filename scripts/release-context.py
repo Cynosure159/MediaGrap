@@ -4,13 +4,13 @@
 import argparse
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import tarfile
 from pathlib import Path
 
-SEMVER = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+from source_contract import RELEASE_TAG
+
 FORBIDDEN = {
     ".git",
     ".local",
@@ -50,7 +50,6 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--tag")
     parser.add_argument("--test-snapshot", action="store_true")
-    parser.add_argument("--preview", action="store_true")
     parser.add_argument("--test-extra", action="append", default=[])
     args = parser.parse_args()
     out = Path(args.output).resolve()
@@ -60,23 +59,18 @@ def main():
     if out.exists():
         parser.error("output already exists")
     commit = git("rev-parse", "HEAD")
-    if sum((args.test_snapshot, args.preview, bool(args.tag))) != 1:
-        parser.error("choose exactly one of --tag, --preview, --test-snapshot")
+    if sum((args.test_snapshot, bool(args.tag))) != 1:
+        parser.error("choose exactly one of --tag, --test-snapshot")
     if args.test_snapshot:
         version = "test-" + commit[:12]
     else:
-        if not args.preview and (not args.tag or not SEMVER.fullmatch(args.tag)):
-            parser.error("release requires a stable vX.Y.Z tag")
+        if not args.tag or not RELEASE_TAG.fullmatch(args.tag):
+            parser.error("release requires vX.Y.Z or vX.Y.Z-rc.N (positive N)")
         if args.test_extra or git("status", "--porcelain"):
             parser.error("release requires a clean tracked tree, no extra files")
-        if args.preview:
-            if git("symbolic-ref", "--short", "HEAD") != "dev":
-                parser.error("preview requires the dev branch")
-            version = "preview-" + commit
-        else:
-            if git("rev-parse", args.tag + "^{commit}") != commit:
-                parser.error("tag must identify HEAD")
-            version = args.tag[1:]
+        if git("rev-parse", "refs/tags/" + args.tag + "^{commit}") != commit:
+            parser.error("tag must identify HEAD")
+        version = args.tag[1:]
     paths = git("ls-files", "-z").split("\0")
     tracked = set(paths)
     paths += args.test_extra

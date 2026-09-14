@@ -8,7 +8,6 @@ GitHub API writes; download_public deliberately does not use that credential.
 import importlib.util
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +15,13 @@ import tempfile
 import time
 from pathlib import Path
 
-from source_contract import REPOSITORY, download_public, source_identity, verify_archive
+from source_contract import (
+    RELEASE_TAG,
+    REPOSITORY,
+    download_public,
+    source_identity,
+    verify_archive,
+)
 
 spec = importlib.util.spec_from_file_location(
     "publication", Path(__file__).with_name("validate-publication.py")
@@ -31,9 +36,6 @@ def gh(*args):
 
 
 RELEASE_VISIBILITY_ATTEMPTS = 6
-RELEASE_TAG = re.compile(
-    r"(?:v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)|preview-[0-9a-f]{40})"
-)
 
 
 def release_for(tag):
@@ -118,11 +120,10 @@ def main():
             "--notes",
             "Matching source for the verified MediaGrap images. Retain these assets while distributing the binaries.",
             "--latest=false",
+            "--verify-tag",
         ]
         if branch == "dev":
             args.append("--prerelease")
-        else:
-            args.append("--verify-tag")
         gh(*args)
         existing = release_after_create(tag)
         if existing is None:

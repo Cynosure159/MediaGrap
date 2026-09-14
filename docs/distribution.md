@@ -6,7 +6,7 @@ This describes the current build changes, **not the already-published DockerHub 
 
 ## Build contract
 
-Stable release sources must come from a clean tracked tree whose existing `vX.Y.Z` tag identifies HEAD. `--preview` exports a clean dev branch as `preview-<full commit>` without creating a tag. No local environment, credentials, config/data/cache/runtime roots, Git metadata, node_modules or generated archive recursion is included. The exporter fails on unsafe paths/symlinks or dirty releases. It neither creates tags nor commits/pushes anything.
+Release sources must come from a clean tracked tree whose existing `vX.Y.Z` (stable) or `vX.Y.Z-rc.N` (RC) tag identifies HEAD. `N` is a positive decimal integer without leading zeros; version components are nonnegative integers without leading zeros. Use `--tag` for both channels; the former `--preview` export mode is removed. The exporter checks local tag/HEAD identity and canonical tracked bytes; CI separately checks the live tag and required remote branch tip before building and publishing. No local environment, credentials, config/data/cache/runtime roots, Git metadata, node_modules or generated archive recursion is included. The exporter fails on unsafe paths/symlinks or dirty releases. It neither creates tags nor commits/pushes anything.
 
 ```sh
 # TAG must already name an owner-approved release; this does not create it.
@@ -54,23 +54,47 @@ Vue outputs are under `packages/*/dist`; router outputs are under `packages/rout
 
 ## GitHub checks and DockerHub tags
 
-The workflow runs on PRs targeting **main and dev**, pushes to both branches and `v*` tags. Stable check names for owner-configured branch protection/rulesets:
+The workflow runs on PRs targeting **main and dev**, pushes to both branches and short stable/RC version tag pushes. GitHub tag globs select numeric `vX.Y.Z` / `vX.Y.Z-rc.N` shapes; script validation rejects noncanonical spellings. Stable check names for owner-configured branch protection/rulesets:
 
 - `Go and web checks`: fail-on-output gofmt, go vet, Go race tests, release-script tests, actual web typecheck/test/production build.
 - `Docker (amd64)` and `Docker (arm64)`: image build and same-build source/non-root runtime verification.
 
-Configure these required checks separately on both branches; a repository file cannot enable protection. Verification/PR jobs have read-only repository permissions, no registry credentials and no `pull_request_target`. Docker jobs use native `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64), with no QEMU setup; hosted ARM allocation remains an environment gate. Actions use upstream version tags. There is no separate frontend lint script.
+Keep all three required checks and one approving review on both branches, with no bypass. These are owner-managed protections; this change does not modify permissions or rulesets, and a repository file cannot enable protection. Verification/PR jobs have read-only repository permissions, no registry credentials and no `pull_request_target`. Docker jobs use native `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64), with no QEMU setup; hosted ARM allocation remains an environment gate. Actions use upstream version tags. There is no separate frontend lint script.
 
 Publication depends on all three checks and uses only the saved, tested images. Only the gated publication job has repository write access; `github.token` is scoped to source publication and DockerHub credentials to registry login. The default image is `cynosure159/mediagrap`, configurable via `DOCKERHUB_IMAGE` (`namespace/image`). Owner-configured secrets are `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; never commit their values.
 
-- A dev push produces `preview-<full commit>` and mutable `preview`, with a GitHub prerelease of the same `preview-<full commit>` name. Preview never moves `latest`. Superseded dev workflows are canceled; the remote dev tip is checked before moving the channel tag.
-- A main push runs verification only. Stable publication accepts only `vX.Y.Z` at the exact triggering commit **and current remote main tip**; it creates image tags `X.Y.Z` and `latest`. New v-prerelease tags are rejected. Existing rc1/rc2 tags are not rewritten. Stable publication is serialized without cancellation, with stale-ref checks before version/channel updates.
+- Dev/main pushes and all PRs run checks only, using test-only source snapshots. They do not save publication images, create Releases or log in/push to DockerHub. Superseded dev checks are canceled.
+- Only an explicitly pushed `vX.Y.Z-rc.N` tag at the exact triggering commit **and current remote dev tip** publishes an RC. It creates a GitHub prerelease at that existing tag, immutable image `X.Y.Z-rc.N` (plus `-amd64` / `-arm64` implementation tags), and mutable `preview`. RC publication never moves DockerHub `latest`.
+- Stable publication accepts only `vX.Y.Z` at the exact triggering commit **and current remote main tip**; it creates image tags `X.Y.Z` (plus architecture tags) and `latest`. Both channels require an existing tag, including annotated tags resolved to their commit. Each channel's publication is serialized without cancellation; live branch and tag checks occur before builds, source publication, registry login and version/channel updates. GitHub Releases are created with `--latest=false`; DockerHub `latest` is a separate stable image channel.
+- Historical tags (including rc1/rc2 and `v1.0.0`) are not moved, deleted or rewritten. Legacy `preview-<full commit>` and other prerelease spellings do not authorize new publication. The source identity validator still accepts exact historical `preview-<full commit>` locators for existing downloads/rebuilds, and synthetic `test-<12 commit chars>` locators for local fixtures.
 - Every source asset is named `mediagrap-source-<version>-<full commit>-linux-<arch>.tar.gz` under the explicit Release tag; no mutable latest-download URL is used. Archives are architecture-specific because ffprobe materials differ.
 - Before any Docker login/push, `publish-source.py` creates or checks the durable public Release, uploads missing assets without overwrite, downloads both via unauthenticated HTTPS and verifies exact SHA, identity, inventory and legal materials. Existing asset mismatches fail closed; upload races fail rather than clobber. `publish-images.py` rejects mismatched existing immutable image tags, rechecks branch eligibility, and moves the mutable channel only after matching images exist. A branch can still move immediately after the last remote check; this is not a cross-service atomic transaction.
 
 Actions artifacts retain source, manifests, diagnostics, verification, rebuild evidence and publication candidates for 30 days. They are intermediate evidence, **not the durable source offer**. Keep the public Release assets while distributing the corresponding images/binaries, including previews after `preview` moves. Do not delete or replace them to resume a failed publication. The application depends on GitHub's public availability for downloads: monitor the source link, retain independent source copies, and never distribute a candidate whose public source verification has not passed. `verify-image.py` without `--source-directory` checks the actual anonymous public download; local fixture success does not establish hosted availability.
 
 These files implement publication gates, not proof of an executed release or native hosted runner allocation. Local builds and test-only snapshots are not distributable releases; their synthetic locators are exercised with owned fixtures and are not uploaded. Repository protections, live publication and release acceptance remain owner actions.
+
+## Manual short-tag release
+
+After this workflow is reviewed and merged onto the relevant branch through its required checks and approval, an authorized maintainer may explicitly publish a new RC as follows. These commands **create and push a tag, which triggers publication**; they are not part of local verification. Choose an unused version; do not reuse `v1.0.0` or move any existing tag.
+
+```sh
+# Run in a shell that stops on errors; no force/tag replacement.
+set -eu
+# RC example: replace with the next owner-approved unused version.
+TAG=v1.0.1-rc.1
+BRANCH=dev
+# For stable instead, use TAG=v1.0.1 and BRANCH=main.
+test -z "$(git status --porcelain)"
+git fetch origin "$BRANCH" --tags
+COMMIT=$(git rev-parse "refs/remotes/origin/$BRANCH^{commit}")
+# Review this exact commit and its checks before continuing.
+git show --no-patch --format=fuller "$COMMIT"
+git tag -a "$TAG" "$COMMIT" -m "$TAG"
+git push origin "refs/tags/$TAG"
+```
+
+No full SHA suffix is needed in the Git or user-facing image tag. The full commit remains in build metadata, source filenames, manifests, candidate proofs and baked `/source` URLs. A branch advancing (or a tag moving/disappearing) makes a candidate stale and stops later publication gates; use a new approved RC number at the new dev tip rather than force-updating tags. Source/assets or immutable architecture images may already exist after a partial run; keep them and retry only if the same exact identity is still eligible. No rollback or cross-service atomicity is promised. There is no `workflow_dispatch` release path and no automatic dev-push preview publication.
 
 ## Release acceptance
 
