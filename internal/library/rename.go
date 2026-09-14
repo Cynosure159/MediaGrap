@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mediagrap/mediagrap/internal/files"
+	"github.com/mediagrap/mediagrap/internal/renamepattern"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,33 +42,27 @@ type RenamePlanItem struct {
 	Status      string `json:"status"` // pending, success, failed, skipped
 }
 
-// renderNamingTemplate replaces tokens, sanitizes path segments, and separates directory and filename parts.
+// renderNamingTemplate parses and renders a template, then validates every
+// resulting path segment after metadata sanitization. Only literal slashes in
+// the template can remain directory boundaries.
 func renderNamingTemplate(pattern string, tokens map[string]string) (dirTemplate, fileTemplate string, err error) {
-	unknown := ""
-	unavailable := ""
-	stem := namingTokenPattern.ReplaceAllStringFunc(pattern, func(token string) string {
-		name := namingTokenPattern.FindStringSubmatch(token)[1]
-		value, ok := tokens[name]
-		if !ok {
-			unknown = name
-			return token
-		}
-		if value == "" {
-			unavailable = name
-		}
-		return value
-	})
-
-	if unknown != "" {
-		return "", "", fmt.Errorf("unsupported naming token %q", unknown)
+	if err := renamepattern.Validate(pattern, renamepattern.Allowed(keys(tokens)...)); err != nil {
+		return "", "", err
 	}
-	if unavailable != "" {
-		return "", "", fmt.Errorf("naming token %q has no available value", unavailable)
+	stem, err := renamepattern.Render(pattern, tokens, renamepattern.Allowed(keys(tokens)...))
+	if err != nil {
+		return "", "", err
 	}
 
 	parts := strings.Split(stem, "/")
 	for i := range parts {
 		parts[i] = sanitizeFilename(parts[i])
+		if parts[i] == "" || parts[i] == "." || parts[i] == ".." {
+			if i == len(parts)-1 {
+				return "", "", errors.New("naming pattern produced an empty filename")
+			}
+			return "", "", errors.New("naming pattern produced an invalid directory segment")
+		}
 	}
 	stem = strings.Join(parts, "/")
 
@@ -77,12 +72,15 @@ func renderNamingTemplate(pattern string, tokens map[string]string) (dirTemplate
 	} else {
 		fileTemplate = stem
 	}
-
-	if fileTemplate == "" {
-		return "", "", errors.New("naming pattern produced an empty filename")
-	}
-
 	return dirTemplate, fileTemplate, nil
+}
+
+func keys(values map[string]string) []string {
+	result := make([]string, 0, len(values))
+	for key := range values {
+		result = append(result, key)
+	}
+	return result
 }
 
 // evaluateFileRename checks if a planned rename path has collisions against the filesystem or other planned files.
