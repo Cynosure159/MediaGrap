@@ -12,7 +12,7 @@ var sourceURL, sourceSHA256, sourceArchitecture string
 
 var sourceCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var sourceHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var sourceVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var sourceVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$`)
 
 func validSourceLocator(build BuildInfo) bool {
 	if !sourceCommitPattern.MatchString(build.Commit) || !sourceHashPattern.MatchString(build.SourceSHA256) || build.SourceArchitecture != runtime.GOARCH || (build.SourceArchitecture != "amd64" && build.SourceArchitecture != "arm64") {
@@ -20,6 +20,7 @@ func validSourceLocator(build BuildInfo) bool {
 	}
 	tag := "v" + build.Version
 	if !sourceVersionPattern.MatchString(build.Version) {
+		// Preserve historical preview downloads and test fixtures, not release eligibility.
 		if build.Version != "preview-"+build.Commit && build.Version != "test-"+build.Commit[:12] {
 			return false
 		}

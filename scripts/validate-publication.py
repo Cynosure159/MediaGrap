@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from source_contract import STABLE, source_identity, verify_archive
+from source_contract import RC, RELEASE_TAG, source_identity, verify_archive
 
 
 def git(*args):
@@ -18,18 +18,14 @@ def git(*args):
 def publication_identity(event, ref, commit, remote_tip):
     if event != "push" or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("publication requires a push and full commit")
-    if ref == "refs/heads/dev":
-        version = "preview-" + commit
-        branch = "dev"
-    elif ref.startswith("refs/tags/v") and STABLE.fullmatch(
-        ref.removeprefix("refs/tags/v")
+    if not ref.startswith("refs/tags/") or not RELEASE_TAG.fullmatch(
+        ref.removeprefix("refs/tags/")
     ):
-        version = ref.removeprefix("refs/tags/v")
-        branch = "main"
-        if git("rev-parse", ref + "^{commit}") != commit:
-            raise ValueError("tag/commit mismatch")
-    else:
-        raise ValueError("only dev previews and stable vX.Y.Z tags may publish")
+        raise ValueError("only vX.Y.Z-rc.N and stable vX.Y.Z tag pushes may publish")
+    version = ref.removeprefix("refs/tags/v")
+    branch = "dev" if RC.fullmatch(version) else "main"
+    if git("rev-parse", ref + "^{commit}") != commit:
+        raise ValueError("tag/commit mismatch")
     if remote_tip(branch) != commit:
         raise ValueError("stale or wrong publication branch tip: " + branch)
     return version, branch
@@ -40,12 +36,25 @@ def current_identity():
         line = git("ls-remote", "--exit-code", "origin", "refs/heads/" + branch)
         return line.split()[0]
 
-    return publication_identity(
-        os.environ["GITHUB_EVENT_NAME"],
-        os.environ["GITHUB_REF"],
-        os.environ["EXPECTED_COMMIT"],
-        remote_tip,
+    ref = os.environ["GITHUB_REF"]
+    commit = os.environ["EXPECTED_COMMIT"]
+    identity = publication_identity(
+        os.environ["GITHUB_EVENT_NAME"], ref, commit, remote_tip
     )
+    # Check the live tag too, peeling annotated tags. A moved/deleted remote tag
+    # must not publish merely because the checkout still has the original ref.
+    refs = {
+        name: sha
+        for sha, name in (
+            line.split()
+            for line in git(
+                "ls-remote", "--exit-code", "origin", ref, ref + "^{}"
+            ).splitlines()
+        )
+    }
+    if refs.get(ref + "^{}", refs.get(ref)) != commit:
+        raise ValueError("remote tag/commit mismatch")
+    return identity
 
 
 def validate_candidates(root, version, commit):

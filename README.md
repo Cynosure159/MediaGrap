@@ -43,6 +43,49 @@ docker run -d --name mediagrap --restart unless-stopped \
   cynosure159/mediagrap:latest
 ```
 
+### Docker Compose
+
+Save this as `compose.yaml` in a dedicated deployment directory. Set `MEDIAGRAP_MEDIA_PATH` to an existing host media directory; the required variable and `create_host_path: false` prevent an omitted or misspelled path from becoming an empty directory.
+
+```yaml
+services:
+  mediagrap:
+    image: cynosure159/mediagrap:1.0.0
+    container_name: mediagrap
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MEDIAGRAP_CONFIG_DIR: /config
+      MEDIAGRAP_CACHE_DIR: /cache
+      MEDIAGRAP_MEDIA_ROOTS: /media
+    volumes:
+      - type: bind
+        source: ./runtime/config
+        target: /config
+      - type: bind
+        source: ./runtime/cache
+        target: /cache
+      - type: bind
+        source: ${MEDIAGRAP_MEDIA_PATH:?Set MEDIAGRAP_MEDIA_PATH to an existing host media directory}
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+```
+
+Prepare persistent state directories, set the host path, and start it (this does not build or publish an image):
+
+```sh
+sudo install -d -m 0750 -o 65532 -g 65532 runtime/config runtime/cache
+export MEDIAGRAP_MEDIA_PATH=/srv/media
+docker compose up -d
+```
+
+`runtime/config` persists the database and settings; `runtime/cache` is disposable cache data. The image runs as UID/GID **65532:65532**, so both state directories must be writable by that user. The media mount is read-only for safe evaluation. After backing up sidecars, change only `read_only: true` to `read_only: false` and recreate with `docker compose up -d` when you intentionally need NFO/artwork or rename writes. Keep the host media path existing and grant only the required permissions.
+
 Open <http://127.0.0.1:8080> on the Docker host and create your administrator. For a remote NAS, use a trusted SSH tunnel or another isolated access path. Do not run the app as root or recursively change media ownership. NAS ACLs/SELinux may need host-specific configuration; UID/GID **65532** needs state write access and media read/traverse access.
 
 | Container path | Purpose |
@@ -81,4 +124,4 @@ Vite prints the browser URL and proxies to the Go API; state lives in ignored `.
 
 ## License and source
 
-The current project uses [AGPL-3.0-only](LICENSE). Third-party works and provider content retain their own terms; this does not relicense all historic commits. Current distribution builds link **Download source / 下载源码** and unauthenticated `/source` to the exact version/commit/architecture source asset on [GitHub Releases](https://github.com/Cynosure159/MediaGrap/releases), rather than embedding large source archives in the runtime image. A native development build without a valid baked locator returns 503. See [source/build/release instructions](docs/distribution.md) and [upstream legal materials](docs/legal/README.md). The CI channels are `preview` / `preview-<full commit>` from dev, and stable version / `latest` only from a release tag at the main tip; see the release gates below.
+The current project uses [AGPL-3.0-only](LICENSE). Third-party works and provider content retain their own terms; this does not relicense all historic commits. Current distribution builds link **Download source / 下载源码** and unauthenticated `/source` to the exact version/commit/architecture source asset on [GitHub Releases](https://github.com/Cynosure159/MediaGrap/releases), rather than embedding large source archives in the runtime image. A native development build without a valid baked locator returns 503. See [source/build/release instructions](docs/distribution.md) and [upstream legal materials](docs/legal/README.md). Dev/main pushes and PRs run checks only. A manually pushed `vX.Y.Z-rc.N` tag at the current dev tip publishes `X.Y.Z-rc.N` and `preview`, never `latest`; a stable `vX.Y.Z` tag at the current main tip publishes the version and `latest`. Full commits remain in matching-source identities. See [manual short-tag commands and release gates](docs/distribution.md#manual-short-tag-release).

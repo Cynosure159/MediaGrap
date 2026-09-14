@@ -9,7 +9,13 @@ import (
 )
 
 func TestSourceDownload(t *testing.T) {
-	build := sourceTestBuild("1.2.3")
+	for _, version := range []string{"1.2.3", "1.2.3-rc.1"} {
+		t.Run(version, func(t *testing.T) { testSourceDownload(t, version) })
+	}
+}
+
+func testSourceDownload(t *testing.T, version string) {
+	build := sourceTestBuild(version)
 	handler := withSourceDownload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(418) }), build)
 	for _, method := range []string{"GET", "HEAD"} {
 		rec := httptest.NewRecorder()
@@ -64,21 +70,36 @@ func sourceTestBuild(version string) BuildInfo {
 }
 
 func TestSourceUnavailable(t *testing.T) {
+	for _, version := range []string{"1.2.3", "1.2.3-rc.1"} {
+		t.Run(version, func(t *testing.T) { testSourceUnavailable(t, version) })
+	}
+}
+
+func testSourceUnavailable(t *testing.T, version string) {
 	for _, mutate := range []func(*BuildInfo){
 		func(b *BuildInfo) { b.SourceURL = "" },
 		func(b *BuildInfo) { b.SourceURL = strings.Replace(b.SourceURL, "https:", "http:", 1) },
 		func(b *BuildInfo) { b.SourceURL += "?token=secret" },
 		func(b *BuildInfo) { b.SourceURL += "#fragment" },
 		func(b *BuildInfo) { b.SourceURL = strings.Replace(b.SourceURL, "Cynosure159", "other", 1) },
+		func(b *BuildInfo) { b.SourceURL = strings.Replace(b.SourceURL, "github.com", "github.com.evil", 1) },
+		func(b *BuildInfo) { b.SourceURL = strings.Replace(b.SourceURL, "github.com", "user@github.com", 1) },
 		func(b *BuildInfo) {
-			b.SourceURL = strings.Replace(b.SourceURL, "download/v1.2.3", "latest/download", 1)
+			b.SourceURL = strings.Replace(b.SourceURL, "download/v"+version, "download/v1.2.4-rc.2", 1)
+		},
+		func(b *BuildInfo) { b.SourceURL = strings.Replace(b.SourceURL, "download/v", "download/%76", 1) },
+		func(b *BuildInfo) {
+			b.SourceURL = strings.Replace(b.SourceURL, "download/v"+version, "download/preview", 1)
+		},
+		func(b *BuildInfo) {
+			b.SourceURL = strings.Replace(b.SourceURL, "download/v"+version, "latest/download", 1)
 		},
 		func(b *BuildInfo) { b.Commit = "abc" },
 		func(b *BuildInfo) { b.Version = "1.2.4" },
 		func(b *BuildInfo) { b.SourceSHA256 = strings.Repeat("z", 64) },
 		func(b *BuildInfo) { b.SourceArchitecture = "other" },
 	} {
-		build := sourceTestBuild("1.2.3")
+		build := sourceTestBuild(version)
 		mutate(&build)
 		handler := withSourceDownload(http.NotFoundHandler(), build)
 		rec := httptest.NewRecorder()
@@ -89,13 +110,13 @@ func TestSourceUnavailable(t *testing.T) {
 	}
 }
 
-func TestSourcePreviewAndSnapshotIdentity(t *testing.T) {
-	for _, version := range []string{"preview-" + strings.Repeat("a", 40), "test-" + strings.Repeat("a", 12)} {
+func TestSourceRCAndHistoricalPreviewAndSnapshotIdentity(t *testing.T) {
+	for _, version := range []string{"1.0.0", "1.0.1-rc.1", "1.0.1-rc.12", "preview-" + strings.Repeat("a", 40), "test-" + strings.Repeat("a", 12)} {
 		if !validSourceLocator(sourceTestBuild(version)) {
 			t.Fatal("valid identity rejected")
 		}
 	}
-	for _, version := range []string{"1.0.0-rc.3", "preview-" + strings.Repeat("b", 40), "test-" + strings.Repeat("b", 12)} {
+	for _, version := range []string{"1.0.0-rc1", "1.0.0-rc.0", "1.0.0-rc.01", "01.0.0-rc.1", "1.0.0-rc.1+build", "1.0.0-rc.١", "1.0.0-rc.1-" + strings.Repeat("a", 40), "preview-" + strings.Repeat("b", 40), "test-" + strings.Repeat("b", 12)} {
 		if validSourceLocator(sourceTestBuild(version)) {
 			t.Fatal("unapproved identity accepted")
 		}

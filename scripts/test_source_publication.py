@@ -6,6 +6,7 @@ import os
 import subprocess
 import tarfile
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -128,6 +129,7 @@ class SourceContractTests(unittest.TestCase):
         for arch in ("amd64", "arm64"):
             for version, tag in (
                 ("1.2.3", "v1.2.3"),
+                ("1.2.3-rc.3", "v1.2.3-rc.3"),
                 ("preview-" + commit, "preview-" + commit),
                 ("test-" + commit[:12], "preview-" + commit),
             ):
@@ -140,7 +142,12 @@ class SourceContractTests(unittest.TestCase):
                 )
         for version in (
             "latest",
-            "1.2.3-rc.3",
+            "1.2.3-rc.0",
+            "1.2.3-rc.03",
+            "1.2.3-rc3",
+            "1.2.3-rc.3+build",
+            "1.2.3-rc.3-" + commit,
+            "1.2.3-rc.٣",
             "preview-" + "b" * 40,
             "01.2.3",
             "1.2.3?x=1",
@@ -206,6 +213,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 "commit refs/heads/main\nmark :1\ncommitter Fixture <fixture@example.invalid> 1 +0000\ndata 4\nmain\n"
                 "commit refs/heads/dev\nmark :2\ncommitter Fixture <fixture@example.invalid> 2 +0000\ndata 3\ndev\nfrom :1\n"
                 "reset refs/tags/v1.2.3\nfrom :1\nreset refs/tags/v1.2.4\nfrom :2\n"
+                "reset refs/tags/v1.2.4-rc.1\nfrom :2\nreset refs/tags/v1.2.4-rc.2\nfrom :1\n"
             )
             subprocess.run(
                 ["git", "-C", str(repo), "fast-import", "--quiet"],
@@ -233,16 +241,24 @@ class PublicationPolicyTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     publication.publication_identity(
-                        "push", "refs/heads/dev", tips["dev"], tips.__getitem__
+                        "push", "refs/tags/v1.2.4-rc.1", tips["dev"], tips.__getitem__
                     ),
-                    ("preview-" + tips["dev"], "dev"),
+                    ("1.2.4-rc.1", "dev"),
                 )
                 for event, ref, commit in (
                     ("push", "refs/tags/v1.2.4", tips["dev"]),
                     ("push", "refs/heads/main", tips["main"]),
                     ("push", "refs/heads/dev", tips["main"]),
+                    ("push", "refs/heads/dev", tips["dev"]),
                     ("pull_request", "refs/heads/dev", tips["dev"]),
-                    ("push", "refs/tags/v1.0.0-rc.3", tips["main"]),
+                    ("push", "refs/tags/v1.2.4-rc.2", tips["main"]),
+                    ("push", "refs/tags/v1.2.4-rc.1", tips["main"]),
+                    ("pull_request", "refs/tags/v1.2.4-rc.1", tips["dev"]),
+                    ("push", "refs/tags/v1.2.4-rc1", tips["dev"]),
+                    ("push", "refs/tags/v1.2.4-rc.01", tips["dev"]),
+                    ("push", "refs/tags/v1.2.4-rc.0", tips["dev"]),
+                    ("push", "refs/tags/v1.2.4-rc.1-" + tips["dev"], tips["dev"]),
+                    ("push", "refs/tags/preview-" + tips["dev"], tips["dev"]),
                     ("push", "refs/tags/v1.2.3", tips["dev"]),
                     ("push", "refs/heads/feature", tips["dev"]),
                 ):
@@ -250,6 +266,106 @@ class PublicationPolicyTests(unittest.TestCase):
                         publication.publication_identity(
                             event, ref, commit, tips.__getitem__
                         )
+
+    def test_live_tag_and_branch_rechecks(self):
+        commit = "a" * 40
+        for version, branch in (("1.2.3", "main"), ("1.2.4-rc.1", "dev")):
+            ref = "refs/tags/v" + version
+            for kind in ("lightweight", "annotated", "moved", "deleted", "stale"):
+                with self.subTest(version=version, kind=kind):
+                    remote = {
+                        "lightweight": f"{commit}\t{ref}",
+                        "annotated": f"{'b' * 40}\t{ref}\n{commit}\t{ref}^{{}}",
+                        "moved": f"{'b' * 40}\t{ref}",
+                        "deleted": "",
+                        "stale": f"{commit}\t{ref}",
+                    }[kind]
+                    tip = "c" * 40 if kind == "stale" else commit
+                    results = {
+                        ("rev-parse", ref + "^{commit}"): commit,
+                        (
+                            "ls-remote",
+                            "--exit-code",
+                            "origin",
+                            "refs/heads/" + branch,
+                        ): f"{tip}\trefs/heads/{branch}",
+                        (
+                            "ls-remote",
+                            "--exit-code",
+                            "origin",
+                            ref,
+                            ref + "^{}",
+                        ): remote,
+                    }
+                    with (
+                        mock.patch.object(
+                            publication,
+                            "git",
+                            side_effect=lambda *args, results=results: results[args],
+                        ),
+                        mock.patch.dict(
+                            os.environ,
+                            {
+                                "GITHUB_EVENT_NAME": "push",
+                                "GITHUB_REF": ref,
+                                "EXPECTED_COMMIT": commit,
+                            },
+                        ),
+                    ):
+                        if kind in ("lightweight", "annotated"):
+                            self.assertEqual(
+                                publication.current_identity(), (version, branch)
+                            )
+                        else:
+                            with self.assertRaises(ValueError):
+                                publication.current_identity()
+
+    def test_legacy_release_tags_cannot_reach_github_api(self):
+        with mock.patch.object(publisher, "gh") as gh:
+            for tag in ("preview-" + "a" * 40, "v1.0.0-rc1", "v1.0.0-rc.01"):
+                with self.assertRaises(ValueError):
+                    publisher.release_for(tag)
+            gh.assert_not_called()
+
+    def test_workflow_branch_and_pr_export_test_only(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        ).read_text()
+        block = (
+            workflow.split("- name: Export clean source context")[1]
+            .split("- name: Build candidate and external source assets")[0]
+            .split("        run: |\n")[1]
+        )
+        script = textwrap.dedent(block)
+        for event, ref, expected in (
+            ("push", "refs/heads/dev", ["--test-snapshot"]),
+            ("push", "refs/heads/main", ["--test-snapshot"]),
+            ("pull_request", "refs/pull/1/merge", ["--test-snapshot"]),
+            ("push", "refs/tags/v1.2.3-rc.1", ["--guard-only", "--tag"]),
+            ("push", "refs/tags/v1.2.3", ["--guard-only", "--tag"]),
+        ):
+            with (
+                self.subTest(event=event, ref=ref),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                (root / "scripts").mkdir()
+                stub = "import sys\nfrom pathlib import Path\nwith Path('calls').open('a') as f: f.write(sys.argv[1] + '\\n')\n"
+                for name in ("release-context.py", "validate-publication.py"):
+                    (root / "scripts" / name).write_text(stub)
+                subprocess.run(
+                    ["bash", "-eu", "-c", script],
+                    cwd=root,
+                    check=True,
+                    env={
+                        **os.environ,
+                        "EVENT_NAME": event,
+                        "REF": ref,
+                        "REF_NAME": ref.split("/")[-1],
+                        "RUNNER_TEMP": temporary,
+                    },
+                )
+                self.assertEqual((root / "calls").read_text().splitlines(), expected)
 
     def test_candidates_missing_test_wrong_hash_and_identity_fail_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -272,7 +388,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 publication.validate_candidates(root, "1.2.3", "a" * 40)
 
     def test_release_visibility_uses_exact_tag_and_bounded_missing_retry(self):
-        tag = "preview-" + "a" * 40
+        tag = "v1.2.3-rc.1"
         existing = {"draft": False, "prerelease": True, "assets": []}
         missing = subprocess.CalledProcessError(
             1,
@@ -296,7 +412,7 @@ class PublicationPolicyTests(unittest.TestCase):
         sleep.assert_called_once_with(5)
 
     def test_release_visibility_exhaustion_and_channel_errors_fail_closed(self):
-        tag = "preview-" + "a" * 40
+        tag = "v1.2.3-rc.1"
         missing = subprocess.CalledProcessError(
             1,
             ["gh"],
@@ -323,7 +439,7 @@ class PublicationPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             commit = "a" * 40
-            version = "preview-" + commit
+            version = "1.2.3-rc.1"
             candidates(root, version, commit)
             with (
                 mock.patch.object(
@@ -358,7 +474,7 @@ class PublicationPolicyTests(unittest.TestCase):
             mock.patch.object(publisher, "gh", side_effect=error),
             self.assertRaises(subprocess.CalledProcessError),
         ):
-            publisher.release_for("preview-" + "a" * 40)
+            publisher.release_for("v1.2.3-rc.1")
 
     def test_upload_never_overwrites_and_checks_existing_public_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -448,7 +564,7 @@ class PublicationPolicyTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 commit = "a" * 40
-                version = "1.2.3" if branch == "main" else "preview-" + commit
+                version = "1.2.3" if branch == "main" else "1.2.3-rc.1"
                 candidates(root, version, commit)
                 existing = {"draft": False, "prerelease": branch == "dev", "assets": []}
 
@@ -489,7 +605,8 @@ class PublicationPolicyTests(unittest.TestCase):
                 self.assertEqual(create[:2], ("release", "create"))
                 self.assertIn("--latest=false", create)
                 self.assertEqual("--prerelease" in create, branch == "dev")
-                self.assertEqual("--verify-tag" in create, branch == "main")
+                self.assertIn("--verify-tag", create)
+                self.assertEqual(create[2], "v" + version)
                 self.assertEqual(
                     len([call for call in calls if call[:2] == ("release", "upload")]),
                     2,
@@ -505,12 +622,15 @@ class PublicationPolicyTests(unittest.TestCase):
             ("main", "none"),
             ("dev", "none"),
             ("dev", "stale"),
+            ("main", "stale"),
             ("main", "immutable"),
+            ("dev", "immutable"),
+            ("dev", "saved-image"),
         ):
             with tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 commit = "a" * 40
-                version = "1.2.3" if branch == "main" else "preview-" + commit
+                version = "1.2.3" if branch == "main" else "1.2.3-rc.1"
                 proofs = candidates(root, version, commit)
                 public = [
                     {
@@ -525,8 +645,10 @@ class PublicationPolicyTests(unittest.TestCase):
                     json.dumps(public)
                 )
 
-                def docker(*args):
+                def docker(*args, fault=fault):
                     if args[:2] == ("image", "inspect"):
+                        if fault == "saved-image":
+                            return "sha256:untested"
                         return "sha256:" + args[2].removeprefix("mediagrap:ci-")
                     return ""
 
@@ -568,8 +690,12 @@ class PublicationPolicyTests(unittest.TestCase):
                     self.assertFalse(
                         any("example/mediagrap:latest" in call for call in calls)
                     )
-                if fault == "immutable":
+                if fault in ("immutable", "saved-image"):
                     self.assertFalse(any(call[0] in ("push", "tag") for call in calls))
+                if fault == "none":
+                    self.assertTrue(
+                        any("example/mediagrap:" + version in call for call in calls)
+                    )
 
     def test_registry_errors_are_not_missing_images(self):
         for error, missing in (
@@ -610,6 +736,16 @@ class PublicationPolicyTests(unittest.TestCase):
         self.assertIn("contents: write", publish)
         self.assertIn("github.event_name == 'push'", publish)
         self.assertIn("needs: [verify, docker]", publish)
+        self.assertIn("startsWith(github.ref, 'refs/tags/v')", publish)
+        self.assertNotIn("refs/heads/dev", publish)
+        self.assertNotIn("--preview", verification)
+        self.assertIn("contains(github.ref, '-rc.')", publish)
+        self.assertIn("cancel-in-progress: false", publish)
+        self.assertIn('"v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"', text)
+        self.assertIn('"v[0-9]+.[0-9]+.[0-9]+"', text)
+        save = verification.split("- name: Save tested publication candidate")[1]
+        self.assertIn("startsWith(github.ref, 'refs/tags/v')", save)
+        self.assertNotIn("refs/heads/dev", save)
         gates = [
             "scripts/validate-publication.py candidates",
             "scripts/publish-source.py candidates",

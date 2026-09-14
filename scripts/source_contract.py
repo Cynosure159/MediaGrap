@@ -12,18 +12,22 @@ from urllib.parse import urlsplit
 from frontend_materials import verify_source
 
 REPOSITORY = "Cynosure159/MediaGrap"
-STABLE = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
+STABLE = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+RC = re.compile(STABLE.pattern + r"-rc\.[1-9][0-9]*")
+RELEASE_TAG = re.compile(r"v(?:" + STABLE.pattern + r"|" + RC.pattern + r")")
 
 
 def source_identity(version, commit, arch):
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or arch not in ("amd64", "arm64"):
         raise ValueError("invalid source commit/architecture")
-    if STABLE.fullmatch(version):
+    if STABLE.fullmatch(version) or RC.fullmatch(version):
         tag = "v" + version
+    # Historical preview downloads and local test snapshots remain readable, but
+    # neither identity authorizes a new publication.
     elif version in ("preview-" + commit, "test-" + commit[:12]):
         tag = "preview-" + commit
     else:
-        raise ValueError("invalid stable/preview/test source version")
+        raise ValueError("invalid stable/RC/historical preview/test source version")
     name = f"mediagrap-source-{version}-{commit}-linux-{arch}.tar.gz"
     return tag, name, f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}"
 
