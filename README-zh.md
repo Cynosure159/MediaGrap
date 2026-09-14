@@ -43,6 +43,49 @@ docker run -d --name mediagrap --restart unless-stopped \
   cynosure159/mediagrap:latest
 ```
 
+### Docker Compose
+
+将以下内容保存为专用部署目录中的 `compose.yaml`。把 `MEDIAGRAP_MEDIA_PATH` 设置为宿主机上已存在的媒体目录；必需变量和 `create_host_path: false` 会在路径遗漏或拼写错误时直接失败，避免误创建空目录。
+
+```yaml
+services:
+  mediagrap:
+    image: cynosure159/mediagrap:1.0.0
+    container_name: mediagrap
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MEDIAGRAP_CONFIG_DIR: /config
+      MEDIAGRAP_CACHE_DIR: /cache
+      MEDIAGRAP_MEDIA_ROOTS: /media
+    volumes:
+      - type: bind
+        source: ./runtime/config
+        target: /config
+      - type: bind
+        source: ./runtime/cache
+        target: /cache
+      - type: bind
+        source: ${MEDIAGRAP_MEDIA_PATH:?Set MEDIAGRAP_MEDIA_PATH to an existing host media directory}
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+```
+
+创建持久化状态目录，设置宿主机路径，然后启动（此命令不会构建或发布镜像）：
+
+```sh
+sudo install -d -m 0750 -o 65532 -g 65532 runtime/config runtime/cache
+export MEDIAGRAP_MEDIA_PATH=/srv/media
+docker compose up -d
+```
+
+`runtime/config` 持久化数据库和设置；`runtime/cache` 是可丢弃的缓存数据。镜像以 UID/GID **65532:65532** 运行，因此两个状态目录都必须允许该用户写入。媒体挂载在安全评估时为只读。备份 sidecar 后，只有在确实需要写入 NFO/图片或执行重命名时，才将 `read_only: true` 改为 `read_only: false`，再执行 `docker compose up -d` 重建容器。保持宿主机媒体路径已存在，并只授予必要权限。
+
 在 Docker 宿主机打开 <http://127.0.0.1:8080> 并创建管理员。远程 NAS 请使用可信 SSH 隧道或其他隔离访问方式。不要以 root 运行应用，也不要递归修改媒体所有权。NAS ACL/SELinux 可能需要额外设置；UID/GID **65532** 需要状态目录读写权限和媒体目录读取/遍历权限。
 
 | 容器路径 | 用途 |
@@ -81,4 +124,4 @@ Vite 会打印浏览器地址并代理到 Go API，状态保存在已忽略的 `
 
 ## 许可证与对应源码
 
-当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 跳转到 [GitHub Releases](https://github.com/Cynosure159/MediaGrap/releases) 上固定版本、完整提交和架构的对应源码资产，不再将大型源码归档嵌入运行镜像。缺少有效内置链接的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。CI 的 dev 渠道为 `preview` / `preview-<完整提交>`；只有位于 main 最新提交的正式版本标签可发布版本镜像和 `latest`。具体发布门禁见上述说明。
+当前项目采用 [AGPL-3.0-only](LICENSE)。第三方作品与 Provider 内容保留各自条款；这不表示所有历史提交已重新授权。当前发行构建通过界面的 **Download source / 下载源码** 和无需登录的 `/source` 跳转到 [GitHub Releases](https://github.com/Cynosure159/MediaGrap/releases) 上固定版本、完整提交和架构的对应源码资产，不再将大型源码归档嵌入运行镜像。缺少有效内置链接的原生开发构建返回 503。详见[源码、构建与发布说明](docs/distribution.md)及[上游法律材料](docs/legal/README.md)。dev/main 推送和 PR 仅运行检查。手动推送指向 dev 当前最新提交的 `vX.Y.Z-rc.N` 标签，才会发布 `X.Y.Z-rc.N` 和 `preview`，绝不更新 `latest`；指向 main 当前最新提交的正式 `vX.Y.Z` 标签发布版本镜像和 `latest`。对应源码身份仍保留完整提交。详见[手动短标签命令与发布门禁](docs/distribution.md#manual-short-tag-release)。

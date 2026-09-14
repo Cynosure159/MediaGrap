@@ -36,19 +36,24 @@ class DockerSourceTests(unittest.TestCase):
 
 class ReleaseContextTests(unittest.TestCase):
     def test_version_tags(self):
-        for tag in ["v1.2.3", "v0.0.7", "v2.0.0"]:
-            self.assertIsNotNone(release.SEMVER.fullmatch(tag), tag)
+        for tag in ["v1.2.3", "v0.0.7", "v2.0.0", "v2.0.0-rc.1", "v1.2.3-rc.12"]:
+            self.assertIsNotNone(release.RELEASE_TAG.fullmatch(tag), tag)
         for tag in [
             "1.2.3",
             "v01.2.3",
             "v1.2",
             "v1.2.3-01",
-            "v2.0.0-rc.1",
+            "v2.0.0-rc.0",
+            "v2.0.0-rc.01",
+            "v2.0.0-rc1",
+            "v2.0.0-rc.1-" + "a" * 40,
+            "v2.0.0-rc.١",
+            "preview-" + "a" * 40,
             "v1.2.3-alpha-1",
             "v1.2.3+local",
             "v1.2.3;echo unsafe",
         ]:
-            self.assertIsNone(release.SEMVER.fullmatch(tag), tag)
+            self.assertIsNone(release.RELEASE_TAG.fullmatch(tag), tag)
 
     def test_source_exclusions(self):
         for name in [
@@ -78,6 +83,11 @@ class ReleaseContextTests(unittest.TestCase):
             self.assertTrue(release.safe_path(name), name)
 
     def test_clean_export_uses_commit_blobs_not_working_bytes(self):
+        for tag in ("v1.2.3", "v1.2.3-rc.1"):
+            with self.subTest(tag=tag):
+                self.check_clean_export(tag)
+
+    def check_clean_export(self, tag):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "checkout"
             root.mkdir()
@@ -97,7 +107,7 @@ class ReleaseContextTests(unittest.TestCase):
                 ("rev-parse", "--show-toplevel"): str(root),
                 ("rev-parse", "HEAD"): commit,
                 ("status", "--porcelain"): "",
-                ("rev-parse", "v1.2.3^{commit}"): commit,
+                ("rev-parse", "refs/tags/" + tag + "^{commit}"): commit,
                 ("ls-files", "-z"): "\0".join(names),
                 ("show", "-s", "--format=%cI", "HEAD"): "2026-01-01T00:00:00Z",
             }
@@ -111,16 +121,17 @@ class ReleaseContextTests(unittest.TestCase):
                 ),
                 mock.patch(
                     "sys.argv",
-                    ["release-context.py", "--tag", "v1.2.3", "--output", str(output)],
+                    ["release-context.py", "--tag", tag, "--output", str(output)],
                 ),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 release.main()
             self.assertEqual((output / "LICENSE").read_bytes(), b"committed bytes")
             self.assertFalse((output / "untracked.txt").exists())
-            self.assertFalse(
-                json.loads((output / "release-input.json").read_text())["testOnly"]
-            )
+            manifest = json.loads((output / "release-input.json").read_text())
+            self.assertFalse(manifest["testOnly"])
+            self.assertEqual(manifest["version"], tag[1:])
+            self.assertEqual(manifest["commit"], commit)
             results[("status", "--porcelain")] = " M LICENSE"
             with (
                 mock.patch.object(
@@ -131,7 +142,7 @@ class ReleaseContextTests(unittest.TestCase):
                     [
                         "release-context.py",
                         "--tag",
-                        "v1.2.3",
+                        tag,
                         "--output",
                         str(output.parent / "dirty"),
                     ],
@@ -141,7 +152,7 @@ class ReleaseContextTests(unittest.TestCase):
             ):
                 release.main()
 
-    def test_preview_rejects_nondev_dirty_and_conflicting_modes(self):
+    def test_legacy_preview_export_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "checkout"
             root.mkdir()
