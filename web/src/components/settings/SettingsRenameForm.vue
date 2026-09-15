@@ -7,6 +7,8 @@ import {
   tvRenameDefault,
   movieRenameTokens,
   tvRenameTokens,
+  simulateRenamePattern,
+  renamePatternErrorMessage,
 } from '@/composables/useRenamePattern'
 
 const props = defineProps<{
@@ -118,9 +120,15 @@ const tvPresets = [
   },
 ]
 
-// Interactive token insertion
+// Interactive token insertion. Optional mode inserts the complete three-field form.
+const insertionMode = ref<'required' | 'optional'>('required')
+const insertionPrefix = ref(' (')
+const insertionSuffix = ref(')')
+
 function insertToken(kind: 'movie' | 'tv', tokenName: string) {
-  const token = '${' + tokenName + '}'
+  const token = insertionMode.value === 'optional'
+    ? '${' + insertionPrefix.value + ',' + tokenName + ',' + insertionSuffix.value + '}'
+    : '${' + tokenName + '}'
   const input = kind === 'movie' ? movieInputRef.value : tvInputRef.value
   if (!input) {
     if (kind === 'movie') movie.value += token
@@ -152,8 +160,9 @@ const sampleMovieData: Record<string, string> = {
   resolution: '4K',
   videoCodec: 'HEVC',
   audioCodec: 'TrueHD Atmos',
-  edition: 'Remastered',
-  imdbId: 'tt1375666',
+  // Synthetic preview data only; these fields are intentionally unavailable in runtime.
+  edition: '',
+  imdbId: '',
 }
 
 const sampleTvData: Record<string, string> = {
@@ -171,24 +180,28 @@ const sampleTvData: Record<string, string> = {
   audioCodec: 'DTS-HD',
 }
 
-function evaluatePattern(pattern: string, data: Record<string, string>): { dir: string; filename: string } {
-  if (!pattern.trim()) {
-    return { dir: '', filename: '—' }
-  }
-  let evaluated = pattern
-  for (const [key, val] of Object.entries(data)) {
-    evaluated = evaluated.replaceAll('${' + key + '}', val)
-  }
-  const parts = evaluated.split('/').filter(Boolean)
-  if (parts.length === 0) return { dir: '', filename: evaluated + '.mkv' }
-  if (parts.length === 1) return { dir: '', filename: parts[0] + '.mkv' }
-  const filename = parts.pop() + '.mkv'
-  const dir = parts.join('/') + '/'
-  return { dir, filename }
+const sampleMode = ref<'complete' | 'missingOptional'>('complete')
+const missingMovieData = {
+  ...sampleMovieData,
+  resolution: '',
+  videoCodec: '',
+  audioCodec: '',
+  // Edition and IMDb ID are unavailable in both synthetic modes; no runtime values are implied.
+  edition: '',
+  imdbId: '',
 }
+const missingTvData = { ...sampleTvData, resolution: '', videoCodec: '', audioCodec: '' }
 
-const moviePreview = computed(() => evaluatePattern(movie.value, sampleMovieData))
-const tvPreview = computed(() => evaluatePattern(tv.value, sampleTvData))
+const moviePreview = computed(() => simulateRenamePattern(
+  movie.value,
+  sampleMode.value === 'complete' ? sampleMovieData : missingMovieData,
+  movieRenameTokens,
+))
+const tvPreview = computed(() => simulateRenamePattern(
+  tv.value,
+  sampleMode.value === 'complete' ? sampleTvData : missingTvData,
+  tvRenameTokens,
+))
 
 async function save() {
   if (busy.value) return
@@ -304,6 +317,18 @@ async function save() {
                 />
               </div>
 
+              <div class="rename-assist" :aria-label="zh ? '占位符插入选项' : 'Token insertion options'">
+                <div class="rename-assist__choice">
+                  <span class="tokens-title">{{ zh ? '插入方式' : 'Token insertion' }}</span>
+                  <button type="button" class="assist-choice" :aria-pressed="insertionMode === 'required'" @click="insertionMode = 'required'">{{ zh ? '必需值' : 'Required value' }}</button>
+                  <button type="button" class="assist-choice" :aria-pressed="insertionMode === 'optional'" @click="insertionMode = 'optional'">{{ zh ? '缺失时省略' : 'Omit when missing' }}</button>
+                </div>
+                <div v-if="insertionMode === 'optional'" class="rename-assist__affixes">
+                  <label>{{ zh ? '前缀' : 'Prefix' }} <input v-model="insertionPrefix" maxlength="80" /></label>
+                  <label>{{ zh ? '后缀' : 'Suffix' }} <input v-model="insertionSuffix" maxlength="80" /></label>
+                </div>
+              </div>
+
               <!-- Tokens List -->
               <div class="tokens-container">
                 <div class="tokens-header">
@@ -335,9 +360,16 @@ async function save() {
                     {{ zh ? '实时路径模拟 (示例电影)' : 'Live Preview Simulation (Sample Movie)' }}
                   </span>
                 </div>
+                <div class="rename-assist__choice sample-switch">
+                  <span class="tokens-title">{{ zh ? '示例数据' : 'Sample data' }}</span>
+                  <button type="button" class="assist-choice" :aria-pressed="sampleMode === 'complete'" @click="sampleMode = 'complete'">{{ zh ? '完整数据' : 'Complete data' }}</button>
+                  <button type="button" class="assist-choice" :aria-pressed="sampleMode === 'missingOptional'" @click="sampleMode = 'missingOptional'">{{ zh ? '缺失可选值' : 'Missing optional data' }}</button>
+                  <span class="sample-note">{{ zh ? '仅为模拟，不是实际媒体元数据' : 'Simulation only; not actual metadata' }}</span>
+                </div>
                 <div class="preview-content font-code">
                   <span v-if="moviePreview.dir" class="preview-dir">📁 /media/movies/{{ moviePreview.dir }}</span>
-                  <span class="preview-file">📄 {{ moviePreview.filename }}</span>
+                  <span v-if="moviePreview.error" class="preview-file preview-error">⚠ {{ moviePreview.errorCode ? renamePatternErrorMessage(moviePreview.errorCode, moviePreview.errorToken, zh, moviePreview.error) : moviePreview.error }}</span>
+                  <span v-else class="preview-file">📄 {{ moviePreview.filename }}</span>
                 </div>
               </div>
             </div>
@@ -406,6 +438,19 @@ async function save() {
                 />
               </div>
 
+              <!-- Shared insertion mode applies to both movie and TV token lists. -->
+              <div class="rename-assist" :aria-label="zh ? '占位符插入选项' : 'Token insertion options'">
+                <div class="rename-assist__choice">
+                  <span class="tokens-title">{{ zh ? '插入方式' : 'Token insertion' }}</span>
+                  <button type="button" class="assist-choice" :aria-pressed="insertionMode === 'required'" @click="insertionMode = 'required'">{{ zh ? '必需值' : 'Required value' }}</button>
+                  <button type="button" class="assist-choice" :aria-pressed="insertionMode === 'optional'" @click="insertionMode = 'optional'">{{ zh ? '缺失时省略' : 'Omit when missing' }}</button>
+                </div>
+                <div v-if="insertionMode === 'optional'" class="rename-assist__affixes">
+                  <label>{{ zh ? '前缀' : 'Prefix' }} <input v-model="insertionPrefix" maxlength="80" /></label>
+                  <label>{{ zh ? '后缀' : 'Suffix' }} <input v-model="insertionSuffix" maxlength="80" /></label>
+                </div>
+              </div>
+
               <!-- Tokens List -->
               <div class="tokens-container">
                 <div class="tokens-header">
@@ -437,9 +482,16 @@ async function save() {
                     {{ zh ? '实时路径模拟 (示例单集)' : 'Live Preview Simulation (Sample Episode)' }}
                   </span>
                 </div>
+                <div class="rename-assist__choice sample-switch">
+                  <span class="tokens-title">{{ zh ? '示例数据' : 'Sample data' }}</span>
+                  <button type="button" class="assist-choice" :aria-pressed="sampleMode === 'complete'" @click="sampleMode = 'complete'">{{ zh ? '完整数据' : 'Complete data' }}</button>
+                  <button type="button" class="assist-choice" :aria-pressed="sampleMode === 'missingOptional'" @click="sampleMode = 'missingOptional'">{{ zh ? '缺失可选值' : 'Missing optional data' }}</button>
+                  <span class="sample-note">{{ zh ? '仅为模拟，不是实际媒体元数据' : 'Simulation only; not actual metadata' }}</span>
+                </div>
                 <div class="preview-content font-code">
                   <span v-if="tvPreview.dir" class="preview-dir">📁 /media/tv/{{ tvPreview.dir }}</span>
-                  <span class="preview-file">📄 {{ tvPreview.filename }}</span>
+                  <span v-if="tvPreview.error" class="preview-file preview-error">⚠ {{ tvPreview.errorCode ? renamePatternErrorMessage(tvPreview.errorCode, tvPreview.errorToken, zh, tvPreview.error) : tvPreview.error }}</span>
+                  <span v-else class="preview-file">📄 {{ tvPreview.filename }}</span>
                 </div>
               </div>
             </div>
@@ -778,6 +830,76 @@ async function save() {
 }
 
 /* ── Tokens ───────────────────────────────────────────────────────── */
+.rename-assist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-low, #151b2d);
+  color: var(--on-surface-variant, #c7c4d7);
+  font-size: 11px;
+}
+
+.rename-assist__choice,
+.rename-assist__affixes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rename-assist label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.assist-choice {
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 3px 7px;
+  background: transparent;
+  color: var(--on-surface-variant, #c7c4d7);
+  cursor: pointer;
+}
+
+.assist-choice[aria-pressed='true'] {
+  border-color: var(--primary, #c0c1ff);
+  color: var(--primary, #c0c1ff);
+}
+
+.rename-assist input[type='text'],
+.rename-assist__affixes input {
+  min-width: 70px;
+  width: 100px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--outline-variant, #2e3447);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--surface-container-lowest, #070d1f);
+  color: var(--on-surface, #dce1fb);
+  font-family: var(--font-data, monospace);
+}
+
+.sample-switch {
+  margin: 10px 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.sample-note {
+  color: var(--outline, #908fa0);
+  font-style: italic;
+}
+
+.preview-error {
+  color: var(--error, #ffb4ab);
+}
+
 .tokens-container {
   display: flex;
   flex-direction: column;
@@ -1027,6 +1149,20 @@ async function save() {
 }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Touch targets expand only on narrow layouts; desktop keeps its dense controls. */
+  .rename-assist .assist-choice,
+  .sample-switch .assist-choice {
+    min-height: 44px;
+    padding: 9px 10px;
+  }
+
+  .rename-assist__affixes input {
+    height: 44px;
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 760px) {
   .card-body {
     padding: 16px;
@@ -1064,6 +1200,18 @@ async function save() {
   .safety-card {
     flex-direction: column;
     gap: 8px;
+  }
+}
+
+@media (max-width: 700px) {
+  .rename-assist__choice,
+  .rename-assist__affixes {
+    width: 100%;
+  }
+
+  .rename-assist__affixes label {
+    flex: 1 1 140px;
+    min-height: 44px;
   }
 }
 </style>

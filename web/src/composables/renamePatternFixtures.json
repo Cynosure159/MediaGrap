@@ -1,0 +1,15 @@
+[
+  {"name":"optional missing","pattern":"${title}${ - ,edition,}","allowed":["title","edition"],"values":{"title":"Film","edition":""},"rendered":"Film"},
+  {"name":"optional zero","pattern":"${,year,}","allowed":["year"],"values":{"year":"0"},"rendered":"0"},
+  {"name":"trim token name","pattern":"${ title }","allowed":["title"],"values":{"title":"Film"},"rendered":"Film"},
+  {"name":"FEFF is not token-name whitespace (strict)","pattern":"${\ufefftitle}","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"FEFF is not token-name whitespace (optional)","pattern":"${,\ufefftitle,}","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"separator remains present","pattern":"${title}${ (,originalTitle,)}","allowed":["title","originalTitle"],"values":{"title":"Film","originalTitle":"/"},"rendered":"Film ( )"},
+  {"name":"unknown optional","pattern":"${,unknown,}","allowed":["title"],"values":{},"error":true},
+  {"name":"extra commas","pattern":"${a,title,b,c}","allowed":["title"],"values":{},"error":true},
+  {"name":"dot affix","pattern":"${.,title,}","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"DEL affix","pattern":"${\u007f,title,}","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"C1 affix","pattern":"${\u0085,title,}","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"unmatched delimiter","pattern":"${title}{","allowed":["title"],"values":{"title":"Film"},"error":true},
+  {"name":"residual dollar","pattern":"${title}$","allowed":["title"],"values":{"title":"Film"},"error":true}
+]

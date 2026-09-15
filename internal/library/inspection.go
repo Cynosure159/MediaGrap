@@ -18,13 +18,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mediagrap/mediagrap/internal/renamepattern"
 )
 
 const defaultNamingPattern = "${title} (${year})"
 const maxFFprobeOutputBytes = 8 << 20
 
 var (
-	namingTokenPattern  = regexp.MustCompile(`\$\{([A-Za-z][A-Za-z0-9]*)\}`)
 	unsafeFilenameChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 	auditExtensions     = map[string]string{
 		".nfo": "nfo", ".jpg": "image", ".jpeg": "image", ".png": "image", ".webp": "image",
@@ -467,25 +468,13 @@ func (s *Service) PreviewNaming(ctx context.Context, id int64, pattern string, v
 		year = strconv.Itoa(*values.Year)
 	}
 	tokens := map[string]string{"title": values.Title, "originalTitle": values.OriginalTitle, "year": year, "resolution": resolution, "videoCodec": videoCodec, "audioCodec": audioCodec}
-	unknown := ""
-	unavailable := ""
-	stem := namingTokenPattern.ReplaceAllStringFunc(pattern, func(token string) string {
-		name := namingTokenPattern.FindStringSubmatch(token)[1]
-		value, ok := tokens[name]
-		if !ok {
-			unknown = name
-			return token
-		}
-		if value == "" {
-			unavailable = name
-		}
-		return value
-	})
-	if unknown != "" {
-		return NamingPreview{}, fmt.Errorf("unsupported naming token %q", unknown)
+	allowed := renamepattern.Allowed("title", "originalTitle", "year", "resolution", "videoCodec", "audioCodec")
+	if err := renamepattern.Validate(pattern, allowed); err != nil {
+		return NamingPreview{}, err
 	}
-	if unavailable != "" {
-		return NamingPreview{}, fmt.Errorf("naming token %q has no available value", unavailable)
+	stem, err := renamepattern.Render(pattern, tokens, allowed)
+	if err != nil {
+		return NamingPreview{}, err
 	}
 	stem = sanitizeFilename(stem)
 	if stem == "" {

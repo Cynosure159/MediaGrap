@@ -90,31 +90,58 @@ func TestRename_NamingTokenPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			unknown := ""
-			unavailable := ""
-			stem := namingTokenPattern.ReplaceAllStringFunc(tt.pattern, func(token string) string {
-				name := namingTokenPattern.FindStringSubmatch(token)[1]
-				value, ok := tokens[name]
-				if !ok {
-					unknown = name
-					return token
+			stem, err := renderTestNamingTemplate(tt.pattern, tokens)
+			if tt.expectedUnknown != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedUnknown) {
+					t.Fatalf("expected unknown token %q, got stem=%q err=%v", tt.expectedUnknown, stem, err)
 				}
-				if value == "" {
-					unavailable = name
+				return
+			}
+			if tt.expectedUnavail != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedUnavail) {
+					t.Fatalf("expected unavailable token %q, got stem=%q err=%v", tt.expectedUnavail, stem, err)
 				}
-				return value
-			})
-
-			if unknown != tt.expectedUnknown {
-				t.Errorf("expected unknown token %q, got %q", tt.expectedUnknown, unknown)
+				return
 			}
-			if unavailable != tt.expectedUnavail {
-				t.Errorf("expected unavailable token %q, got %q", tt.expectedUnavail, unavailable)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if unknown == "" && unavailable == "" && stem != tt.expectedStem {
+			if stem != tt.expectedStem {
 				t.Errorf("expected stem %q, got %q", tt.expectedStem, stem)
 			}
 		})
+	}
+}
+
+func TestRename_OptionalTemplateRenderingAndPathSafety(t *testing.T) {
+	tokens := map[string]string{"title": "A/B", "edition": "", "year": "0"}
+	dir, file, err := renderNamingTemplate("${title}${,edition,}/${ (,year,)}", tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != "A B" || file != "(0)" {
+		t.Fatalf("dir=%q file=%q", dir, file)
+	}
+	if _, _, err := renderNamingTemplate("${,edition,}/${title}", tokens); err == nil {
+		t.Fatal("expected empty optional directory segment to be rejected")
+	}
+	if _, _, err := renderNamingTemplate("${title}${edition}", tokens); err == nil {
+		t.Fatal("expected strict missing value to be rejected")
+	}
+	if _, _, err := renderNamingTemplate("${title}", map[string]string{"title": " \t\n"}); err == nil {
+		t.Fatal("expected whitespace-only required value to be rejected")
+	}
+	if _, _, err := renderNamingTemplate("${,edition,}", map[string]string{"edition": " \t\n"}); err == nil {
+		t.Fatal("expected whitespace-only optional value to produce an empty filename")
+	}
+	if _, _, err := renderNamingTemplate("${title}/${,edition,}", map[string]string{"title": "Film", "edition": ""}); err == nil || !strings.Contains(err.Error(), "empty filename") {
+		t.Fatalf("expected empty final filename error, got %v", err)
+	}
+	if _, _, err := renderNamingTemplate("${,edition,}/${title}", map[string]string{"title": "Film", "edition": ""}); err == nil || !strings.Contains(err.Error(), "invalid directory segment") {
+		t.Fatalf("expected empty directory segment error, got %v", err)
+	}
+	if _, _, err := renderNamingTemplate("${,edition,}", map[string]string{"edition": "/"}); err == nil || !strings.Contains(err.Error(), "empty filename") {
+		t.Fatalf("expected sanitizer-empty filename error, got %v", err)
 	}
 }
 
@@ -220,14 +247,24 @@ func TestRename_TVTokensAndPresets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stem := namingTokenPattern.ReplaceAllStringFunc(tt.pattern, func(token string) string {
-				name := namingTokenPattern.FindStringSubmatch(token)[1]
-				return tokens[name]
-			})
-
+			stem, err := renderTestNamingTemplate(tt.pattern, tokens)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if stem != tt.expectedStem {
 				t.Errorf("got %q, want %q", stem, tt.expectedStem)
 			}
 		})
 	}
+}
+
+func renderTestNamingTemplate(pattern string, tokens map[string]string) (string, error) {
+	dir, file, err := renderNamingTemplate(pattern, tokens)
+	if err != nil {
+		return "", err
+	}
+	if dir == "" {
+		return file, nil
+	}
+	return dir + "/" + file, nil
 }
