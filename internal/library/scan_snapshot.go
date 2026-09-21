@@ -44,7 +44,8 @@ func (snapshot directorySnapshot) sidecars(root, relative string) []Sidecar {
 	directory := filepath.Dir(filepath.Join(root, relative))
 	base := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
 	names := snapshot.sidecarNames
-	if snapshot.videos != 1 {
+	_, _, _, isEpisode := parseEpisodeHint(filepath.Base(relative))
+	if snapshot.videos != 1 || isEpisode {
 		prefix := base + "."
 		start := sort.SearchStrings(names, prefix)
 		end := start
