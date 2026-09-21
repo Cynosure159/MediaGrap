@@ -106,4 +106,32 @@ describe("MediaCatalog", () => {
 
     expect(wrapper.emitted("scan")).toHaveLength(1);
   });
+
+  it("scrolls active movie into view when selectedId or items change", async () => {
+    const wrapper = mount(MediaCatalog, {
+      props: {
+        items: movies,
+        selectedId: 50,
+        activeJob: undefined,
+        labels: { movies: "Movies" },
+      },
+    });
+    const list = wrapper.get(".catalog-list");
+    Object.defineProperty(list.element, "clientHeight", {
+      value: 600,
+      configurable: true,
+    });
+    let scrolledTop = 0;
+    Object.defineProperty(list.element, "scrollTop", {
+      get: () => scrolledTop,
+      set: (val: number) => { scrolledTop = val; },
+      configurable: true,
+    });
+
+    await wrapper.setProps({ selectedId: 80 });
+    await new Promise((r) => setTimeout(r, 10));
+    // Item 80 is at index 79, targetTop = 79 * 60 = 4740
+    expect(scrolledTop).toBeGreaterThan(0);
+    wrapper.unmount();
+  });
 });
