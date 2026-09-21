@@ -33,15 +33,18 @@ var (
 )
 
 type MediaInspection struct {
-	ProbeStatus string           `json:"probeStatus"`
-	ProbeError  string           `json:"probeError,omitempty"`
-	Cached      bool             `json:"cached"`
-	ProbedAt    string           `json:"probedAt,omitempty"`
-	Format      ProbeFormat      `json:"format"`
-	Video       []VideoStream    `json:"video"`
-	Audio       []AudioStream    `json:"audio"`
-	Subtitles   []SubtitleStream `json:"subtitles"`
-	Files       []FileAuditEntry `json:"files"`
+	ProbeStatus         string           `json:"probeStatus"`
+	ProbeError          string           `json:"probeError,omitempty"`
+	Cached              bool             `json:"cached"`
+	ProbedAt            string           `json:"probedAt,omitempty"`
+	Format              ProbeFormat      `json:"format"`
+	Video               []VideoStream    `json:"video"`
+	Audio               []AudioStream    `json:"audio"`
+	Subtitles           []SubtitleStream `json:"subtitles"`
+	Files               []FileAuditEntry `json:"files"`
+	SupplementalFiles   []FileAuditEntry `json:"supplementalFiles,omitempty"`
+	SupplementalStatus  string           `json:"supplementalStatus,omitempty"`
+	SupplementalWarning string           `json:"supplementalWarning,omitempty"`
 }
 
 type ProbeFormat struct {
@@ -252,13 +255,17 @@ func (s *Service) InspectMedia(ctx context.Context, id int64) (MediaInspection, 
 	if !resolvedParentWithinRoot(root, location.AbsolutePath) {
 		return MediaInspection{}, errors.New("media path escapes its configured root through a symlink")
 	}
+	supplemental := s.auditSupplementalFiles(ctx, location)
+	if err := ctx.Err(); err != nil {
+		return MediaInspection{}, err
+	}
 	files := s.auditFiles(ctx, location)
 	mainInfo, err := os.Lstat(location.AbsolutePath)
 	if err != nil {
-		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file is unavailable", Files: files, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
+		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file is unavailable", Files: files, SupplementalFiles: supplemental.files, SupplementalStatus: supplemental.status, SupplementalWarning: supplemental.warning, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
 	}
 	if mainInfo.Mode()&os.ModeSymlink != 0 || !mainInfo.Mode().IsRegular() {
-		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file is not a regular file", Files: files, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
+		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file is not a regular file", Files: files, SupplementalFiles: supplemental.files, SupplementalStatus: supplemental.status, SupplementalWarning: supplemental.warning, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
 	}
 	lockValue, _ := s.inspectionLocks.LoadOrStore(id, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
@@ -266,12 +273,15 @@ func (s *Service) InspectMedia(ctx context.Context, id int64) (MediaInspection, 
 	defer lock.Unlock()
 	mainInfo, err = os.Lstat(location.AbsolutePath)
 	if err != nil || mainInfo.Mode()&os.ModeSymlink != 0 || !mainInfo.Mode().IsRegular() {
-		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file changed before inspection", Files: files, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
+		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file changed before inspection", Files: files, SupplementalFiles: supplemental.files, SupplementalStatus: supplemental.status, SupplementalWarning: supplemental.warning, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
 	}
 	modifiedAt := mainInfo.ModTime().UTC().Format(time.RFC3339Nano)
 	if cached, ok := s.cachedInspection(ctx, id, mainInfo.Size(), modifiedAt); ok {
 		cached.Cached = true
 		cached.Files = files
+		cached.SupplementalFiles = supplemental.files
+		cached.SupplementalStatus = supplemental.status
+		cached.SupplementalWarning = supplemental.warning
 		return cached, nil
 	}
 	probeStarted := time.Now()
@@ -279,13 +289,16 @@ func (s *Service) InspectMedia(ctx context.Context, id int64) (MediaInspection, 
 	inspection, probeErr := s.prober.Probe(ctx, location.AbsolutePath)
 	if probeErr != nil {
 		s.logger.Warn("media probe failed", "media_item_id", id, "duration", time.Since(probeStarted), "error", probeErr)
-		return MediaInspection{ProbeStatus: "unavailable", ProbeError: probeErr.Error(), Files: files, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
+		return MediaInspection{ProbeStatus: "unavailable", ProbeError: probeErr.Error(), Files: files, SupplementalFiles: supplemental.files, SupplementalStatus: supplemental.status, SupplementalWarning: supplemental.warning, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
 	}
 	inspection.ProbedAt = time.Now().UTC().Format(time.RFC3339)
 	inspection.Files = files
+	inspection.SupplementalFiles = supplemental.files
+	inspection.SupplementalStatus = supplemental.status
+	inspection.SupplementalWarning = supplemental.warning
 	afterProbe, statErr := os.Lstat(location.AbsolutePath)
 	if statErr != nil || afterProbe.Size() != mainInfo.Size() || !afterProbe.ModTime().Equal(mainInfo.ModTime()) {
-		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file changed during inspection", Files: files, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
+		return MediaInspection{ProbeStatus: "failed", ProbeError: "media file changed during inspection", Files: files, SupplementalFiles: supplemental.files, SupplementalStatus: supplemental.status, SupplementalWarning: supplemental.warning, Video: []VideoStream{}, Audio: []AudioStream{}, Subtitles: []SubtitleStream{}}, nil
 	}
 	if err := s.storeInspection(ctx, id, mainInfo.Size(), modifiedAt, inspection); err != nil {
 		s.logger.Warn("media probe cache write failed", "media_item_id", id, "error", err)
@@ -311,6 +324,9 @@ func (s *Service) cachedInspection(ctx context.Context, id, size int64, modified
 func (s *Service) storeInspection(ctx context.Context, id, size int64, modifiedAt string, inspection MediaInspection) error {
 	copyForCache := inspection
 	copyForCache.Files = nil
+	copyForCache.SupplementalFiles = nil
+	copyForCache.SupplementalStatus = ""
+	copyForCache.SupplementalWarning = ""
 	copyForCache.Cached = false
 	raw, err := json.Marshal(copyForCache)
 	if err != nil {
