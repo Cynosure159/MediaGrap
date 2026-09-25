@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 FROM alpine:3.22 AS ffprobe-builder
-RUN apk add --no-cache build-base ca-certificates=20260611-r0 ca-certificates-bundle=20260611-r0 curl nasm xz
+RUN apk add --no-cache build-base ca-certificates ca-certificates-bundle curl nasm xz
 WORKDIR /materials
 RUN curl -fsSLo ffmpeg-7.1.1.tar.xz https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz \
  && echo '733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1  ffmpeg-7.1.1.tar.xz' | sha256sum -c - \
