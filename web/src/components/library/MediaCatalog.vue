@@ -89,9 +89,31 @@ watch([filterMode, sortMode], () => {
 watch(() => props.items, async (items) => {
   if (!items.length) {
     resetScroll()
+  } else if (props.selectedId !== null) {
+    scrollToActiveItem()
   }
   await nextTick()
   checkMore()
+})
+
+function scrollToActiveItem() {
+  if (props.selectedId === null || !listElement.value) return
+  const index = props.items.findIndex(item => item.id === props.selectedId)
+  if (index === -1) return
+  const el = listElement.value
+  const targetTop = index * stride
+  // If the target item is outside the visible viewport, scroll it into view
+  if (targetTop < el.scrollTop || targetTop + stride > el.scrollTop + el.clientHeight) {
+    const desired = Math.max(0, targetTop - Math.floor(el.clientHeight / 2) + Math.floor(stride / 2))
+    el.scrollTop = desired
+    scrollTop.value = desired
+  }
+}
+
+watch(() => props.selectedId, (id) => {
+  if (id !== null) {
+    nextTick(() => scrollToActiveItem())
+  }
 })
 
 watch(() => props.loading, async () => {
