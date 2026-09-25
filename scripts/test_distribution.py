@@ -29,8 +29,9 @@ class DockerSourceTests(unittest.TestCase):
             f"  {archive}' | sha256sum -c -",
             dockerfile,
         )
-        self.assertIn("ca-certificates=20260611-r0", dockerfile)
-        self.assertIn("ca-certificates-bundle=20260611-r0", dockerfile)
+        # The distfiles tarball stays pinned for the notice inventory, but apk
+        # packages are intentionally unpinned so certificates refresh with the
+        # Alpine repository instead of failing dependency resolution.
         self.assertNotIn("https://gitlab.alpinelinux.org/", dockerfile)
 
 
