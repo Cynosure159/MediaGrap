@@ -394,11 +394,15 @@ func (s *Service) PreviewTVRenamePlan(ctx context.Context, showID int64, seasonN
 		for _, sidecar := range ep.Sidecars {
 			sidecarName := filepath.Base(sidecar.RelativePath)
 			sidecarBase := strings.TrimSuffix(sidecarName, filepath.Ext(sidecarName))
-			plannedSidecarName := sidecarName
-			if strings.HasPrefix(sidecarBase, currentVideoBase) {
-				suffix := sidecarBase[len(currentVideoBase):]
-				plannedSidecarName = fileTemplate + suffix + filepath.Ext(sidecarName)
+
+			// In TV shows, episode sidecars must match the episode's basename (e.g. S01E01.zh.srt, S01E01.nfo).
+			// Show-level assets (tvshow.nfo, poster.jpg, fanart.jpg, season*-poster.jpg, etc.) must never be moved into season directories.
+			if !strings.HasPrefix(sidecarBase, currentVideoBase) {
+				continue
 			}
+
+			suffix := sidecarBase[len(currentVideoBase):]
+			plannedSidecarName := fileTemplate + suffix + filepath.Ext(sidecarName)
 			plannedSidecarPath := plannedSidecarName
 			if plannedRelDir != "" {
 				plannedSidecarPath = filepath.Join(plannedRelDir, plannedSidecarName)
