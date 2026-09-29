@@ -101,6 +101,58 @@ describe("MovieFileAuditTab", () => {
     ]);
   });
 
+  it("renders read-only supplemental samples and extras with bounded status", async () => {
+    const supplemental: MediaInspection = {
+      ...inspection,
+      supplementalStatus: "ready",
+      supplementalFiles: [
+        {
+          ...inspection.files[0],
+          relativePath: "Movie/Extras/Trailer.mkv",
+          kind: "extra",
+          size: 2048,
+          modifiedAt: "2026-09-02T16:00:00Z",
+          mimeType: "video/x-matroska",
+        },
+        {
+          ...inspection.files[0],
+          relativePath: "Movie-sample.mkv",
+          kind: "sample",
+        },
+      ],
+    };
+    const wrapper = mount(MovieFileAuditTab, {
+      props: { item, labels, inspection: supplemental },
+    });
+    expect(wrapper.find(".supplemental-card").text()).toContain("Trailer.mkv");
+    expect(wrapper.find(".supplemental-card").text()).toContain("extra");
+    expect(wrapper.find(".supplemental-card").text()).toContain("sample");
+    expect(wrapper.findAll(".supplemental-card button")).toHaveLength(0);
+
+    await wrapper.setProps({
+      inspection: {
+        ...supplemental,
+        supplementalStatus: "truncated",
+      },
+    });
+    expect(wrapper.find(".supplemental-status").text()).toContain(
+      "supplementalTruncated",
+    );
+    expect(wrapper.findAll(".supplemental-table tbody tr")).toHaveLength(2);
+    expect(wrapper.find(".supplemental-table").text()).toContain("Trailer.mkv");
+    expect(wrapper.findAll(".supplemental-card button")).toHaveLength(0);
+  });
+
+  it("keeps the supplemental section backward compatible when the response omits it", () => {
+    const wrapper = mount(MovieFileAuditTab, {
+      props: { item, labels, inspection },
+    });
+    expect(wrapper.find(".supplemental-card").exists()).toBe(true);
+    expect(wrapper.find(".supplemental-card").text()).toContain(
+      "supplementalNone",
+    );
+  });
+
   it("shows filesystem safety warnings", () => {
     const warned: MediaInspection = {
       ...inspection,

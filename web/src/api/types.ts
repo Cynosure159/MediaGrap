@@ -99,6 +99,16 @@ export interface MediaInspection {
   audio: ReadonlyArray<AudioStream>;
   subtitles: ReadonlyArray<SubtitleStream>;
   files: ReadonlyArray<FileAuditEntry>;
+  supplementalFiles?: ReadonlyArray<FileAuditEntry>;
+  supplementalStatus?:
+    | "ready"
+    | "not_associated"
+    | "missing"
+    | "incomplete"
+    | "unsupported"
+    | "truncated"
+    | "unreadable";
+  supplementalWarning?: string;
 }
 
 export interface NamingPreviewItem {

@@ -1,8 +1,10 @@
 package library
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mediagrap/mediagrap/internal/platform/database"
@@ -107,5 +109,151 @@ func TestRescanExcludesSupplementalVideosWithoutDeletingFiles(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func supplementalFixture(t *testing.T, relative string) (*Service, int64, string) {
+	t.Helper()
+	root := t.TempDir()
+	db, err := database.Open(filepath.Join(t.TempDir(), "supplemental.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := database.Migrate(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.ExecContext(t.Context(), `INSERT INTO sources(name,root_path) VALUES(?,?)`, "Movies", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, _ := result.LastInsertId()
+	path := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("video fixture"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	result, err = db.ExecContext(t.Context(), `INSERT INTO media_items(source_id,relative_path,title_hint,file_size,modified_at) VALUES(?,?,?,?,?)`, sourceID, relative, "Movie", 2024, info.Size(), info.ModTime().UTC().Format("2006-01-02T15:04:05Z07:00"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := result.LastInsertId()
+	service := NewService(db, []string{root})
+	service.prober = &fakeMediaProber{}
+	return service, itemID, path
+}
+
+func TestInspectMediaShowsDirectSamplesAndExtrasWithoutChangingMainAudit(t *testing.T) {
+	service, itemID, mainPath := supplementalFixture(t, "Movie/Movie.mkv")
+	parent := filepath.Dir(mainPath)
+	for _, relative := range []string{"Movie-sample.MKV", "sample.mp4"} {
+		if err := os.WriteFile(filepath.Join(parent, relative), []byte("sample"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	extraDir := filepath.Join(parent, "eXtRaS")
+	if err := os.Mkdir(extraDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extraDir, "Behind.m4v"), []byte("extra"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(extraDir, "Nested"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extraDir, "Nested", "ignored.mkv"), []byte("nested"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := service.InspectMedia(t.Context(), itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.SupplementalStatus != "ready" || len(inspection.SupplementalFiles) != 3 {
+		t.Fatalf("unexpected supplemental audit: %#v", inspection)
+	}
+	for _, file := range inspection.SupplementalFiles {
+		if strings.Contains(file.RelativePath, "ignored") || file.MIMEType == "application/octet-stream" {
+			t.Fatalf("nested or content-sniffed file included: %#v", file)
+		}
+	}
+	for _, file := range inspection.Files {
+		if strings.Contains(file.RelativePath, "sample") || strings.Contains(file.RelativePath, "Behind") {
+			t.Fatalf("supplemental video leaked into main file audit: %#v", inspection.Files)
+		}
+	}
+	preview, err := service.PreviewNaming(t.Context(), itemID, "${title}", NamingValues{Title: "Renamed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range preview.Items {
+		if strings.Contains(item.CurrentPath, "sample") || strings.Contains(item.CurrentPath, "Behind") {
+			t.Fatalf("supplemental video leaked into rename plan: %#v", preview.Items)
+		}
+	}
+}
+
+func TestSupplementalAuditRejectsAmbiguityAndSymlink(t *testing.T) {
+	service, itemID, mainPath := supplementalFixture(t, "Shared/Movie.mkv")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(mainPath), "Other.mkv"), []byte("other"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := service.InspectMedia(t.Context(), itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.SupplementalStatus != "not_associated" || len(inspection.SupplementalFiles) != 0 {
+		t.Fatalf("expected ambiguous directory to remain empty: %#v", inspection)
+	}
+	if err := os.Remove(filepath.Join(filepath.Dir(mainPath), "Other.mkv")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(filepath.Dir(mainPath), "Extras"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(filepath.Dir(mainPath), "Extras", "escape.mkv")); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err = service.InspectMedia(t.Context(), itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.SupplementalStatus != "unreadable" || len(inspection.SupplementalFiles) != 0 {
+		t.Fatalf("expected symlink to be rejected: %#v", inspection)
+	}
+}
+
+func TestSupplementalAuditIsBoundedAndRefreshesCachedProbe(t *testing.T) {
+	service, itemID, mainPath := supplementalFixture(t, "Movie/Movie.mkv")
+	first, err := service.InspectMedia(t.Context(), itemID)
+	if err != nil || first.SupplementalStatus != "ready" {
+		t.Fatalf("unexpected first inspection: %#v %v", first, err)
+	}
+	if err := os.Mkdir(filepath.Join(filepath.Dir(mainPath), "Extras"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(mainPath), "Extras", "new.mkv"), []byte("extra"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.InspectMedia(t.Context(), itemID)
+	if err != nil || !second.Cached || len(second.SupplementalFiles) != 1 {
+		t.Fatalf("cached inspection did not refresh supplemental view: %#v %v", second, err)
+	}
+
+	for i := 0; i < supplementalDirectoryEntryBudget+1; i++ {
+		name := filepath.Join(filepath.Dir(mainPath), "Extras", fmt.Sprintf("limit-%03d.mkv", i))
+		if err := os.WriteFile(name, []byte("extra"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	limited, err := service.InspectMedia(t.Context(), itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limited.SupplementalStatus != "truncated" || limited.SupplementalWarning == "" {
+		t.Fatalf("expected bounded incomplete result: %#v", limited)
 	}
 }

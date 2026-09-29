@@ -77,6 +77,12 @@ function formatModifiedAt(value: string): string {
   if (!value) return '—'
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
+
+function supplementalStatusLabel(status?: string): string {
+  if (!status) return props.labels.supplementalNotAssociated || 'No unambiguous supplemental association'
+  const key = status.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')
+  return props.labels[`supplemental${key}`] || status
+}
 </script>
 
 <template>
@@ -185,7 +191,32 @@ function formatModifiedAt(value: string): string {
       </div>
     </div>
 
-    <!-- ── 4. Streams Probe Card ──────────────────────────────────── -->
+    <!-- ── 4. Read-only supplemental video view ───────────────────── -->
+    <div class="supplemental-card">
+      <div class="card-header-bar">
+        <span class="header-title">{{ labels.supplementalFiles || 'Samples & extras (read-only)' }}</span>
+        <span class="item-count font-code">{{ inspection?.supplementalFiles?.length ?? 0 }} {{ labels.files || 'files' }}</span>
+      </div>
+      <div v-if="inspection?.supplementalStatus && inspection.supplementalStatus !== 'ready'" class="supplemental-status font-code">
+        {{ supplementalStatusLabel(inspection.supplementalStatus) }}
+      </div>
+      <div v-if="!inspection?.supplementalFiles?.length && (!inspection?.supplementalStatus || inspection.supplementalStatus === 'ready')" class="empty-row">{{ labels.supplementalNone || 'No samples or extras found.' }}</div>
+      <div v-if="inspection?.supplementalFiles?.length" class="audit-table-wrap">
+        <table class="audit-table supplemental-table">
+          <thead><tr><th>{{ labels.type }}</th><th>{{ labels.path }}</th><th>{{ labels.size }}</th><th>{{ labels.modifiedAt }}</th></tr></thead>
+          <tbody>
+            <tr v-for="file in inspection.supplementalFiles" :key="file.relativePath">
+              <td><span class="spec-badge font-code">{{ file.kind === 'sample' ? (labels.sample || 'Sample') : (labels.extra || 'Extra') }}</span></td>
+              <td class="audit-path font-code" :title="file.relativePath">{{ file.relativePath }}</td>
+              <td class="font-code">{{ formatFileSize(file.size) }}</td>
+              <td class="font-code">{{ formatModifiedAt(file.modifiedAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── 5. Streams Probe Card ──────────────────────────────────── -->
     <div class="streams-card">
       <div class="card-header-bar">
         <span class="header-title">{{ labels.mediaStreams || '内嵌媒体流' }}</span>
@@ -245,7 +276,8 @@ function formatModifiedAt(value: string): string {
 .header-left h2 { margin: 0 0 2px; color: var(--on-surface); font-size: 16px; font-weight: 700; }
 .sub-label, .empty-row, .stream-empty { color: var(--on-surface-variant); font-size: 11px; }
 .readonly-badge, .cache-tag { color: var(--secondary); border: 1px solid color-mix(in srgb, var(--secondary) 35%, transparent); border-radius: 4px; padding: 2px 6px; font-size: 9px; font-weight: 600; }
-.structure-card, .streams-card, .rename-engine-card, .rename-plan-card { overflow: hidden; border: 1px solid var(--outline-variant); border-radius: var(--radius-md, 0.375rem); background: var(--surface-container); }
+.structure-card, .supplemental-card, .streams-card, .rename-engine-card, .rename-plan-card { overflow: hidden; border: 1px solid var(--outline-variant); border-radius: var(--radius-md, 0.375rem); background: var(--surface-container); }
+.supplemental-status { padding: 10px 12px; color: var(--tertiary); font-size: 10px; }
 .card-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--outline-variant); background: var(--surface-container-high); }
 .header-title { color: var(--on-surface); font-size: 12px; font-weight: 600; }
 .item-count, .preset-tag { color: var(--outline); font-size: 10px; }
