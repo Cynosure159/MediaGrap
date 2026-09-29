@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mediagrap/mediagrap/internal/platform/database"
+	renameSettings "github.com/mediagrap/mediagrap/internal/settings"
 )
 
 type fakeMediaProber struct {
@@ -138,6 +139,55 @@ func TestPreviewNamingIsReadOnlyAndDetectsConflicts(t *testing.T) {
 	}
 	if _, err := service.PreviewNaming(t.Context(), itemID, "../${title}", NamingValues{Title: "Unsafe"}); err == nil {
 		t.Fatal("expected path-producing pattern to be rejected")
+	}
+	optional, err := service.PreviewNaming(t.Context(), itemID, "${title}${ [,resolution,]}", NamingValues{Title: "New Movie", Year: &year})
+	if err != nil || optional.Items[0].PlannedPath != "New Movie [2160p].mkv" {
+		t.Fatalf("optional legacy preview=%+v err=%v", optional, err)
+	}
+	if _, err := service.PreviewNaming(t.Context(), itemID, "${,edition,}", NamingValues{Title: "New Movie"}); err == nil {
+		t.Fatal("legacy preview accepted unsupported optional token")
+	}
+}
+
+func TestPreviewRenamePlanOptionalPreservesExtensionAndDetectsCollision(t *testing.T) {
+	service, itemID, mediaPath := inspectionFixture(t)
+	service.prober = &fakeMediaProber{}
+	sidecarPath := filepath.Join(filepath.Dir(mediaPath), "Old.Movie.2024.nfo")
+	if err := os.WriteFile(sidecarPath, []byte("<movie/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pattern := "${title}${ [,resolution,]}"
+	plan, err := service.PreviewRenamePlan(t.Context(), itemID, pattern)
+	if err != nil || plan.HasConflicts {
+		t.Fatalf("optional movie plan=%+v err=%v", plan, err)
+	}
+	var video, nfo RenamePlanItem
+	for _, item := range plan.Items {
+		if item.Kind == "video" {
+			video = item
+		}
+		if item.Kind == "nfo" {
+			nfo = item
+		}
+	}
+	if video.PlannedPath != "Old Movie [2160p].mkv" || nfo.PlannedPath != "Old Movie [2160p].nfo" {
+		t.Fatalf("optional movie targets lost extension/sidecar suffix: video=%+v nfo=%+v", video, nfo)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(mediaPath), video.PlannedPath), []byte("collision"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	collision, err := service.PreviewRenamePlan(t.Context(), itemID, pattern)
+	if err != nil || !collision.HasConflicts {
+		t.Fatalf("expected optional collision, plan=%+v err=%v", collision, err)
+	}
+	settingsService := renameSettings.NewService(service.db, renameSettings.Defaults{})
+	newPattern := "${title} (${year})"
+	if _, err := settingsService.Update(t.Context(), renameSettings.Update{MovieRenamePattern: &newPattern}); err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := service.GetRenamePlan(t.Context(), plan.ID)
+	if err != nil || frozen.Pattern != pattern || frozen.HasConflicts {
+		t.Fatalf("first plan was changed by settings save or later preview: %+v err=%v", frozen, err)
 	}
 }
 

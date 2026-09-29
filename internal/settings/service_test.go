@@ -71,6 +71,31 @@ func TestUpdateRejectsUnsafeNoProxyEntry(t *testing.T) {
 	}
 }
 
+func TestRenamePatternValidationCoversOptionalMovieAndTVGrammar(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pattern string
+		tv      bool
+		valid   bool
+	}{
+		{"movie optional unavailable", "${title}${ - ,edition,}", false, true},
+		{"tv optional resolution", "${showTitle}${ [,resolution,]}", true, true},
+		{"tv strict missing is runtime error but syntax is valid", "${seasonNumber}", true, true},
+		{"unknown optional", "${showTitle}${,edition,}", true, false},
+		{"extra comma", "${title,a,b,c}", false, false},
+		{"dot affix", "${.,title,}", false, false},
+		{"malformed literal", "${title}{", false, false},
+		{"empty path after optional", "${title}/${,edition,}", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRenamePattern(tc.pattern, tc.tv)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%t err=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
 func TestRenameDefaultsPersistAndValidate(t *testing.T) {
 	db, err := database.Open(t.TempDir() + "/mediagrap.db")
 	if err != nil {
@@ -92,6 +117,11 @@ func TestRenameDefaultsPersistAndValidate(t *testing.T) {
 	if _, err := service.Update(t.Context(), Update{MovieRenamePattern: &movie, TVRenamePattern: &tv}); err != nil {
 		t.Fatal(err)
 	}
+	optional := "${title}${ - ,edition,}"
+	if _, err := service.Update(t.Context(), Update{MovieRenamePattern: &optional}); err != nil {
+		t.Fatalf("optional pattern rejected: %v", err)
+	}
+	movie = optional
 	if _, err := service.Update(t.Context(), Update{TMDbLanguage: "zh-CN"}); err != nil {
 		t.Fatal(err)
 	}

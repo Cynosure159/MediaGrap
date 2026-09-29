@@ -88,6 +88,39 @@ func TestRenamePlanIncrementalClassification(t *testing.T) {
 	}
 }
 
+func TestTVRenamePlanOptionalSeasonZeroPreservesSidecarExtension(t *testing.T) {
+	s, source, root, _ := scanBatchFixture(t, 0)
+	s.SetFFprobePath("")
+	snapshotFixture(t, root, "Show.S00E01.Special.mkv")
+	if err := os.WriteFile(filepath.Join(root, "Show.S00E01.Special.nfo"), []byte("<episodedetails/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.scan(t.Context(), 0, source.ID, "full", nil); err != nil {
+		t.Fatal(err)
+	}
+	shows, err := s.ListTVShows(t.Context(), "")
+	if err != nil || len(shows) != 1 {
+		t.Fatalf("shows=%v err=%v", shows, err)
+	}
+	season := 0
+	plan, err := s.PreviewTVRenamePlan(t.Context(), shows[0].ID, &season, nil, "${showTitle}/${showTitle} - S${seasonNumberPad}E${episodeNumberPad}${ [,resolution,]}")
+	if err != nil || plan.HasConflicts {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	var video, nfo RenamePlanItem
+	for _, item := range plan.Items {
+		if item.Kind == "video" {
+			video = item
+		}
+		if item.Kind == "nfo" {
+			nfo = item
+		}
+	}
+	if video.PlannedPath != "Show/Show - S00E01.mkv" || nfo.PlannedPath != "Show/Show - S00E01.nfo" {
+		t.Fatalf("optional plan did not preserve season zero or sidecar extension: video=%+v nfo=%+v", video, nfo)
+	}
+}
+
 func TestRenamePlanFailurePreservesScanFingerprint(t *testing.T) {
 	s, source, root, _ := scanBatchFixture(t, 0)
 	s.SetFFprobePath("")
