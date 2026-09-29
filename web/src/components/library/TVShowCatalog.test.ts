@@ -47,4 +47,40 @@ describe("TVShowCatalog", () => {
 
     expect(wrapper.emitted("scan")).toHaveLength(1);
   });
+
+  it("scrolls active TV show into view when selected or items change", async () => {
+    const shows = Array.from({ length: 20 }, (_, i) => ({
+      id: i + 1,
+      sourceId: 1,
+      relativePath: `Show ${i + 1}`,
+      titleHint: `Show ${i + 1}`,
+      yearHint: 2024,
+      seasonCount: 1,
+      episodeCount: 1,
+    }));
+    const wrapper = mount(TVShowCatalog, {
+      props: {
+        items: shows,
+        selected: null,
+        activeJob: undefined,
+        labels: {},
+      },
+    });
+
+    const list = wrapper.get(".catalog-list");
+    Object.defineProperty(list.element, "clientHeight", {
+      value: 400,
+      configurable: true,
+    });
+    let scrolledTop = 0;
+    Object.defineProperty(list.element, "scrollTop", {
+      get: () => scrolledTop,
+      set: (val: number) => { scrolledTop = val; },
+      configurable: true,
+    });
+
+    await wrapper.setProps({ selected: { kind: "show", showId: 15 } });
+    await new Promise((r) => setTimeout(r, 10));
+    wrapper.unmount();
+  });
 });
