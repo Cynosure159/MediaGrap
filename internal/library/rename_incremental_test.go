@@ -88,6 +88,60 @@ func TestRenamePlanIncrementalClassification(t *testing.T) {
 	}
 }
 
+func TestTVRenamePlanDoesNotMoveOuterShowAssetsIntoSeason(t *testing.T) {
+	s, source, root, _ := scanBatchFixture(t, 0)
+	s.SetFFprobePath("")
+
+	showDir := "The Gentlemen (2024)"
+	// Put show-level assets in the show directory
+	for _, asset := range []string{
+		"banner.jpg", "clearlogo.png", "fanart.jpg", "poster.jpg",
+		"season-specials-poster.jpg", "season01-poster.jpg", "season02-poster.jpg", "tvshow.nfo",
+	} {
+		snapshotFixture(t, root, filepath.Join(showDir, asset))
+	}
+
+	// Put an episode directly in the show directory (which has 1 video directly in showDir)
+	epPath := filepath.Join(showDir, "The Gentlemen - S02E08 - Bring Me the Head WEBDL-1080p.mkv")
+	snapshotFixture(t, root, epPath)
+	// Put its own sidecar matching its basename
+	epNfoPath := filepath.Join(showDir, "The Gentlemen - S02E08 - Bring Me the Head WEBDL-1080p.nfo")
+	if err := os.WriteFile(filepath.Join(root, epNfoPath), []byte("<episodedetails/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Put Season 1 in a subdirectory
+	s1Dir := filepath.Join(showDir, "Season 1")
+	s1EpPath := filepath.Join(s1Dir, "The Gentlemen - S01E01.mkv")
+	snapshotFixture(t, root, s1EpPath)
+
+	if err := s.scan(t.Context(), 0, source.ID, "full", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	shows, err := s.ListTVShows(t.Context(), "")
+	if err != nil || len(shows) != 1 {
+		t.Fatalf("shows=%v err=%v", shows, err)
+	}
+
+	// Preview rename with template that moves episodes into Season folders
+	pattern := "${showTitle}/Season ${seasonNumber}/${showTitle}.S${seasonNumberPad}E${episodeNumberPad}"
+	plan, err := s.PreviewTVRenamePlan(t.Context(), shows[0].ID, nil, nil, pattern)
+	if err != nil {
+		t.Fatalf("preview error: %v", err)
+	}
+
+	for _, item := range plan.Items {
+		// Verify that no show-level asset was included in the rename plan!
+		base := filepath.Base(item.CurrentPath)
+		switch base {
+		case "banner.jpg", "clearlogo.png", "fanart.jpg", "poster.jpg",
+			"season-specials-poster.jpg", "season01-poster.jpg", "season02-poster.jpg", "tvshow.nfo":
+			t.Errorf("outer show asset %q was erroneously included in rename plan: %+v", base, item)
+		}
+	}
+}
+
 func TestTVRenamePlanOptionalSeasonZeroPreservesSidecarExtension(t *testing.T) {
 	s, source, root, _ := scanBatchFixture(t, 0)
 	s.SetFFprobePath("")
