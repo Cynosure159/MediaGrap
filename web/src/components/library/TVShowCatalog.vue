@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowReactive, shallowRef, watch } from 'vue'
+import { computed, nextTick, shallowReactive, shallowRef, watch } from 'vue'
 import * as api from '@/api/library'
 import type { Job, TVSelection, TVShow, TVShowDetail } from '@/api/library'
 import TVShowTreeItem from './TVShowTreeItem.vue'
@@ -18,6 +18,8 @@ const emit = defineEmits<{
   select: [selection: TVSelection]
   scan: []
 }>()
+
+const listElement = shallowRef<HTMLElement | null>(null)
 
 const query = shallowRef('')
 const expandedShowIds = shallowReactive(new Set<number>())
@@ -95,10 +97,40 @@ async function toggleShow(showId: number) {
 watch(
   () => props.selected?.showId,
   showId => {
-    if (showId !== undefined) void ensureShowExpanded(showId)
+    if (showId !== undefined) {
+      void ensureShowExpanded(showId).then(() => {
+        void nextTick(scrollToActiveItem)
+      })
+    }
   },
   { immediate: true },
 )
+
+function scrollToActiveItem() {
+  if (!listElement.value || !props.selected) return
+  // Find the active element within the tree list
+  const activeEl = listElement.value.querySelector(
+    '.media-row--active, .season-row--active, .episode-row--active'
+  ) as HTMLElement | null
+  if (!activeEl) return
+
+  const container = listElement.value
+  const targetTop = activeEl.offsetTop
+  const targetBottom = targetTop + activeEl.offsetHeight
+
+  if (targetTop < container.scrollTop || targetBottom > container.scrollTop + container.clientHeight) {
+    const desired = Math.max(
+      0,
+      targetTop - Math.floor(container.clientHeight / 2) + Math.floor(activeEl.offsetHeight / 2)
+    )
+    container.scrollTop = desired
+  }
+}
+
+watch(() => props.items, async () => {
+  await nextTick()
+  scrollToActiveItem()
+})
 </script>
 
 <template>
@@ -223,7 +255,7 @@ watch(
     </div>
 
     <!-- TV Shows List / Tree -->
-    <div class="catalog-list">
+    <div ref="listElement" class="catalog-list">
       <TVShowTreeItem
         v-for="show in filteredItems"
         :key="show.id"
